@@ -1,4 +1,6 @@
-mod metadata;
+#[forbid(unsafe_code)]
+
+mod rfc822ish;
 
 use anyhow::Result;
 use std::io::Cursor;

@@ -1,14 +1,13 @@
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 
-// A parsed version of a package METADATA or PKG-INFO file, as per
+// A parsed version of a package METADATA or PKG-INFO or WHEEL file, as per
 // https://packaging.python.org/specifications/core-metadata/
 pub type Fields = HashMap<String, Vec<String>>;
 
-pub struct CoreMetadata {
+pub struct RFC822ish {
     pub fields: Fields,
-    // XX this is apparently supposed to be treated as a Description field
-    pub readme: String,
+    pub body: Option<String>,
 }
 
 mod parser_internals {
@@ -66,7 +65,9 @@ mod parser_internals {
     // obviously someone must have messed that up in the history of PyPI, but
     // we fail on oddities like a missing
 
-    pub fn parse_metadata(input: &str) -> Result<super::CoreMetadata, ErrorTree<Location>> {
+    pub fn parse_metadata(
+        input: &str,
+    ) -> Result<super::RFC822ish, ErrorTree<Location>> {
         // This has to be an actual function, not just a combinator object,
         // because nom's type system is awkward and if it were a combinator
         // there would be no way to use it multiple times below, even as
@@ -89,17 +90,20 @@ mod parser_internals {
 
         let value_line_piece = is_not("\r\n");
         let continuation_marker = line_ending.and(one_of(" \t"));
-        let field_value = nom::multi::separated_list1(continuation_marker, value_line_piece)
-            .recognize()
-            .context("field value");
+        let field_value =
+            nom::multi::separated_list1(continuation_marker, value_line_piece)
+                .recognize()
+                .context("field value");
 
-        let field = separated_pair(field_name, field_separator, field_value)
-            .context("field");
+        let field =
+            separated_pair(field_name, field_separator, field_value).context("field");
         let fields = many1(field.terminated(line_ending)).context("fields");
 
-        let metadata = separated_pair(fields, line_ending, rest);
+        let body = rest.preceded_by(line_ending);
+
+        let metadata = nom::sequence::pair(fields, body.opt());
         let mut parse = final_parser(metadata);
-        let (fields_vec, readme_ref) = parse(input)?;
+        let (fields_vec, body) = parse(input)?;
         let mut fields = super::Fields::new();
         for (field_name, field_value) in fields_vec {
             fields
@@ -107,26 +111,68 @@ mod parser_internals {
                 .or_insert(Vec::new())
                 .push(field_value.to_owned());
         }
-        let readme = readme_ref.to_owned();
-        Ok(super::CoreMetadata { fields, readme })
+        // Convert from Option<&str> to Option<String>
+        let body = body.map(String::from);
+        Ok(super::RFC822ish { fields, body })
     }
 }
+
+impl RFC822ish {
+    pub fn parse(data: &str) -> Result<RFC822ish> {
+        parser_internals::parse_metadata(data).context("Error parsing metadata")
+    }
+}
+
+pub struct CoreMetadata(Fields);
 
 impl CoreMetadata {
     pub fn parse(data: &str) -> Result<CoreMetadata> {
-        parser_internals::parse_metadata(data).context("Error parsing package metadata")
+        let mut rfc822ish = RFC822ish::parse(data)?;
+        if let Some(body) = rfc822ish.body {
+            rfc822ish
+                .fields
+                .entry("Description".to_string())
+                .or_insert(Vec::new())
+                .push(body);
+        }
+        Ok(CoreMetadata(rfc822ish.fields))
     }
 }
 
-#[test]
-fn test_parsing() {
-    let msg = CoreMetadata::parse("A: b\nC: d\n  continued\n\nHello!\nThis is fun!").unwrap();
-    let expected_fields: Fields = vec![
-        ("A".to_string(), vec!["b".to_string()]),
-        ("C".to_string(), vec!["d\n  continued".to_string()]),
-    ]
-    .into_iter()
-    .collect();
-    assert_eq!(msg.fields, expected_fields);
-    assert_eq!(msg.readme, "Hello!\nThis is fun!");
+#[cfg(test)]
+mod test {
+    use super::RFC822ish;
+    use indoc::indoc;
+
+    struct T {
+        given: &'static str,
+        expected_fields: &'static str,
+        expected_body: &'static str,
+    }
+
+    #[test]
+    fn test_parsing() {
+        let test_cases = vec![T {
+            given: indoc! {r#"
+                   A: b
+                   C: d
+                      continued
+
+                   this is the
+                   body!
+                "#},
+            expected_fields: indoc! {r#"
+                   {"A": ["b"], "C": ["d\n   continued"]}
+                "#},
+            expected_body: "this is the\nbody!\n",
+        }];
+
+        for test_case in test_cases {
+            let got = RFC822ish::parse(test_case.given).unwrap();
+            let expected_fields: super::Fields =
+                serde_json::from_str(test_case.expected_fields).unwrap();
+            assert_eq!(got.fields, expected_fields);
+            assert_eq!(got.body.unwrap(), test_case.expected_body);
+        }
+    }
 }
