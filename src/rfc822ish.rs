@@ -147,13 +147,14 @@ mod test {
     struct T {
         given: &'static str,
         expected_fields: &'static str,
-        expected_body: &'static str,
+        expected_body: Option<&'static str>,
     }
 
     #[test]
-    fn test_parsing() {
-        let test_cases = vec![T {
-            given: indoc! {r#"
+    fn test_successful_parsing() {
+        let test_cases = vec![
+            T {
+                given: indoc! {r#"
                    A: b
                    C: d
                       continued
@@ -161,18 +162,40 @@ mod test {
                    this is the
                    body!
                 "#},
-            expected_fields: indoc! {r#"
+                expected_fields: indoc! {r#"
                    {"A": ["b"], "C": ["d\n   continued"]}
                 "#},
-            expected_body: "this is the\nbody!\n",
-        }];
+                expected_body: Some("this is the\nbody!\n"),
+            },
+            T {
+                given: indoc! {r#"
+                   no: body
+                "#},
+                expected_fields: indoc! {r#"
+                   {"no": ["body"]}
+                "#},
+                expected_body: None,
+            },
+            T {
+                given: indoc! {r#"
+                   duplicate: one
+                   duplicate: two
+                   another: field
+                   duplicate: three
+                "#},
+                expected_fields: indoc! {r#"
+                   {"duplicate": ["one", "two", "three"], "another": ["field"]}
+                "#},
+                expected_body: None,
+            },
+        ];
 
         for test_case in test_cases {
             let got = RFC822ish::parse(test_case.given).unwrap();
             let expected_fields: super::Fields =
                 serde_json::from_str(test_case.expected_fields).unwrap();
             assert_eq!(got.fields, expected_fields);
-            assert_eq!(got.body.unwrap(), test_case.expected_body);
+            assert_eq!(got.body, test_case.expected_body.map(String::from));
         }
     }
 }
