@@ -1,5 +1,4 @@
 #[forbid(unsafe_code)]
-
 mod rfc822ish;
 
 use anyhow::Result;
@@ -69,7 +68,8 @@ mod nuget_api {
         pub fn versions(&self, pkg: &str) -> Result<Vec<String>> {
             let trailing = format!("{}/index.json", pkg);
             let url = self.package_base_address.join(&trailing)?;
-            let v: VersionsPage = self.agent.request_url("GET", &url).call()?.into_json()?;
+            let v: VersionsPage =
+                self.agent.request_url("GET", &url).call()?.into_json()?;
             Ok(v.versions)
         }
 
