@@ -16,6 +16,7 @@ serde_json = "1.0.64"
 url = { version = "2.2.2", features = ["serde"] }
 nom = "6.1.2"
 nom-supreme = "0.4.3"
+peg = "0.7.0"
 
 [dev-dependencies]
 indoc = "1.0.3"

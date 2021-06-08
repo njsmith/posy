@@ -5,13 +5,18 @@ use std::collections::HashMap;
 // https://packaging.python.org/specifications/core-metadata/
 pub type Fields = HashMap<String, Vec<String>>;
 
-#[derive(Debug)]
+#[cfg(test)]
+use serde::Deserialize;
+
+// The Deserialize here is just so we can
+#[cfg_attr(test, derive(Debug, Deserialize))]
 pub struct RFC822ish {
     pub fields: Fields,
     pub body: Option<String>,
 }
 
 mod parser_internals {
+    use super::*;
     use nom::bytes::complete::{is_a, is_not, take_while1};
     use nom::character::complete::one_of;
     use nom::combinator::rest;
@@ -67,9 +72,51 @@ mod parser_internals {
     // we fail on oddities like an empty field name or a continuation line at
     // the start of input.
 
-    pub fn parse_metadata(
-        input: &str,
-    ) -> Result<super::RFC822ish, ErrorTree<Location>> {
+    peg::parser! {
+        grammar rfc822ish_parser() for str {
+            rule line_ending()
+                = quiet!{"\r\n" / "\r" / "\n"}
+                  / expected!("end of line")
+
+            rule field_name() -> &'input str
+                = quiet!{$(['\x21'..='\x39' | '\x3b'..='\x7e']+)}
+                  / expected!("field name")
+
+            rule field_separator()
+                = ":" [' ' | '\t']*
+
+            rule field_value_piece()
+                = [^ '\r' | '\n']*
+
+            rule continuation_line_ending()
+                = line_ending() [' ' | '\t']
+
+            rule field_value() -> &'input str
+                = $(field_value_piece() ** continuation_line_ending())
+
+            rule field() -> (String, String)
+                = n:field_name() field_separator() v:field_value()
+                    { (n.to_owned(), v.to_owned()) }
+
+            rule fields() -> Vec<(String, String)>
+                = field() ** line_ending()
+
+            rule trailing_body() -> String
+                = line_ending() line_ending() b:$([_]*) { b.to_owned() }
+
+            rule rfc822ish() -> RFC822ish
+                = f:fields() body:(trailing_body()?)
+                     {
+                         let mut fields = Fields::new();
+                         for (name, value) in f {
+                             fields.entry(name).or_insert(Vec::new()).push(value)
+                         };
+                         RFC822ish { fields, body, }
+                     }
+        }
+    }
+
+    pub fn parse_metadata(input: &str) -> Result<RFC822ish, ErrorTree<Location>> {
         // This has to be an actual function, not just a combinator object,
         // because nom's type system is awkward and if it were a combinator
         // there would be no way to use it multiple times below, even as
@@ -106,7 +153,7 @@ mod parser_internals {
         let metadata = nom::sequence::pair(fields, body.opt());
         let mut parse = final_parser(metadata);
         let (fields_vec, body) = parse(input)?;
-        let mut fields = super::Fields::new();
+        let mut fields = Fields::new();
         for (field_name, field_value) in fields_vec {
             fields
                 .entry(field_name.to_owned())
@@ -115,7 +162,7 @@ mod parser_internals {
         }
         // Convert from Option<&str> to Option<String>
         let body = body.map(String::from);
-        Ok(super::RFC822ish { fields, body })
+        Ok(RFC822ish { fields, body })
     }
 }
 
@@ -190,6 +237,14 @@ mod test {
                 "#},
                 expected_body: None,
             },
+            T {
+                given: indoc! {r#"
+                   no: trailing newline"#},
+                expected_fields: indoc! {r#"
+                   {"no": ["trailing newline"]}
+                "#},
+                expected_body: None,
+            },
         ];
 
         for test_case in test_cases {
@@ -214,7 +269,7 @@ mod test {
             indoc! {r#"
                bad key name: whee
             "#},
-            ": no key name\n"
+            ": no key name\n",
         ];
         for test_case in test_cases {
             let got = RFC822ish::parse(test_case);
