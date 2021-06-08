@@ -5,13 +5,14 @@ use std::collections::HashMap;
 // https://packaging.python.org/specifications/core-metadata/
 pub type Fields = HashMap<String, Vec<String>>;
 
+#[derive(Debug)]
 pub struct RFC822ish {
     pub fields: Fields,
     pub body: Option<String>,
 }
 
 mod parser_internals {
-    use nom::bytes::complete::{is_a, is_not, take_while};
+    use nom::bytes::complete::{is_a, is_not, take_while1};
     use nom::character::complete::one_of;
     use nom::combinator::rest;
     use nom::multi::many1;
@@ -63,7 +64,8 @@ mod parser_internals {
     // The 'email' module is also extremely lenient of errors. We'll try to be
     // a bit more strict -- we try to be lenient of mangled utf-8, because
     // obviously someone must have messed that up in the history of PyPI, but
-    // we fail on oddities like a missing
+    // we fail on oddities like an empty field name or a continuation line at
+    // the start of input.
 
     pub fn parse_metadata(
         input: &str,
@@ -85,7 +87,7 @@ mod parser_internals {
             0o41 <= i && i <= 0o176 && c != ':'
         }
 
-        let field_name = take_while(is_field_name_char).context("field name");
+        let field_name = take_while1(is_field_name_char).context("field name");
         let field_separator = tag(":").and(is_a(" \t")).context("field separator");
 
         let value_line_piece = is_not("\r\n");
@@ -141,17 +143,17 @@ impl CoreMetadata {
 
 #[cfg(test)]
 mod test {
-    use super::RFC822ish;
+    use super::*;
     use indoc::indoc;
-
-    struct T {
-        given: &'static str,
-        expected_fields: &'static str,
-        expected_body: Option<&'static str>,
-    }
 
     #[test]
     fn test_successful_parsing() {
+        struct T {
+            given: &'static str,
+            expected_fields: &'static str,
+            expected_body: Option<&'static str>,
+        }
+
         let test_cases = vec![
             T {
                 given: indoc! {r#"
@@ -192,10 +194,32 @@ mod test {
 
         for test_case in test_cases {
             let got = RFC822ish::parse(test_case.given).unwrap();
-            let expected_fields: super::Fields =
+            let expected_fields: Fields =
                 serde_json::from_str(test_case.expected_fields).unwrap();
             assert_eq!(got.fields, expected_fields);
             assert_eq!(got.body, test_case.expected_body.map(String::from));
+        }
+    }
+
+    #[test]
+    fn test_failed_parsing() {
+        let test_cases = vec![
+            "",
+            indoc! {r#"
+                  continuation line
+               at: beginning
+
+               not good
+            "#},
+            indoc! {r#"
+               bad key name: whee
+            "#},
+            ": no key name\n"
+        ];
+        for test_case in test_cases {
+            let got = RFC822ish::parse(test_case);
+            println!("{:?} -> {:?}", test_case, got);
+            assert!(got.is_err());
         }
     }
 }
