@@ -8,8 +8,7 @@ pub type Fields = HashMap<String, Vec<String>>;
 #[cfg(test)]
 use serde::Deserialize;
 
-// The Deserialize here is just so we can
-#[cfg_attr(test, derive(Debug, Deserialize))]
+#[cfg_attr(test, derive(Debug, Deserialize, PartialEq))]
 pub struct RFC822ish {
     pub fields: Fields,
     pub body: Option<String>,
@@ -196,9 +195,10 @@ mod test {
     #[test]
     fn test_successful_parsing() {
         struct T {
+            // Input to parser
             given: &'static str,
-            expected_fields: &'static str,
-            expected_body: Option<&'static str>,
+            // Expected parsed data structure, written as json
+            expected: &'static str,
         }
 
         let test_cases = vec![
@@ -211,19 +211,20 @@ mod test {
                    this is the
                    body!
                 "#},
-                expected_fields: indoc! {r#"
-                   {"A": ["b"], "C": ["d\n   continued"]}
+                expected: indoc! {r#"
+                   {
+                     "fields": { "A": ["b"], "C": ["d\n   continued"]},
+                     "body": "this is the\nbody!\n"
+                   }
                 "#},
-                expected_body: Some("this is the\nbody!\n"),
             },
             T {
                 given: indoc! {r#"
                    no: body
                 "#},
-                expected_fields: indoc! {r#"
-                   {"no": ["body"]}
+                expected: indoc! {r#"
+                   {"fields": {"no": ["body"]}}
                 "#},
-                expected_body: None,
             },
             T {
                 given: indoc! {r#"
@@ -232,27 +233,23 @@ mod test {
                    another: field
                    duplicate: three
                 "#},
-                expected_fields: indoc! {r#"
-                   {"duplicate": ["one", "two", "three"], "another": ["field"]}
+                expected: indoc! {r#"
+                   {"fields": {"duplicate": ["one", "two", "three"], "another": ["field"]}}
                 "#},
-                expected_body: None,
             },
             T {
                 given: indoc! {r#"
                    no: trailing newline"#},
-                expected_fields: indoc! {r#"
-                   {"no": ["trailing newline"]}
+                expected: indoc! {r#"
+                   {"fields": {"no": ["trailing newline"]}}
                 "#},
-                expected_body: None,
             },
         ];
 
         for test_case in test_cases {
             let got = RFC822ish::parse(test_case.given).unwrap();
-            let expected_fields: Fields =
-                serde_json::from_str(test_case.expected_fields).unwrap();
-            assert_eq!(got.fields, expected_fields);
-            assert_eq!(got.body, test_case.expected_body.map(String::from));
+            let expected: RFC822ish = serde_json::from_str(test_case.expected).unwrap();
+            assert_eq!(got, expected);
         }
     }
 
