@@ -15,7 +15,16 @@ zip = "0.5.13"
 serde_json = "1.0.64"
 url = { version = "2.2.2", features = ["serde"] }
 peg = "0.7.0"
-regex = "1.5.4"
+# We just use regex for validating metadata formats, which are
+# ascii-only (and in fact supporting unicode would probably be a bug).
+# So disable the unicode feature to avoid pulling in the big unicode
+# tables and make sure we're not accidentally using them.
+#
+# We could potentially drop 'perf' too? idk
+regex = { version = "1.5.4", default-features = false, features = ["std", "perf"] }
+derivative = "2.2.0"
+serde_with = "1.9.2"
+once_cell = "1.7.2"
 
 [dev-dependencies]
 indoc = "1.0.3"

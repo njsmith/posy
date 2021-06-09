@@ -1,5 +1,5 @@
 #[forbid(unsafe_code)]
-mod rfc822ish;
+mod vocab;
 
 use anyhow::Result;
 use std::io::Cursor;

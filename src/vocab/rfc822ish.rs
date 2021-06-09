@@ -1,8 +1,6 @@
 use anyhow::Result;
 use std::collections::HashMap;
 
-// A parsed version of a package METADATA or PKG-INFO or WHEEL file, as per
-// https://packaging.python.org/specifications/core-metadata/
 pub type Fields = HashMap<String, Vec<String>>;
 
 #[cfg(test)]
@@ -68,7 +66,7 @@ peg::parser! {
 
         // I think in real RFC822, the body is mandatory? But in early
         // versions of the metadata spec, PKG-INFO/METADATA files didn't have
-        // a body, and email.parser
+        // a body, and email.parser don't care, it does what it wants.
         rule trailing_body() -> String
             = line_ending() line_ending() b:$([_]*) { b.to_owned() }
 
@@ -93,21 +91,28 @@ impl RFC822ish {
     pub fn parse(input: &str) -> Result<RFC822ish> {
         Ok(rfc822ish_parser::rfc822ish(input)?)
     }
-}
 
-pub struct CoreMetadata(Fields);
-
-impl CoreMetadata {
-    pub fn parse(data: &str) -> Result<CoreMetadata> {
-        let mut rfc822ish = RFC822ish::parse(data)?;
-        if let Some(body) = rfc822ish.body {
-            rfc822ish
-                .fields
-                .entry("Description".to_string())
-                .or_insert(Vec::new())
-                .push(body);
+    pub fn take_all(&mut self, key: &str) -> Vec<String> {
+        match self.fields.remove(key) {
+            Some(vec) => vec,
+            None => Vec::new(),
         }
-        Ok(CoreMetadata(rfc822ish.fields))
+    }
+
+    pub fn maybe_take_the(&mut self, key: &str) -> Result<Option<String>> {
+        let mut values = self.take_all(key);
+        match values.len() {
+            0 => Ok(None),
+            1 => Ok(values.pop()),
+            _ => anyhow::bail!("multiple values for singleton key {}", key),
+        }
+    }
+
+    pub fn take_the(&mut self, key: &str) -> Result<String> {
+        match self.maybe_take_the(key)? {
+            Some(result) => Ok(result),
+            None => anyhow::bail!("can't find required key {}", key),
+        }
     }
 }
 
