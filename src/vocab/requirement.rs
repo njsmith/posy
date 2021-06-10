@@ -308,6 +308,8 @@ impl TryFrom<&str> for RequiresPython {
     }
 }
 
+try_from_str_boilerplate!(RequiresPython);
+
 #[cfg(test)]
 mod test {
     use super::*;

@@ -9,12 +9,8 @@ pub struct CoreMetadata {
     pub metadata_version: Version,
     pub name: PackageName,
     pub version: Version,
-    // XX should probably be more like:
-    //   requires: Vec<Requirement>
-    //   extras: HashMap<Extra, Vec<Requirement>>  // may be empty
-    pub requires_dist: Vec<String>, // XXX newtype needed
-    // or maybe there should be a "matches all" comparator object?
-    pub requires_python: Option<String>, // XXX newtype needed
+    pub requires_dist: Vec<Requirement>,
+    pub requires_python: RequiresPython,
     pub extras: HashSet<Extra>,
 }
 
@@ -23,9 +19,18 @@ impl CoreMetadata {
         let input = String::from_utf8_lossy(input);
         let mut parsed = RFC822ish::parse(&input)?;
 
-        static NEXT_MAJOR_METADATA_VERSION: Lazy<Version> = Lazy::new(|| {
-            parse_version("3").unwrap()
-        });
+        static NEXT_MAJOR_METADATA_VERSION: Lazy<Version> =
+            Lazy::new(|| parse_version("3").unwrap());
+
+        let mut requires_dist = Vec::new();
+        for req_str in parsed.take_all("Requires-Dist").drain(..) {
+            requires_dist.push(Requirement::parse(&req_str, ParseExtra::Allowed)?);
+        }
+
+        let requires_python = match parsed.maybe_take_the("Requires-Python")? {
+            Some(rp_str) => rp_str.try_into()?,
+            None => RequiresPython { constraints: Vec::new() },
+        };
 
         let mut extras: HashSet<Extra> = HashSet::new();
         for extra in parsed.take_all("Provides-Extra").drain(..) {
@@ -36,8 +41,8 @@ impl CoreMetadata {
             metadata_version: parse_version(&parsed.take_the("Metadata-Version")?)?,
             name: parsed.take_the("Name")?.parse()?,
             version: parse_version(&parsed.take_the("Version")?)?,
-            requires_dist: parsed.take_all("Requires-Dist"),
-            requires_python: parsed.maybe_take_the("Requires-Python")?,
+            requires_dist,
+            requires_python,
             extras,
         };
 

@@ -46,13 +46,7 @@ impl TryFrom<&str> for PackageName {
     }
 }
 
-impl FromStr for PackageName {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        PackageName::try_from(s)
-    }
-}
+try_from_str_boilerplate!(PackageName);
 
 impl Display for PackageName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

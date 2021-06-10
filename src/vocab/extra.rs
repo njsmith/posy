@@ -39,10 +39,4 @@ impl TryFrom<&str> for Extra {
     }
 }
 
-impl FromStr for Extra {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.try_into()
-    }
-}
+try_from_str_boilerplate!(Extra);

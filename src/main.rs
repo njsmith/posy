@@ -1,6 +1,7 @@
 #[forbid(unsafe_code)]
 mod vocab;
 pub mod prelude;
+mod util;
 
 use anyhow::Result;
 use std::io::Cursor;

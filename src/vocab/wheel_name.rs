@@ -110,6 +110,8 @@ impl TryFrom<&str> for WheelName {
     }
 }
 
+try_from_str_boilerplate!(WheelName);
+
 impl Display for WheelName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let build_tag = match (self.build_number, &self.build_name[..]) {

@@ -11,3 +11,4 @@ pub use derivative::Derivative;
 pub use serde_with::{DeserializeFromStr, SerializeDisplay};
 
 pub use crate::vocab::*;
+pub use crate::try_from_str_boilerplate;
