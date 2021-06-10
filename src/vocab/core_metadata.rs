@@ -29,7 +29,9 @@ impl CoreMetadata {
 
         let requires_python = match parsed.maybe_take_the("Requires-Python")? {
             Some(rp_str) => rp_str.try_into()?,
-            None => RequiresPython { constraints: Vec::new() },
+            None => RequiresPython {
+                constraints: Vec::new(),
+            },
         };
 
         let mut extras: HashSet<Extra> = HashSet::new();
@@ -87,7 +89,7 @@ mod test {
             Requires-Python: >=3.6
             Requires-Dist: attrs (>=19.2.0)
             Requires-Dist: sortedcontainers
-            Requires-Dist: contextvars (>=2.1) ; python_version < "3.7"
+            Requires-Dist: contextvars[foo] (>=2.1) ; python_version < "3.7"
 
             The Trio project's goal is...
         "#}
@@ -101,12 +103,41 @@ mod test {
         assert_eq!(
             metadata.requires_dist,
             vec![
-                "attrs (>=19.2.0)",
-                "sortedcontainers",
-                r#"contextvars (>=2.1) ; python_version < "3.7""#
+                Requirement {
+                    name: "attrs".try_into().unwrap(),
+                    extras: vec![],
+                    constraints:
+                      vec![Constraint::GreaterThanEqual(parse_version("19.2.0").unwrap())],
+                    env_marker: None,
+                },
+                Requirement {
+                    name: "sortedcontainers".try_into().unwrap(),
+                    extras: vec![],
+                    constraints: vec![],
+                    env_marker: None,
+                },
+                Requirement {
+                    name: "contextvars".try_into().unwrap(),
+                    extras: vec!["foo".try_into().unwrap()],
+                    constraints: vec![Constraint::GreaterThanEqual(parse_version("2.1").unwrap())],
+                    env_marker: Some(
+                        Marker::Comparison {
+                            op: MarkerOp::StrictlyLessThan,
+                            lhs: MarkerValue::Variable("python_version".into()),
+                            rhs: MarkerValue::Literal("3.7".into()),
+                        }
+                    ),
+                },
             ]
         );
-        assert_eq!(metadata.requires_python, Some(">=3.6".into()));
+        assert_eq!(
+            metadata.requires_python,
+            RequiresPython {
+                constraints: vec![Constraint::GreaterThanEqual(
+                    parse_version("3.6").unwrap()
+                )]
+            }
+        );
         assert_eq!(metadata.extras, HashSet::new());
     }
 }

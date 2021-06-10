@@ -21,7 +21,7 @@ use crate::prelude::*;
 // represent a URI-based requirement, given that they don't *have* version
 // constraints.
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Constraint {
     LessThanEqual(Version),
     StrictlyLessThan(Version),
@@ -33,18 +33,18 @@ pub enum Constraint {
     Exactly(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequiresPython {
     pub constraints: Vec<Constraint>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MarkerValue {
     Variable(String),
     Literal(String),
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum MarkerOp {
     LessThanEqual,
     StrictlyLessThan,
@@ -58,7 +58,7 @@ pub enum MarkerOp {
     Exactly,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Marker {
     And(Box<Marker>, Box<Marker>),
     Or(Box<Marker>, Box<Marker>),
@@ -69,18 +69,18 @@ pub enum Marker {
     },
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ParseExtra {
     Allowed,
     NotAllowed,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Requirement {
-    name: PackageName,
-    extras: Vec<Extra>,
-    constraints: Vec<Constraint>,
-    env_marker: Option<Marker>,
+    pub name: PackageName,
+    pub extras: Vec<Extra>,
+    pub constraints: Vec<Constraint>,
+    pub env_marker: Option<Marker>,
 }
 
 // A version of 'parse_version' that uses &'static str as its error type, to
@@ -192,10 +192,8 @@ peg::parser! {
                 / "implementation_version" / "extra"
               )
               {?
-               if let ParseExtra::NotAllowed = parse_extra {
-                   if var == "extra" {
-                       return Err("'extra' marker is not valid in this context")
-                   }
+               if ParseExtra::NotAllowed == parse_extra && var == "extra" {
+                   return Err("'extra' marker is not valid in this context")
                }
                Ok(MarkerValue::Variable(var.to_owned()))
               }
@@ -315,14 +313,13 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_parse() {
+    fn test_smoke() {
         let r: Requirement = parser::specification(
             "twisted[tls] >= 20, != 20.1.*; python_version >= '3'",
             ParseExtra::Allowed,
         )
         .unwrap();
         println!("{:?}", r);
-        panic!()
     }
 }
 

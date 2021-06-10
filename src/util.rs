@@ -9,7 +9,7 @@ macro_rules! try_from_str_boilerplate {
             type Error = anyhow::Error;
 
             fn try_from(s: String) -> Result<Self, Self::Error> {
-                s.try_into()
+                (&*s).try_into()
             }
         }
 
