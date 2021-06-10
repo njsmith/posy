@@ -1,11 +1,6 @@
-use std::collections::HashSet;
-use once_cell::sync::Lazy;
+use crate::prelude::*;
 
-use anyhow::Result;
-
-use super::package_name::PackageName;
 use super::rfc822ish::RFC822ish;
-use pep440::Version;
 
 /// There are more fields we could add here, but this should be good enough to
 /// get started.
@@ -14,10 +9,13 @@ pub struct CoreMetadata {
     pub metadata_version: Version,
     pub name: PackageName,
     pub version: Version,
+    // XX should probably be more like:
+    //   requires: Vec<Requirement>
+    //   extras: HashMap<Extra, Vec<Requirement>>  // may be empty
     pub requires_dist: Vec<String>, // XXX newtype needed
     // or maybe there should be a "matches all" comparator object?
     pub requires_python: Option<String>, // XXX newtype needed
-    pub extras: HashSet<String>,         // XXX newtype needed
+    pub extras: HashSet<Extra>,
 }
 
 impl CoreMetadata {
@@ -26,21 +24,21 @@ impl CoreMetadata {
         let mut parsed = RFC822ish::parse(&input)?;
 
         static NEXT_MAJOR_METADATA_VERSION: Lazy<Version> = Lazy::new(|| {
-            Version::parse("3").unwrap()
+            parse_version("3").unwrap()
         });
 
-        fn version(version_str: &str) -> Result<Version> {
-            Version::parse(version_str)
-                .ok_or(anyhow::anyhow!("Invalid version {}", version_str))
+        let mut extras: HashSet<Extra> = HashSet::new();
+        for extra in parsed.take_all("Provides-Extra").drain(..) {
+            extras.insert(extra.parse()?);
         }
 
         let retval = CoreMetadata {
-            metadata_version: version(&parsed.take_the("Metadata-Version")?)?,
+            metadata_version: parse_version(&parsed.take_the("Metadata-Version")?)?,
             name: parsed.take_the("Name")?.parse()?,
-            version: version(&parsed.take_the("Version")?)?,
+            version: parse_version(&parsed.take_the("Version")?)?,
             requires_dist: parsed.take_all("Requires-Dist"),
             requires_python: parsed.maybe_take_the("Requires-Python")?,
-            extras: parsed.take_all("Provides-Extra").drain(..).collect(),
+            extras,
         };
 
         // Quoth https://packaging.python.org/specifications/core-metadata:
@@ -92,9 +90,9 @@ mod test {
 
         let metadata = CoreMetadata::parse(metadata_text).unwrap();
 
-        assert_eq!(metadata.metadata_version, Version::parse("2.1").unwrap());
+        assert_eq!(metadata.metadata_version, parse_version("2.1").unwrap());
         assert_eq!(metadata.name.normalized(), "trio");
-        assert_eq!(metadata.version, Version::parse("0.16.0").unwrap());
+        assert_eq!(metadata.version, parse_version("0.16.0").unwrap());
         assert_eq!(
             metadata.requires_dist,
             vec![

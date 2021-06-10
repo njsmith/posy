@@ -1,10 +1,6 @@
-use anyhow::Result;
-use std::collections::HashMap;
+use crate::prelude::*;
 
 pub type Fields = HashMap<String, Vec<String>>;
-
-#[cfg(test)]
-use serde::Deserialize;
 
 #[cfg_attr(test, derive(Debug, Deserialize, PartialEq))]
 pub struct RFC822ish {

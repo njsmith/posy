@@ -1,11 +1,4 @@
-/// Types for representing Python package metadata
-use std::{convert::TryFrom, fmt::Display, str::FromStr};
-
-use anyhow::{anyhow, Result};
-use derivative::Derivative;
-use regex::Regex;
-use serde_with::{DeserializeFromStr, SerializeDisplay};
-use once_cell::sync::Lazy;
+use crate::prelude::*;
 
 #[derive(Debug, Clone, DeserializeFromStr, SerializeDisplay, Derivative)]
 #[derivative(Hash, PartialEq, Eq)]
