@@ -10,7 +10,12 @@ use std::ops::Range;
 pub struct Version(pep440::Version);
 
 impl Version {
-    const ZERO: Lazy<Version> = Lazy::new(|| "0a0".try_into().unwrap());
+    const ZERO: Lazy<Version> = Lazy::new(|| "0a0.dev0".try_into().unwrap());
+
+    // XX BUG IN pep440 crate: the actuall smallest post-prefix is .post0. And X.Y.post0
+    // is strictly larger than X.Y. BUT, PEP 440 treats these as the same. (This may
+    // also screw up our hashing, but I'll worry about that later...).
+    const SMALLEST_POST: Option<u32> = Some(1);
 
     const INFINITY: Lazy<Version> = Lazy::new(|| {
         // Technically there is no largest PEP 440 version. But this should be good
@@ -19,7 +24,7 @@ impl Version {
             epoch: u32::MAX,
             release: vec![u32::MAX, u32::MAX, u32::MAX],
             pre: None,
-            post: None,
+            post: Some(u32::MAX),
             dev: None,
             local: vec![],
         })
@@ -47,14 +52,12 @@ impl Version {
         } else if let Some(post) = &mut new.0.post {
             *post += 1;
         } else {
-            new.0.post = Some(0);
+            new.0.post = Version::SMALLEST_POST;
         }
         new
     }
 
-    pub fn satisfies<T>(&self, constraints: T) -> Result<bool>
-    where
-        T: IntoIterator<Item = Constraint>,
+    pub fn satisfies(&self, constraints: &Vec<Constraint>) -> Result<bool>
     {
         for constraint in constraints {
             if !constraint.satisfied_by(self)? {
@@ -170,6 +173,7 @@ impl CompareOp {
                 ],
                 // "The exclusive ordered comparison >V MUST NOT allow a post-release of
                 // the given version unless V itself is a post release."
+                // So >V normally becomes >=(V+1).dev0
                 StrictlyGreaterThan => match version.0.post {
                     Some(_) => vec![version.next()..Version::INFINITY.clone()],
                     None => {
@@ -182,9 +186,9 @@ impl CompareOp {
                         vec![new_min..Version::INFINITY.clone()]
                     }
                 },
-                // The exclusive ordered comparison <V MUST NOT allow a pre-release of
+                // "The exclusive ordered comparison <V MUST NOT allow a pre-release of
                 // the specified version unless the specified version is itself a
-                // pre-release.
+                // pre-release."
                 StrictlyLessThan => {
                     if (&version.0.pre, &version.0.dev) == (&None, &None) {
                         let mut new_max = version.clone();

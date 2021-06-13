@@ -30,6 +30,6 @@ serde_cbor = "0.11.1"
 structopt = "0.3.21"
 data-encoding = "2.3.2"
 pubgrub = "0.2.0"
+indoc = "1.0.3"
 
 [dev-dependencies]
-indoc = "1.0.3"

@@ -79,29 +79,31 @@ pub mod marker {
         Operator { op: Op, lhs: Value, rhs: Value },
     }
 
+    #[derive(Debug)]
     pub enum EvalError {
         MissingVars(HashSet<String>),
         Other(anyhow::Error),
     }
     pub type EvalResult<T> = std::result::Result<T, EvalError>;
 
-    pub trait Env {
-        fn get(&self, var: &str) -> Option<&str>;
-    }
+    // XX switch this trait, and maybe to avoid allocating in here?
+    // pub trait Env {
+    //     fn get_marker_var(&self, var: &str) -> Option<&str>;
+    // }
 
     impl Value {
-        pub fn eval<'a>(&'a self, env: &'a dyn Env) -> EvalResult<&'a str> {
+        pub fn eval(&self, env: &HashMap<String, String>) -> EvalResult<String> {
             match self {
-                Value::Variable(varname) => env.get(varname).ok_or_else(|| {
+                Value::Variable(varname) => env.get(varname).map(|s| s.clone()).ok_or_else(|| {
                     EvalError::MissingVars(vec![varname.to_owned()].into_iter().collect())
                 }),
-                Value::Literal(s) => Ok(&s),
+                Value::Literal(s) => Ok(s.clone()),
             }
         }
     }
 
     impl Expr {
-        pub fn eval(&self, env: &dyn Env) -> EvalResult<bool> {
+        pub fn eval(&self, env: &HashMap<String, String>) -> EvalResult<bool> {
             fn combine_err<T>(
                 lhs_res: EvalResult<T>,
                 rhs_res: EvalResult<T>,
@@ -131,13 +133,13 @@ pub mod marker {
                 Expr::Operator { op, lhs, rhs } => {
                     let (lhs_val, rhs_val) = combine_err(lhs.eval(env), rhs.eval(env))?;
                     match op {
-                        Op::In => rhs_val.contains(lhs_val),
-                        Op::NotIn => !rhs_val.contains(lhs_val),
+                        Op::In => rhs_val.contains(&lhs_val),
+                        Op::NotIn => !rhs_val.contains(&lhs_val),
                         Op::Compare(op) => {
                             // If both sides can be parsed as versions, then we do a
                             // version comparison
-                            if let Ok(lhs_ver) = TryInto::<Version>::try_into(lhs_val) {
-                                if let Ok(rhs_ranges) = op.to_ranges(rhs_val) {
+                            if let Ok(lhs_ver) = lhs_val.parse() {
+                                if let Ok(rhs_ranges) = op.to_ranges(&rhs_val) {
                                     return Ok(rhs_ranges
                                         .into_iter()
                                         .any(|r| r.contains(&lhs_ver)));
