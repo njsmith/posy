@@ -20,5 +20,5 @@ macro_rules! try_from_str_boilerplate {
                 s.try_into()
             }
         }
-    }
+    };
 }

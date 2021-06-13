@@ -27,9 +27,8 @@ impl TryFrom<&str> for PackageName {
             Regex::new(r"(?i-u)^([A-Z0-9]|[A-Z0-9][A-Z0-9._-]*[A-Z0-9])$").unwrap()
         });
         // https://www.python.org/dev/peps/pep-0503/#normalized-names
-        static NAME_NORMALIZE: Lazy<Regex> = Lazy::new(|| {
-            Regex::new(r"[-_.]").unwrap()
-        });
+        static NAME_NORMALIZE: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"[-_.]").unwrap());
 
         if !NAME_VALIDATE.is_match(as_given) {
             return Err(anyhow!("Invalid package name {:?}", as_given));

@@ -20,7 +20,7 @@ impl CoreMetadata {
         let mut parsed = RFC822ish::parse(&input)?;
 
         static NEXT_MAJOR_METADATA_VERSION: Lazy<Version> =
-            Lazy::new(|| parse_version("3").unwrap());
+            Lazy::new(|| "3".try_into().unwrap());
 
         let mut requires_dist = Vec::new();
         for req_str in parsed.take_all("Requires-Dist").drain(..) {
@@ -40,9 +40,9 @@ impl CoreMetadata {
         }
 
         let retval = CoreMetadata {
-            metadata_version: parse_version(&parsed.take_the("Metadata-Version")?)?,
+            metadata_version: parsed.take_the("Metadata-Version")?.try_into()?,
             name: parsed.take_the("Name")?.parse()?,
-            version: parse_version(&parsed.take_the("Version")?)?,
+            version: parsed.take_the("Version")?.try_into()?,
             requires_dist,
             requires_python,
             extras,
@@ -77,6 +77,7 @@ impl CoreMetadata {
 mod test {
     use super::*;
     use indoc::indoc;
+    use CompareOp::*;
 
     #[test]
     fn test_basic_parse() {
@@ -97,17 +98,19 @@ mod test {
 
         let metadata = CoreMetadata::parse(metadata_text).unwrap();
 
-        assert_eq!(metadata.metadata_version, parse_version("2.1").unwrap());
+        assert_eq!(metadata.metadata_version, "2.1".try_into().unwrap());
         assert_eq!(metadata.name.normalized(), "trio");
-        assert_eq!(metadata.version, parse_version("0.16.0").unwrap());
+        assert_eq!(metadata.version, "0.16.0".try_into().unwrap());
         assert_eq!(
             metadata.requires_dist,
             vec![
                 Requirement {
                     name: "attrs".try_into().unwrap(),
                     extras: vec![],
-                    constraints:
-                      vec![Constraint::GreaterThanEqual(parse_version("19.2.0").unwrap())],
+                    constraints: vec![Constraint {
+                        op: GreaterThanEqual,
+                        value: "19.2.0".into()
+                    }],
                     env_marker: None,
                 },
                 Requirement {
@@ -119,23 +122,25 @@ mod test {
                 Requirement {
                     name: "contextvars".try_into().unwrap(),
                     extras: vec!["foo".try_into().unwrap()],
-                    constraints: vec![Constraint::GreaterThanEqual(parse_version("2.1").unwrap())],
-                    env_marker: Some(
-                        Marker::Comparison {
-                            op: MarkerOp::StrictlyLessThan,
-                            lhs: MarkerValue::Variable("python_version".into()),
-                            rhs: MarkerValue::Literal("3.7".into()),
-                        }
-                    ),
+                    constraints: vec![Constraint {
+                        op: GreaterThanEqual,
+                        value: "2.1".into()
+                    }],
+                    env_marker: Some(marker::Expr::Operator {
+                        op: marker::Op::Compare(StrictlyLessThan),
+                        lhs: marker::Value::Variable("python_version".into()),
+                        rhs: marker::Value::Literal("3.7".into()),
+                    }),
                 },
             ]
         );
         assert_eq!(
             metadata.requires_python,
             RequiresPython {
-                constraints: vec![Constraint::GreaterThanEqual(
-                    parse_version("3.6").unwrap()
-                )]
+                constraints: vec![Constraint {
+                    op: GreaterThanEqual,
+                    value: "3.6".into(),
+                }]
             }
         );
         assert_eq!(metadata.extras, HashSet::new());

@@ -13,11 +13,10 @@ impl WheelMetadata {
         let input: &str = std::str::from_utf8(input)?;
         let mut parsed = RFC822ish::parse(&input)?;
 
-        static NEXT_MAJOR_WHEEL_VERSION: Lazy<Version> = Lazy::new(|| {
-            parse_version("2").unwrap()
-        });
+        static NEXT_MAJOR_WHEEL_VERSION: Lazy<Version> =
+            Lazy::new(|| "2".try_into().unwrap());
 
-        let wheel_version = parse_version(&parsed.take_the("Wheel-Version")?)?;
+        let wheel_version = parsed.take_the("Wheel-Version")?.try_into()?;
 
         if wheel_version >= *NEXT_MAJOR_WHEEL_VERSION {
             bail!("unsupported Wheel-Version {}", wheel_version);

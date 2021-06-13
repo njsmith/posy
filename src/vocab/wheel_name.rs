@@ -100,7 +100,7 @@ impl TryFrom<&str> for WheelName {
 
         Ok(WheelName {
             distribution: pieces[0].try_into()?,
-            version: parse_version(pieces[1])?,
+            version: pieces[1].try_into()?,
             build_number,
             build_name: build_name.into(),
             py_tags: split_compressed(pieces[2]),
@@ -138,7 +138,7 @@ mod test {
     fn test_wheel_name_from_str() {
         let wn: WheelName = "trio-0.18.0-py3-none-any.whl".try_into().unwrap();
         assert_eq!(wn.distribution, "trio".try_into().unwrap());
-        assert_eq!(wn.version, parse_version("0.18.0").unwrap());
+        assert_eq!(wn.version, "0.18.0".try_into().unwrap());
         assert_eq!(wn.build_number, None);
         assert_eq!(wn.build_name, "");
         assert_eq!(wn.py_tags, vec!["py3"]);
@@ -154,7 +154,7 @@ mod test {
             .try_into()
             .unwrap();
         assert_eq!(wn.distribution, "foo.bar".try_into().unwrap());
-        assert_eq!(wn.version, parse_version("0.1b3").unwrap());
+        assert_eq!(wn.version, "0.1b3".try_into().unwrap());
         assert_eq!(wn.build_number, Some(1));
         assert_eq!(wn.build_name, "local");
         assert_eq!(wn.py_tags, vec!["py2", "py3"],);
