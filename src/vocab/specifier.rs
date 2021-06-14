@@ -36,11 +36,9 @@ impl TryFrom<&str> for Specifiers {
 
     fn try_from(input: &str) -> Result<Self, Self::Error> {
         let specifiers_or_err = super::reqparse::versionspec(input);
-        specifiers_or_err
-            .map(|specifiers| Specifiers(specifiers))
-            .with_context(|| {
-                format!("failed to parse versions specifiers from {:?}", input)
-            })
+        specifiers_or_err.with_context(|| {
+            format!("failed to parse versions specifiers from {:?}", input)
+        })
     }
 }
 

@@ -10,7 +10,6 @@ use std::rc::Rc;
 const ENV: Lazy<HashMap<String, Rc<str>>> = Lazy::new(|| {
     // Copied from
     //   print(json.dumps(packaging.markers.default_environment(), sort_keys=True, indent=4))
-    // and then added 'extra: "": as a crude temporary hack
     serde_json::from_str(
         r##"
         {
@@ -24,17 +23,42 @@ const ENV: Lazy<HashMap<String, Rc<str>>> = Lazy::new(|| {
             "platform_version": "#60-Ubuntu SMP Thu May 6 07:46:32 UTC 2021",
             "python_full_version": "3.8.6",
             "python_version": "3.8",
-            "sys_platform": "linux",
-            "extra": ""
+            "sys_platform": "linux"
         }
         "##,
     )
     .unwrap()
 });
 
-impl marker::Env for HashMap<String, Rc<str>> {
+struct HashEnv<'a> {
+    basic_env: &'a HashMap<String, Rc<str>>,
+    extra: Rc<str>,
+}
+
+impl<'a> marker::Env for HashEnv<'a> {
     fn get_marker_var(&self, var: &str) -> Option<Rc<str>> {
-        self.get(var).map(|s| s.clone())
+        match var {
+            "extra" => Some(self.extra.clone()),
+            _ => self.basic_env.get(var).map(|s| s.clone()),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum ResPkg {
+    Root,
+    Package(PackageName, Option<Extra>),
+}
+
+static ROOT_VERSION: Lazy<Version> = Lazy::new(|| "1.0".try_into().unwrap());
+
+impl Display for ResPkg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResPkg::Root => write!(f, "*root*"),
+            ResPkg::Package(name, None) => write!(f, "{}", name),
+            ResPkg::Package(name, Some(extra)) => write!(f, "{}[{}]", name, extra),
+        }
     }
 }
 
@@ -42,6 +66,7 @@ pub struct PythonDependencies {
     pub pypi: PyPI,
     pub known_artifacts: RefCell<HashMap<PackageName, HashMap<Version, Vec<Artifact>>>>,
     pub known_metadata: RefCell<HashMap<(PackageName, Version), CoreMetadata>>,
+    pub root_reqs: Vec<Requirement>,
 }
 
 // XX these do *tons* of unnecessary copying, because I decided to try to get it working
@@ -66,11 +91,16 @@ impl PythonDependencies {
         }
     }
 
-    fn available_versions(&self, package: &PackageName) -> Vec<Version> {
-        let mut versions: Vec<Version> =
-            self.available(&package).keys().cloned().collect();
-        versions.sort_unstable();
-        versions
+    fn available_versions(&self, pkg: &ResPkg) -> Vec<Version> {
+        match pkg {
+            ResPkg::Root => vec![ROOT_VERSION.clone()],
+            ResPkg::Package(name, _) => {
+                let mut versions: Vec<Version> =
+                    self.available(&name).keys().cloned().collect();
+                versions.sort_unstable();
+                versions
+            }
+        }
     }
 
     fn available_artifacts(
@@ -82,6 +112,54 @@ impl PythonDependencies {
             Some(artifacts) => artifacts.clone(),
             None => Vec::new(),
         }
+    }
+
+    fn requirements_to_pubgrub(
+        &self,
+        reqs: &Vec<Requirement>,
+        dc: &mut DependencyConstraints<ResPkg, Version>,
+        extra: &Option<Extra>,
+    ) {
+        let extra_str: Rc<str> = match extra {
+            Some(e) => e.to_string().into(),
+            None => "".to_string().into(),
+        };
+        let env = HashEnv {
+            basic_env: &*ENV,
+            extra: extra_str,
+        };
+
+        for req in reqs {
+            if let Some(expr) = &req.env_marker {
+                // XX bad unwrap
+                if !expr.eval(&env).unwrap() {
+                    return;
+                }
+            }
+
+            let mut maybe_extras: Vec<Option<Extra>> =
+                req.extras.iter().map(|e| Some(e.clone())).collect();
+            if maybe_extras.is_empty() {
+                maybe_extras.push(None);
+            }
+
+            for maybe_extra in maybe_extras {
+                // XX bad unwrap
+                dc.insert(
+                    ResPkg::Package(req.name.clone(), maybe_extra),
+                    specifiers_to_pubgrub(&req.specifiers).unwrap(),
+                );
+            }
+        }
+    }
+
+    pub fn resolve(
+        &self,
+    ) -> std::result::Result<
+        pubgrub::type_aliases::SelectedDependencies<ResPkg, Version>,
+        pubgrub::error::PubGrubError<ResPkg, Version>,
+    > {
+        pubgrub::solver::resolve(self, ResPkg::Root, ROOT_VERSION.clone())
     }
 }
 
@@ -120,28 +198,28 @@ fn whl_url_to_metadata(agent: &ureq::Agent, url: &Url) -> Result<CoreMetadata> {
     anyhow::bail!("didn't find METADATA");
 }
 
-fn specifier_to_pubgrub(c: &Specifier) -> Result<Range<Version>> {
-    let ranges = c.op.to_ranges(&c.value)?;
+fn specifier_to_pubgrub(spec: &Specifier) -> Result<Range<Version>> {
+    let ranges = spec.op.to_ranges(&spec.value)?;
     Ok(ranges.into_iter().fold(Range::none(), |accum, r| {
         accum.union(&Range::between(r.start, r.end))
     }))
 }
 
-fn specifiers_to_pubgrub(cs: &Vec<Specifier>) -> Result<Range<Version>> {
+fn specifiers_to_pubgrub(specs: &Specifiers) -> Result<Range<Version>> {
     let mut range = Range::any();
-    for c in cs {
-        range = range.intersection(&specifier_to_pubgrub(&c)?)
+    for spec in &specs.0 {
+        range = range.intersection(&specifier_to_pubgrub(&spec)?)
     }
     Ok(range)
 }
 
-impl pubgrub::solver::DependencyProvider<PackageName, Version> for PythonDependencies {
+impl pubgrub::solver::DependencyProvider<ResPkg, Version> for PythonDependencies {
     fn choose_package_version<T, U>(
         &self,
         potential_packages: impl Iterator<Item = (T, U)>,
     ) -> Result<(T, Option<Version>), Box<dyn std::error::Error>>
     where
-        T: Borrow<PackageName>,
+        T: Borrow<ResPkg>,
         U: Borrow<Range<Version>>,
     {
         // XXXX need to fetch metadata *before* picking a version, because it
@@ -170,94 +248,102 @@ impl pubgrub::solver::DependencyProvider<PackageName, Version> for PythonDepende
             range.borrow()
         );
 
-        // why does this have to be 'parse' instead of 'try_into'?! it is a mystery
-        let python_version: Version = ENV.get("python_version").unwrap().parse()?;
+        match pkg.borrow() {
+            ResPkg::Root => Ok((pkg, Some(ROOT_VERSION.clone()))),
+            ResPkg::Package(name, _) => {
+                // why does this have to be 'parse' instead of 'try_into'?! it is a mystery
+                let python_version: Version =
+                    ENV.get("python_version").unwrap().parse()?;
 
-        for version in self.available_versions(pkg.borrow()).into_iter().rev() {
-            if !range.borrow().contains(&version) {
-                println!("Version {} is out of range", version);
-                continue;
-            }
+                for version in self.available_versions(pkg.borrow()).into_iter().rev() {
+                    if !range.borrow().contains(&version) {
+                        println!("Version {} is out of range", version);
+                        continue;
+                    }
 
-            println!("Considering {} v{}", pkg.borrow(), version);
+                    println!("Considering {} v{}", pkg.borrow(), version);
 
-            let mut known_m = self.known_metadata.borrow_mut();
-            let e = known_m.entry((pkg.borrow().clone(), version.clone()));
-            let metadata = e.or_insert_with(|| {
-                // XX bad unwrap
-                // XX need to track provenance of the metadata we end up using
-                // (or I guess could extract it at the end?)
-                let artifact = self
-                    .available_artifacts(pkg.borrow(), &version)
-                    .into_iter()
-                    .filter(|a| a.url.path().ends_with(".whl"))
-                    .next()
-                    .unwrap();
-                // XX bad unwrap
-                whl_url_to_metadata(&self.pypi.agent, &artifact.url).unwrap()
-            });
+                    let mut known_m = self.known_metadata.borrow_mut();
+                    let e = known_m.entry((name.clone(), version.clone()));
+                    let metadata = e.or_insert_with(|| {
+                        // XX bad unwrap
+                        // XX need to track provenance of the metadata we end up using
+                        // (or I guess could extract it at the end?)
+                        let artifact = self
+                            .available_artifacts(name, &version)
+                            .into_iter()
+                            .filter(|a| a.url.path().ends_with(".whl"))
+                            .next()
+                            .unwrap();
+                        // XX bad unwrap
+                        whl_url_to_metadata(&self.pypi.agent, &artifact.url).unwrap()
+                    });
 
-            // check if this version is even compatible with our python
-            match metadata.requires_python.satisfied_by(&python_version) {
-                Err(e) => {
-                    println!("Error checking Requires-Python: {}; skipping", e);
-                    continue;
+                    // check if this version is even compatible with our python
+                    match metadata.requires_python.satisfied_by(&python_version) {
+                        Err(e) => {
+                            println!("Error checking Requires-Python: {}; skipping", e);
+                            continue;
+                        }
+                        Ok(false) => {
+                            println!(
+                                "Python {} doesn't satisfy Requires-Python: {:?}",
+                                python_version, metadata.requires_python
+                            );
+                            continue;
+                        }
+                        Ok(true) => return Ok((pkg, Some(version.clone()))),
+                    }
                 }
-                Ok(false) => {
-                    println!(
-                        "Python {} doesn't satisfy Requires-Python: {:?}",
-                        python_version, metadata.requires_python
-                    );
-                    continue;
-                }
-                Ok(true) => return Ok((pkg, Some(version.clone()))),
+
+                Ok((pkg, None))
             }
         }
-
-        Ok((pkg, None))
     }
 
     fn get_dependencies(
         &self,
-        package: &PackageName,
+        pkg: &ResPkg,
         version: &Version,
     ) -> std::result::Result<
-        pubgrub::solver::Dependencies<PackageName, Version>,
+        pubgrub::solver::Dependencies<ResPkg, Version>,
         Box<dyn std::error::Error>,
     > {
-        println!("Fetching dependencies for {} v{}", package, version);
+        println!("Fetching dependencies for {} v{}", pkg, version);
 
-        // unwrap() is safe here, b/c we never give pubgrub a package/version unless we
-        // have already fetched the metadata.
-        let metadata = self
-            .known_metadata
-            .borrow()
-            .get(&(package.clone(), version.clone()))
-            .unwrap()
-            .clone();
+        match pkg {
+            ResPkg::Root => {
+                let mut dc: DependencyConstraints<ResPkg, Version> =
+                    vec![].into_iter().collect();
+                self.requirements_to_pubgrub(&self.root_reqs, &mut dc, &None);
+                println!("root dc: {:?}", dc);
+                Ok(Dependencies::Known(dc))
+            }
+            ResPkg::Package(name, extra) => {
+                // unwrap() is safe here, b/c we never give pubgrub a package/version unless we
+                // have already fetched the metadata.
+                let metadata = self
+                    .known_metadata
+                    .borrow()
+                    .get(&(name.clone(), version.clone()))
+                    .unwrap()
+                    .clone();
 
-        let dc: DependencyConstraints<PackageName, Version> = metadata
-            .requires_dist
-            .iter()
-            .filter_map(|r| {
-                // XX bad assert
-                if !r.extras.is_empty() {
-                    todo!("extras support");
+                // why can't I call ::new on this?
+                let mut dc: DependencyConstraints<ResPkg, Version> =
+                    vec![].into_iter().collect();
+
+                self.requirements_to_pubgrub(&metadata.requires_dist, &mut dc, &extra);
+
+                if let Some(_) = extra {
+                    dc.insert(
+                        ResPkg::Package(name.clone(), None),
+                        Range::exact(version.clone()),
+                    );
                 }
-                if let Some(expr) = &r.env_marker {
-                    // XX bad unwrap
-                    if !expr.eval(&*ENV).unwrap() {
-                        return None;
-                    }
-                }
-                Some((
-                    r.name.clone(),
-                    // bad unwrap
-                    specifiers_to_pubgrub(&r.specifiers).unwrap(),
-                ))
-            })
-            .collect();
 
-        Ok(Dependencies::Known(dc))
+                Ok(Dependencies::Known(dc))
+            }
+        }
     }
 }

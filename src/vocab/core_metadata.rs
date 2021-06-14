@@ -105,25 +105,25 @@ mod test {
                 Requirement {
                     name: "attrs".try_into().unwrap(),
                     extras: vec![],
-                    specifiers: vec![Specifier {
+                    specifiers: Specifiers(vec![Specifier {
                         op: GreaterThanEqual,
                         value: "19.2.0".into()
-                    }],
+                    }]),
                     env_marker: None,
                 },
                 Requirement {
                     name: "sortedcontainers".try_into().unwrap(),
                     extras: vec![],
-                    specifiers: vec![],
+                    specifiers: Specifiers(vec![]),
                     env_marker: None,
                 },
                 Requirement {
                     name: "contextvars".try_into().unwrap(),
                     extras: vec!["foo".try_into().unwrap()],
-                    specifiers: vec![Specifier {
+                    specifiers: Specifiers(vec![Specifier {
                         op: GreaterThanEqual,
                         value: "2.1".into()
-                    }],
+                    }]),
                     env_marker: Some(marker::Expr::Operator {
                         op: marker::Op::Compare(StrictlyLessThan),
                         lhs: marker::Value::Variable("python_version".into()),

@@ -10,14 +10,23 @@ mod vocab;
 //mod resolve;
 
 use anyhow::Result;
-use std::io::Cursor;
+//use std::io::Cursor;
 use std::time::Duration;
 use ureq::AgentBuilder;
 
 use crate::prelude::*;
-use std::io::prelude::*;
+//use std::io::prelude::*;
+
+use structopt::StructOpt;
+
+#[derive(StructOpt)]
+struct Opt {
+    inputs: Vec<String>,
+}
 
 fn main() -> Result<()> {
+    let opt = Opt::from_args();
+
     let agent = AgentBuilder::new()
         .timeout_read(Duration::from_secs(5))
         .timeout_write(Duration::from_secs(5))
@@ -39,16 +48,21 @@ fn main() -> Result<()> {
         agent: agent.clone(),
     };
 
+    let root_reqs = opt
+        .inputs
+        .into_iter()
+        .map(|s| Requirement::parse(&s, ParseExtra::NotAllowed))
+        .collect::<Result<Vec<Requirement>>>()?;
+
     use std::cell::RefCell;
     let deps = resolve::PythonDependencies {
         pypi,
         known_artifacts: RefCell::new(HashMap::new()),
         known_metadata: RefCell::new(HashMap::new()),
+        root_reqs,
     };
 
-    let v: Version = "1.20.93".try_into()?;
-    let solution = pubgrub::solver::resolve(&deps, "botocore".try_into()?, v);
-    println!("solution: {:?}", solution);
+    println!("solution: {:?}", deps.resolve());
 
     Ok(())
 

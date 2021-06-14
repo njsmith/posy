@@ -58,11 +58,7 @@ pub mod marker {
     pub enum Expr {
         And(Box<Expr>, Box<Expr>),
         Or(Box<Expr>, Box<Expr>),
-        Operator {
-            op: Op,
-            lhs: Value,
-            rhs: Value,
-        },
+        Operator { op: Op, lhs: Value, rhs: Value },
     }
 
     use std::rc::Rc;
@@ -136,7 +132,7 @@ pub enum ParseExtra {
 pub struct Requirement {
     pub name: PackageName,
     pub extras: Vec<Extra>,
-    pub specifiers: Vec<Specifier>,
+    pub specifiers: Specifiers,
     pub env_marker: Option<marker::Expr>,
 }
 

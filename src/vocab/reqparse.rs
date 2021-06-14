@@ -39,10 +39,10 @@ peg::parser! {
                 })
             }
 
-        rule version_many() -> Vec<Specifier>
-            = version_one() ++ (_ ",")
+        rule version_many() -> Specifiers
+            = specs:(version_one() ++ (_ ",")) { Specifiers(specs) }
 
-        pub rule versionspec() -> Vec<Specifier>
+        pub rule versionspec() -> Specifiers
             = ("(" vm:version_many() ")" { vm }) / version_many()
 
         rule urlspec() -> Requirement
@@ -146,7 +146,7 @@ peg::parser! {
         rule name_req(parse_extra: ParseExtra) -> Requirement
             = name:name()
               _ extras:(extras() / "" { Vec::new() })
-              _ specifiers:(versionspec() / "" { Vec::new() })
+              _ specifiers:(versionspec() / "" { Specifiers(Vec::new()) })
               _ env_marker:(quoted_marker(parse_extra)?)
               {
                   Requirement {
