@@ -152,6 +152,7 @@ impl CompareOp {
                 StrictlyLessThan => {
                     if (&version.0.pre, &version.0.dev) == (&None, &None) {
                         let mut new_max = version.clone();
+                        new_max.0.dev = Some(0);
                         new_max.0.post = None;
                         new_max.0.local = vec![];
                         vec![Version::ZERO.clone()..new_max]
@@ -224,6 +225,20 @@ mod test {
             let specs: Specifiers = spec_str.try_into().unwrap();
             println!("{:?}", specs.0[0].op.to_ranges(&specs.0[0].value));
             assert!(specs.satisfied_by(&version).unwrap());
+        }
+    }
+
+    #[test]
+    fn test_failing_specifiers_table() {
+        let examples: Vec<(String, String)> =
+            from_commented_json(include_str!("test-data/failing-specifiers.txt"));
+
+        for (version_str, spec_str) in examples {
+            println!("Matching {:?} against {:?}", version_str, spec_str);
+            let version: Version = version_str.try_into().unwrap();
+            let specs: Specifiers = spec_str.try_into().unwrap();
+            println!("{:?}", specs.0[0].op.to_ranges(&specs.0[0].value));
+            assert!(!specs.satisfied_by(&version).unwrap());
         }
     }
 }

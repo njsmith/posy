@@ -44,14 +44,15 @@ impl Version {
         // - You can't attach a .postN after a .postN. So if you already have
         //   a .postN, then the next possible value is .post(N+1).
         //
-        // - You *can* attach a .postN after anything else. So to get the next
-        //   possible value, attach a .post0.
+        // - You *can* attach a .postN after anything else. And a .devN after that. So
+        // to get the next possible value, attach a .post0.dev0.
         if let Some(dev) = &mut new.0.dev {
             *dev += 1;
         } else if let Some(post) = &mut new.0.post {
             *post += 1;
         } else {
             new.0.post = Version::SMALLEST_POST;
+            new.0.dev = Some(0);
         }
         new
     }
