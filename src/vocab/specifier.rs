@@ -35,7 +35,6 @@ impl TryFrom<&str> for Specifiers {
 
 try_from_str_boilerplate!(Specifiers);
 
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CompareOp {
     LessThanEqual,
@@ -76,6 +75,13 @@ impl CompareOp {
         use CompareOp::*;
         let (version, wildcard) = parse_version_wildcard(rhs)?;
         Ok(if wildcard {
+            if version.0.pre.is_some()
+                || version.0.post.is_some()
+                || version.0.dev.is_some()
+                || !version.0.local.is_empty()
+            {
+                bail!("version wildcards can't have pre/post/dev/local suffixes");
+            }
             // =~ X.* correspond to the half-open range
             // [X.dev0, (X+1).dev0)
             let mut low = version.clone();
@@ -92,6 +98,11 @@ impl CompareOp {
             }
         } else {
             // no wildcards here
+            if self != &Equal && self != &NotEqual {
+                if !version.0.local.is_empty() {
+                    bail!("Operator {:?} cannot be used on a version with a +local suffix");
+                }
+            }
             match self {
                 // These two are simple
                 LessThanEqual => vec![Version::ZERO.clone()..version.next()],
@@ -136,6 +147,9 @@ impl CompareOp {
                 // So it's a half-open range:
                 //   [X.Y.suffixes, X.(Y+1).dev0)
                 Compatible => {
+                    if version.0.release.len() < 2 {
+                        bail!("~= operator requires a version with two segments (X.Y)");
+                    }
                     let mut new_max = Version(pep440::Version {
                         epoch: version.0.epoch,
                         release: version.0.release.clone(),
@@ -152,3 +166,30 @@ impl CompareOp {
     }
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::util::from_commented_json;
+
+    #[test]
+    fn test_invalid_specifiers() {
+        let examples: Vec<String> =
+            from_commented_json(include_str!("test-data/invalid-specifiers.txt"));
+
+        fn chew_on(example: &str) -> Result<Specifiers> {
+            let specs: Specifiers = example.try_into()?;
+            // We only detect some problems when trying to actually use the specifier
+            for spec in &specs.0 {
+                spec.op.to_ranges(&spec.value)?;
+            }
+            Ok(specs)
+        }
+
+        for example in examples {
+            println!("Parsing {:?}", example);
+            let got = chew_on(&example);
+            println!("Got {:?}", got);
+            assert!(got.is_err());
+        }
+    }
+}
