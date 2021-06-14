@@ -20,6 +20,17 @@ impl Specifier {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Specifiers(pub Vec<Specifier>);
 
+impl Specifiers {
+    pub fn satisfied_by(&self, version: &Version) -> Result<bool> {
+        for specifier in &self.0 {
+            if !specifier.satisfied_by(&version)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+}
+
 impl TryFrom<&str> for Specifiers {
     type Error = anyhow::Error;
 
@@ -53,14 +64,6 @@ fn parse_version_wildcard(input: &str) -> Result<(Version, bool)> {
         (input, false)
     };
     let version: Version = vstr.try_into()?;
-    if wildcard
-        && (version.0.pre.is_some()
-            || version.0.post.is_some()
-            || version.0.dev.is_some()
-            || !version.0.local.is_empty())
-    {
-        bail!("Invalid PEP 440 wildcard (no suffixes allowed): {}", input);
-    }
     Ok((version, wildcard))
 }
 
@@ -75,19 +78,29 @@ impl CompareOp {
         use CompareOp::*;
         let (version, wildcard) = parse_version_wildcard(rhs)?;
         Ok(if wildcard {
-            if version.0.pre.is_some()
-                || version.0.post.is_some()
-                || version.0.dev.is_some()
-                || !version.0.local.is_empty()
-            {
-                bail!("version wildcards can't have pre/post/dev/local suffixes");
+            if version.0.dev.is_some() || !version.0.local.is_empty() {
+                bail!("version wildcards can't have dev or local suffixes");
             }
             // =~ X.* correspond to the half-open range
+            //
             // [X.dev0, (X+1).dev0)
             let mut low = version.clone();
             low.0.dev = Some(0);
             let mut high = version.clone();
-            *high.0.release.last_mut().unwrap() += 1;
+            // .* can actually appear after .postX or .aX, so we need to find the last
+            // numeric entry in the version, and increment that.
+            if let Some(post) = high.0.post {
+                high.0.post = Some(post + 1)
+            } else if let Some(pre) = high.0.pre {
+                use pep440::PreRelease::*;
+                high.0.pre = Some(match pre {
+                    RC(n) => RC(n + 1),
+                    A(n) => A(n + 1),
+                    B(n) => B(n + 1),
+                })
+            } else {
+                *high.0.release.last_mut().unwrap() += 1;
+            }
             high.0.dev = Some(0);
             match self {
                 Equal => vec![low..high],
@@ -116,18 +129,22 @@ impl CompareOp {
                 ],
                 // "The exclusive ordered comparison >V MUST NOT allow a post-release of
                 // the given version unless V itself is a post release."
-                // So >V normally becomes >=(V+1).dev0
-                StrictlyGreaterThan => match version.0.post {
-                    Some(_) => vec![version.next()..Version::INFINITY.clone()],
-                    None => {
-                        let mut new_min = version.clone();
-                        *new_min.0.release.last_mut().unwrap() += 1;
-                        new_min.0.pre = None;
-                        new_min.0.post = None;
-                        new_min.0.dev = Some(0);
-                        new_min.0.local = vec![];
-                        vec![new_min..Version::INFINITY.clone()]
+                StrictlyGreaterThan => {
+                    let mut low = version.clone();
+                    if let Some(dev) = &version.0.dev {
+                        low.0.dev = Some(dev+1);
+                    } else if let Some(post) = &version.0.post {
+                        low.0.post = Some(post+1);
+                    } else {
+                        // Otherwise, want to increment either the pre-release (a0 ->
+                        // a1), or the "last" release segment. But working with
+                        // pre-releases takes a lot of typing, and there is no "last"
+                        // release segment -- X.Y.Z is just shorthand for
+                        // X.Y.Z.0.0.0.0... So instead, we tack on a .post(INFINITY) and
+                        // hope no-one actually makes a version like this in practice.
+                        low.0.post = Some(u32::MAX);
                     }
+                    vec![low..Version::INFINITY.clone()]
                 },
                 // "The exclusive ordered comparison <V MUST NOT allow a pre-release of
                 // the specified version unless the specified version is itself a
@@ -145,7 +162,7 @@ impl CompareOp {
                 }
                 // ~= X.Y.suffixes is the same as >= X.Y.suffixes && == X.*
                 // So it's a half-open range:
-                //   [X.Y.suffixes, X.(Y+1).dev0)
+                //   [X.Y.suffixes, (X+1).dev0)
                 Compatible => {
                     if version.0.release.len() < 2 {
                         bail!("~= operator requires a version with two segments (X.Y)");
@@ -158,6 +175,9 @@ impl CompareOp {
                         dev: Some(0),
                         local: vec![],
                     });
+                    // Unwraps here are safe because we confirmed that the vector has at
+                    // least 2 elements above.
+                    new_max.0.release.pop().unwrap();
                     *new_max.0.release.last_mut().unwrap() += 1;
                     vec![version..new_max]
                 }
@@ -172,7 +192,7 @@ mod test {
     use crate::util::from_commented_json;
 
     #[test]
-    fn test_invalid_specifiers() {
+    fn test_invalid_specifiers_table() {
         let examples: Vec<String> =
             from_commented_json(include_str!("test-data/invalid-specifiers.txt"));
 
@@ -190,6 +210,20 @@ mod test {
             let got = chew_on(&example);
             println!("Got {:?}", got);
             assert!(got.is_err());
+        }
+    }
+
+    #[test]
+    fn test_successful_specifiers_table() {
+        let examples: Vec<(String, String)> =
+            from_commented_json(include_str!("test-data/successful-specifiers.txt"));
+
+        for (version_str, spec_str) in examples {
+            println!("Matching {:?} against {:?}", version_str, spec_str);
+            let version: Version = version_str.try_into().unwrap();
+            let specs: Specifiers = spec_str.try_into().unwrap();
+            println!("{:?}", specs.0[0].op.to_ranges(&specs.0[0].value));
+            assert!(specs.satisfied_by(&version).unwrap());
         }
     }
 }

@@ -55,15 +55,6 @@ impl Version {
         }
         new
     }
-
-    pub fn satisfies(&self, specifiers: &Specifiers) -> Result<bool> {
-        for specifier in &specifiers.0 {
-            if !specifier.satisfied_by(self)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
 }
 
 impl TryFrom<&str> for Version {
