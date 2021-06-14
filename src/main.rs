@@ -1,12 +1,12 @@
+mod cache;
+mod net;
 mod nuget;
 mod prelude;
+mod pypi;
+mod resolve;
 mod util;
 #[forbid(unsafe_code)]
 mod vocab;
-mod pypi;
-mod cache;
-mod net;
-mod resolve;
 //mod resolve;
 
 use anyhow::Result;
@@ -35,7 +35,9 @@ fn main() -> Result<()> {
     //     println!("Contains: {}", name);
     // }
 
-    let pypi = crate::pypi::PyPI { agent: agent.clone() };
+    let pypi = crate::pypi::PyPI {
+        agent: agent.clone(),
+    };
 
     use std::cell::RefCell;
     let deps = resolve::PythonDependencies {

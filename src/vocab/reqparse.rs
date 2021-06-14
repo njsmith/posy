@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-pub use self::parser::{versionspec, requirement};
+pub use self::parser::{requirement, versionspec};
 
 peg::parser! {
     grammar parser() for str {
@@ -74,7 +74,7 @@ peg::parser! {
 
         rule python_str() -> marker::Value
             = s:(python_squote_str() / python_dquote_str())
-              { marker::Value::Literal(s.to_owned()) }
+              { marker::Value::Literal(s.into()) }
 
         rule env_var(parse_extra: ParseExtra) -> marker::Value
             = var:$(

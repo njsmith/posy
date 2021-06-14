@@ -132,9 +132,9 @@ impl CompareOp {
                 StrictlyGreaterThan => {
                     let mut low = version.clone();
                     if let Some(dev) = &version.0.dev {
-                        low.0.dev = Some(dev+1);
+                        low.0.dev = Some(dev + 1);
                     } else if let Some(post) = &version.0.post {
-                        low.0.post = Some(post+1);
+                        low.0.post = Some(post + 1);
                     } else {
                         // Otherwise, want to increment either the pre-release (a0 ->
                         // a1), or the "last" release segment. But working with
@@ -145,7 +145,7 @@ impl CompareOp {
                         low.0.post = Some(u32::MAX);
                     }
                     vec![low..Version::INFINITY.clone()]
-                },
+                }
                 // "The exclusive ordered comparison <V MUST NOT allow a pre-release of
                 // the specified version unless the specified version is itself a
                 // pre-release."

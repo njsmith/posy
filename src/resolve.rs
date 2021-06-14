@@ -6,7 +6,8 @@ use crate::pypi::{Artifact, PyPI};
 use std::io::Read;
 use std::{borrow::Borrow, cell::RefCell};
 
-const ENV: Lazy<HashMap<String, String>> = Lazy::new(|| {
+use std::rc::Rc;
+const ENV: Lazy<HashMap<String, Rc<str>>> = Lazy::new(|| {
     // Copied from
     //   print(json.dumps(packaging.markers.default_environment(), sort_keys=True, indent=4))
     // and then added 'extra: "": as a crude temporary hack
@@ -30,6 +31,12 @@ const ENV: Lazy<HashMap<String, String>> = Lazy::new(|| {
     )
     .unwrap()
 });
+
+impl marker::Env for HashMap<String, Rc<str>> {
+    fn get_marker_var(&self, var: &str) -> Option<Rc<str>> {
+        self.get(var).map(|s| s.clone())
+    }
+}
 
 pub struct PythonDependencies {
     pub pypi: PyPI,
@@ -148,7 +155,8 @@ impl pubgrub::solver::DependencyProvider<PackageName, Version> for PythonDepende
 
         let count_valid = |(p, range): &(T, U)| {
             self.available_versions(p.borrow())
-                .into_iter().filter(|v| range.borrow().contains(v.borrow()))
+                .into_iter()
+                .filter(|v| range.borrow().contains(v.borrow()))
                 .count()
         };
 
@@ -156,7 +164,11 @@ impl pubgrub::solver::DependencyProvider<PackageName, Version> for PythonDepende
             .min_by_key(count_valid)
             .ok_or_else(|| anyhow!("No packages found within range"))?;
 
-        println!("Looking for versions of {} ({:?})", pkg.borrow(), range.borrow());
+        println!(
+            "Looking for versions of {} ({:?})",
+            pkg.borrow(),
+            range.borrow()
+        );
 
         // why does this have to be 'parse' instead of 'try_into'?! it is a mystery
         let python_version: Version = ENV.get("python_version").unwrap().parse()?;
@@ -234,7 +246,7 @@ impl pubgrub::solver::DependencyProvider<PackageName, Version> for PythonDepende
                 }
                 if let Some(expr) = &r.env_marker {
                     // XX bad unwrap
-                    if !expr.eval(&ENV).unwrap() {
+                    if !expr.eval(&*ENV).unwrap() {
                         return None;
                     }
                 }

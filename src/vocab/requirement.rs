@@ -44,7 +44,7 @@ pub mod marker {
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum Value {
         Variable(String),
-        Literal(String),
+        Literal(Rc<str>),
     }
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -58,19 +58,23 @@ pub mod marker {
     pub enum Expr {
         And(Box<Expr>, Box<Expr>),
         Or(Box<Expr>, Box<Expr>),
-        Operator { op: Op, lhs: Value, rhs: Value },
+        Operator {
+            op: Op,
+            lhs: Value,
+            rhs: Value,
+        },
     }
 
-    // XX switch this trait, and maybe to avoid allocating in here?
-    // pub trait Env {
-    //     fn get_marker_var(&self, var: &str) -> Option<&str>;
-    // }
+    use std::rc::Rc;
+    pub trait Env {
+        fn get_marker_var(&self, var: &str) -> Option<Rc<str>>;
+    }
 
     impl Value {
-        pub fn eval(&self, env: &HashMap<String, String>) -> Result<String> {
+        pub fn eval(&self, env: &dyn Env) -> Result<Rc<str>> {
             match self {
                 Value::Variable(varname) => {
-                    env.get(varname).map(|s| s.clone()).ok_or_else(|| {
+                    env.get_marker_var(&varname).ok_or_else(|| {
                         anyhow!("no environment marker named '{}'", varname)
                     })
                 }
@@ -80,7 +84,7 @@ pub mod marker {
     }
 
     impl Expr {
-        pub fn eval(&self, env: &HashMap<String, String>) -> Result<bool> {
+        pub fn eval(&self, env: &dyn Env) -> Result<bool> {
             Ok(match self {
                 Expr::And(lhs, rhs) => lhs.eval(env)? && rhs.eval(env)?,
                 Expr::Or(lhs, rhs) => lhs.eval(env)? || rhs.eval(env)?,
@@ -88,14 +92,14 @@ pub mod marker {
                     let lhs_val = lhs.eval(env)?;
                     let rhs_val = rhs.eval(env)?;
                     match op {
-                        Op::In => rhs_val.contains(&lhs_val),
-                        Op::NotIn => !rhs_val.contains(&lhs_val),
+                        Op::In => rhs_val.contains(lhs_val.as_ref()),
+                        Op::NotIn => !rhs_val.contains(lhs_val.as_ref()),
                         Op::Compare(op) => {
                             // If both sides can be parsed as versions (or the RHS can
                             // be parsed as a wildcard with a wildcard-accepting op),
                             // then we do a version comparison
                             if let Ok(lhs_ver) = lhs_val.parse() {
-                                if let Ok(rhs_ranges) = op.to_ranges(&rhs_val) {
+                                if let Ok(rhs_ranges) = op.to_ranges(rhs_val.as_ref()) {
                                     return Ok(rhs_ranges
                                         .into_iter()
                                         .any(|r| r.contains(&lhs_ver)));
@@ -110,9 +114,9 @@ pub mod marker {
                                 Equal => lhs_val == rhs_val,
                                 GreaterThanEqual => lhs_val >= rhs_val,
                                 StrictlyGreaterThan => lhs_val > rhs_val,
-                                Compatible => bail!(
-                                    "~= requires valid version strings"
-                                ),
+                                Compatible => {
+                                    bail!("~= requires valid version strings")
+                                }
                             }
                         }
                     }
@@ -138,9 +142,10 @@ pub struct Requirement {
 
 impl Requirement {
     pub fn parse(input: &str, parse_extra: ParseExtra) -> Result<Requirement> {
-        let req = super::reqparse::requirement(input, parse_extra).with_context(|| {
-            format!("Failed parsing requirement string {:?})", input)
-        })?;
+        let req =
+            super::reqparse::requirement(input, parse_extra).with_context(|| {
+                format!("Failed parsing requirement string {:?})", input)
+            })?;
         Ok(req)
     }
 }
