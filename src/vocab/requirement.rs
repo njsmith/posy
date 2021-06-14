@@ -11,15 +11,16 @@ use crate::prelude::*;
 // what the semantics is, b/c we fully parse all versions. PEP 440 says "The
 // primary use case ... is to allow for specifying a version which cannot
 // otherwise by represented by this PEP". Maybe if we find ourselves supporting
-// LegacyVersion-type versions, we should add this then?
+// LegacyVersion-type versions, we should add this then? Though even then, I'm not sure
+// we can convince pubgrub to handle it.
 //
 // If we do want to parse @ syntax, the problem is more: how do we represent
 // them? Because it *replaces* version constraints, so I guess inside the
 // Requirement object we'd need something like:
 //
-//   enum Constraints {
+//   enum Specifiers {
 //      Direct(Url),
-//      Index(Vec<Constraint>),
+//      Index(Vec<Specifier>),
 //   }
 //
 // ? But then that complexity propagates through to everything that uses

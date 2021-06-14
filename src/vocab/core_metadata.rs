@@ -10,7 +10,7 @@ pub struct CoreMetadata {
     pub name: PackageName,
     pub version: Version,
     pub requires_dist: Vec<Requirement>,
-    pub requires_python: RequiresPython,
+    pub requires_python: Specifiers,
     pub extras: HashSet<Extra>,
 }
 
@@ -29,9 +29,7 @@ impl CoreMetadata {
 
         let requires_python = match parsed.maybe_take_the("Requires-Python")? {
             Some(rp_str) => rp_str.try_into()?,
-            None => RequiresPython {
-                specifiers: Vec::new(),
-            },
+            None => Specifiers(Vec::new()),
         };
 
         let mut extras: HashSet<Extra> = HashSet::new();
@@ -136,12 +134,10 @@ mod test {
         );
         assert_eq!(
             metadata.requires_python,
-            RequiresPython {
-                specifiers: vec![Specifier {
-                    op: GreaterThanEqual,
-                    value: "3.6".into(),
-                }]
-            }
+            Specifiers(vec![Specifier {
+                op: GreaterThanEqual,
+                value: "3.6".into(),
+            }])
         );
         assert_eq!(metadata.extras, HashSet::new());
     }

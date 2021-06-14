@@ -17,6 +17,25 @@ impl Specifier {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Specifiers(pub Vec<Specifier>);
+
+impl TryFrom<&str> for Specifiers {
+    type Error = anyhow::Error;
+
+    fn try_from(input: &str) -> Result<Self, Self::Error> {
+        let specifiers_or_err = super::reqparse::versionspec(input);
+        specifiers_or_err
+            .map(|specifiers| Specifiers(specifiers))
+            .with_context(|| {
+                format!("failed to parse versions specifiers from {:?}", input)
+            })
+    }
+}
+
+try_from_str_boilerplate!(Specifiers);
+
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CompareOp {
     LessThanEqual,

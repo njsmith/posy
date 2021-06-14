@@ -186,7 +186,7 @@ impl pubgrub::solver::DependencyProvider<PackageName, Version> for PythonDepende
             });
 
             // check if this version is even compatible with our python
-            match python_version.satisfies(&metadata.requires_python.specifiers) {
+            match python_version.satisfies(&metadata.requires_python) {
                 Err(e) => {
                     println!("Error checking Requires-Python: {}; skipping", e);
                     continue;
