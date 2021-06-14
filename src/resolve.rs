@@ -113,17 +113,17 @@ fn whl_url_to_metadata(agent: &ureq::Agent, url: &Url) -> Result<CoreMetadata> {
     anyhow::bail!("didn't find METADATA");
 }
 
-fn constraint_to_pubgrub(c: &Specifier) -> Result<Range<Version>> {
+fn specifier_to_pubgrub(c: &Specifier) -> Result<Range<Version>> {
     let ranges = c.op.to_ranges(&c.value)?;
     Ok(ranges.into_iter().fold(Range::none(), |accum, r| {
         accum.union(&Range::between(r.start, r.end))
     }))
 }
 
-fn constraints_to_pubgrub(cs: &Vec<Specifier>) -> Result<Range<Version>> {
+fn specifiers_to_pubgrub(cs: &Vec<Specifier>) -> Result<Range<Version>> {
     let mut range = Range::any();
     for c in cs {
-        range = range.intersection(&constraint_to_pubgrub(&c)?)
+        range = range.intersection(&specifier_to_pubgrub(&c)?)
     }
     Ok(range)
 }
@@ -186,7 +186,7 @@ impl pubgrub::solver::DependencyProvider<PackageName, Version> for PythonDepende
             });
 
             // check if this version is even compatible with our python
-            match python_version.satisfies(&metadata.requires_python.constraints) {
+            match python_version.satisfies(&metadata.requires_python.specifiers) {
                 Err(e) => {
                     println!("Error checking Requires-Python: {}; skipping", e);
                     continue;
@@ -241,7 +241,7 @@ impl pubgrub::solver::DependencyProvider<PackageName, Version> for PythonDepende
                 Some((
                     r.name.clone(),
                     // bad unwrap
-                    constraints_to_pubgrub(&r.constraints).unwrap(),
+                    specifiers_to_pubgrub(&r.specifiers).unwrap(),
                 ))
             })
             .collect();

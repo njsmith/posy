@@ -30,7 +30,7 @@ impl CoreMetadata {
         let requires_python = match parsed.maybe_take_the("Requires-Python")? {
             Some(rp_str) => rp_str.try_into()?,
             None => RequiresPython {
-                constraints: Vec::new(),
+                specifiers: Vec::new(),
             },
         };
 
@@ -107,7 +107,7 @@ mod test {
                 Requirement {
                     name: "attrs".try_into().unwrap(),
                     extras: vec![],
-                    constraints: vec![Specifier {
+                    specifiers: vec![Specifier {
                         op: GreaterThanEqual,
                         value: "19.2.0".into()
                     }],
@@ -116,13 +116,13 @@ mod test {
                 Requirement {
                     name: "sortedcontainers".try_into().unwrap(),
                     extras: vec![],
-                    constraints: vec![],
+                    specifiers: vec![],
                     env_marker: None,
                 },
                 Requirement {
                     name: "contextvars".try_into().unwrap(),
                     extras: vec!["foo".try_into().unwrap()],
-                    constraints: vec![Specifier {
+                    specifiers: vec![Specifier {
                         op: GreaterThanEqual,
                         value: "2.1".into()
                     }],
@@ -137,7 +137,7 @@ mod test {
         assert_eq!(
             metadata.requires_python,
             RequiresPython {
-                constraints: vec![Specifier {
+                specifiers: vec![Specifier {
                     op: GreaterThanEqual,
                     value: "3.6".into(),
                 }]
