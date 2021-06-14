@@ -57,7 +57,6 @@ pub struct RequiresPython {
 
 pub mod marker {
     use super::*;
-    use std::collections::HashSet;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum Value {
@@ -79,65 +78,39 @@ pub mod marker {
         Operator { op: Op, lhs: Value, rhs: Value },
     }
 
-    #[derive(Debug)]
-    pub enum EvalError {
-        MissingVars(HashSet<String>),
-        Other(anyhow::Error),
-    }
-    pub type EvalResult<T> = std::result::Result<T, EvalError>;
-
     // XX switch this trait, and maybe to avoid allocating in here?
     // pub trait Env {
     //     fn get_marker_var(&self, var: &str) -> Option<&str>;
     // }
 
     impl Value {
-        pub fn eval(&self, env: &HashMap<String, String>) -> EvalResult<String> {
+        pub fn eval(&self, env: &HashMap<String, String>) -> Result<String> {
             match self {
-                Value::Variable(varname) => env.get(varname).map(|s| s.clone()).ok_or_else(|| {
-                    EvalError::MissingVars(vec![varname.to_owned()].into_iter().collect())
-                }),
+                Value::Variable(varname) => {
+                    env.get(varname).map(|s| s.clone()).ok_or_else(|| {
+                        anyhow!("undefined environment marker variable '{}'", varname)
+                    })
+                }
                 Value::Literal(s) => Ok(s.clone()),
             }
         }
     }
 
     impl Expr {
-        pub fn eval(&self, env: &HashMap<String, String>) -> EvalResult<bool> {
-            fn combine_err<T>(
-                lhs_res: EvalResult<T>,
-                rhs_res: EvalResult<T>,
-            ) -> EvalResult<(T, T)> {
-                match (lhs_res, rhs_res) {
-                    (
-                        Err(EvalError::MissingVars(lhs_vars)),
-                        Err(EvalError::MissingVars(rhs_vars)),
-                    ) => Err(EvalError::MissingVars(
-                        lhs_vars.into_iter().chain(rhs_vars.into_iter()).collect(),
-                    )),
-                    (Ok(lhs_val), Ok(rhs_val)) => Ok((lhs_val, rhs_val)),
-                    (Err(lhs_err), _) => Err(lhs_err),
-                    (_, Err(rhs_err)) => Err(rhs_err),
-                }
-            }
-
+        pub fn eval(&self, env: &HashMap<String, String>) -> Result<bool> {
             Ok(match self {
-                Expr::And(lhs, rhs) => {
-                    let (lhs_val, rhs_val) = combine_err(lhs.eval(env), rhs.eval(env))?;
-                    lhs_val && rhs_val
-                }
-                Expr::Or(lhs, rhs) => {
-                    let (lhs_val, rhs_val) = combine_err(lhs.eval(env), rhs.eval(env))?;
-                    lhs_val || rhs_val
-                }
+                Expr::And(lhs, rhs) => lhs.eval(env)? && rhs.eval(env)?,
+                Expr::Or(lhs, rhs) => lhs.eval(env)? || rhs.eval(env)?,
                 Expr::Operator { op, lhs, rhs } => {
-                    let (lhs_val, rhs_val) = combine_err(lhs.eval(env), rhs.eval(env))?;
+                    let lhs_val = lhs.eval(env)?;
+                    let rhs_val = rhs.eval(env)?;
                     match op {
                         Op::In => rhs_val.contains(&lhs_val),
                         Op::NotIn => !rhs_val.contains(&lhs_val),
                         Op::Compare(op) => {
-                            // If both sides can be parsed as versions, then we do a
-                            // version comparison
+                            // If both sides can be parsed as versions (or the RHS can
+                            // be parsed as a wildcard with a wildcard-accepting op),
+                            // then we do a version comparison
                             if let Ok(lhs_ver) = lhs_val.parse() {
                                 if let Ok(rhs_ranges) = op.to_ranges(&rhs_val) {
                                     return Ok(rhs_ranges
@@ -154,15 +127,13 @@ pub mod marker {
                                 Equal => lhs_val == rhs_val,
                                 GreaterThanEqual => lhs_val >= rhs_val,
                                 StrictlyGreaterThan => lhs_val > rhs_val,
-                                Compatible => {
-                                    return Err(EvalError::Other(anyhow!(
-                                    "can't apply ~= operator to non-version strings"
-                                )))
-                                }
+                                Compatible => bail!(
+                                    "~= requires valid version strings"
+                                ),
                             }
-                        },
+                        }
                     }
-                },
+                }
             })
         }
     }
