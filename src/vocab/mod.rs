@@ -13,7 +13,7 @@ pub use self::core_metadata::CoreMetadata;
 pub use self::extra::Extra;
 pub use self::package_name::PackageName;
 pub use self::requirement::{
-    marker, Constraint, ParseExtra, Requirement, RequiresPython,
+    marker, Specifier, ParseExtra, Requirement, RequiresPython,
 };
 pub use self::wheel_metadata::WheelMetadata;
 pub use self::wheel_name::WheelName;

@@ -35,12 +35,12 @@ use crate::prelude::*;
 // ...so we can just steal some version of that.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Constraint {
+pub struct Specifier {
     pub op: CompareOp,
     pub value: String,
 }
 
-impl Constraint {
+impl Specifier {
     pub fn satisfied_by(&self, version: &Version) -> Result<bool> {
         Ok(self
             .op
@@ -52,7 +52,7 @@ impl Constraint {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequiresPython {
-    pub constraints: Vec<Constraint>,
+    pub constraints: Vec<Specifier>,
 }
 
 pub mod marker {
@@ -149,7 +149,7 @@ pub enum ParseExtra {
 pub struct Requirement {
     pub name: PackageName,
     pub extras: Vec<Extra>,
-    pub constraints: Vec<Constraint>,
+    pub constraints: Vec<Specifier>,
     pub env_marker: Option<marker::Expr>,
 }
 
@@ -170,11 +170,11 @@ peg::parser! {
         rule version()
             = (letter_or_digit() / "-" / "_" / "." / "*" / "+" / "!")+
 
-        rule version_one() -> Constraint
+        rule version_one() -> Specifier
             = _ op:version_cmp() _ v:$(version())
             {?
                 use CompareOp::*;
-                Ok(Constraint {
+                Ok(Specifier {
                     op: match &op[..] {
                         "==" => Equal,
                         "!=" => NotEqual,
@@ -190,10 +190,10 @@ peg::parser! {
                 })
             }
 
-        rule version_many() -> Vec<Constraint>
+        rule version_many() -> Vec<Specifier>
             = version_one() ++ (_ ",")
 
-        pub rule versionspec() -> Vec<Constraint>
+        pub rule versionspec() -> Vec<Specifier>
             = ("(" vm:version_many() ")" { vm }) / version_many()
 
         rule urlspec() -> Requirement

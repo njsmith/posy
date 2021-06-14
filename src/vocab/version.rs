@@ -57,7 +57,7 @@ impl Version {
         new
     }
 
-    pub fn satisfies(&self, constraints: &Vec<Constraint>) -> Result<bool>
+    pub fn satisfies(&self, constraints: &Vec<Specifier>) -> Result<bool>
     {
         for constraint in constraints {
             if !constraint.satisfied_by(self)? {

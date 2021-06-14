@@ -113,14 +113,14 @@ fn whl_url_to_metadata(agent: &ureq::Agent, url: &Url) -> Result<CoreMetadata> {
     anyhow::bail!("didn't find METADATA");
 }
 
-fn constraint_to_pubgrub(c: &Constraint) -> Result<Range<Version>> {
+fn constraint_to_pubgrub(c: &Specifier) -> Result<Range<Version>> {
     let ranges = c.op.to_ranges(&c.value)?;
     Ok(ranges.into_iter().fold(Range::none(), |accum, r| {
         accum.union(&Range::between(r.start, r.end))
     }))
 }
 
-fn constraints_to_pubgrub(cs: &Vec<Constraint>) -> Result<Range<Version>> {
+fn constraints_to_pubgrub(cs: &Vec<Specifier>) -> Result<Range<Version>> {
     let mut range = Range::any();
     for c in cs {
         range = range.intersection(&constraint_to_pubgrub(&c)?)

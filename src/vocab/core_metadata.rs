@@ -107,7 +107,7 @@ mod test {
                 Requirement {
                     name: "attrs".try_into().unwrap(),
                     extras: vec![],
-                    constraints: vec![Constraint {
+                    constraints: vec![Specifier {
                         op: GreaterThanEqual,
                         value: "19.2.0".into()
                     }],
@@ -122,7 +122,7 @@ mod test {
                 Requirement {
                     name: "contextvars".try_into().unwrap(),
                     extras: vec!["foo".try_into().unwrap()],
-                    constraints: vec![Constraint {
+                    constraints: vec![Specifier {
                         op: GreaterThanEqual,
                         value: "2.1".into()
                     }],
@@ -137,7 +137,7 @@ mod test {
         assert_eq!(
             metadata.requires_python,
             RequiresPython {
-                constraints: vec![Constraint {
+                constraints: vec![Specifier {
                     op: GreaterThanEqual,
                     value: "3.6".into(),
                 }]
