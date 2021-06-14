@@ -88,7 +88,7 @@ pub mod marker {
             match self {
                 Value::Variable(varname) => {
                     env.get(varname).map(|s| s.clone()).ok_or_else(|| {
-                        anyhow!("undefined environment marker variable '{}'", varname)
+                        anyhow!("no environment marker named '{}'", varname)
                     })
                 }
                 Value::Literal(s) => Ok(s.clone()),

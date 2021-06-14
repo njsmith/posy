@@ -139,6 +139,8 @@ fn parse_version_wildcard(input: &str) -> Result<(Version, bool)> {
 ///
 /// Has to take a string, not a Version, because == and != can take "wildcards", which
 /// are not valid versions.
+// XX local version handling -- I think everything except == and != is supposed to error
+// out if the rhs version has a local segment?
 impl CompareOp {
     pub fn to_ranges(&self, rhs: &str) -> Result<Vec<Range<Version>>> {
         use CompareOp::*;
