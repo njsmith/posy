@@ -1,6 +1,5 @@
 mod cache;
 mod net;
-mod nuget;
 mod prelude;
 mod pypi;
 mod resolve;
