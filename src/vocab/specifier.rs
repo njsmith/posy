@@ -9,11 +9,11 @@ pub struct Specifier {
 
 impl Specifier {
     pub fn satisfied_by(&self, version: &Version) -> Result<bool> {
-        Ok(self
-            .op
-            .to_ranges(&self.value)?
-            .into_iter()
-            .any(|r| r.contains(version)))
+        Ok(self.to_ranges()?.into_iter().any(|r| r.contains(version)))
+    }
+
+    pub fn to_ranges(&self) -> Result<Vec<Range<Version>>> {
+        self.op.to_ranges(&self.value)
     }
 }
 
@@ -199,7 +199,7 @@ mod test {
             let specs: Specifiers = example.try_into()?;
             // We only detect some problems when trying to actually use the specifier
             for spec in &specs.0 {
-                spec.op.to_ranges(&spec.value)?;
+                spec.to_ranges()?;
             }
             Ok(specs)
         }
@@ -221,7 +221,7 @@ mod test {
             println!("Matching {:?} against {:?}", version_str, spec_str);
             let version: Version = version_str.try_into().unwrap();
             let specs: Specifiers = spec_str.try_into().unwrap();
-            println!("{:?}", specs.0[0].op.to_ranges(&specs.0[0].value));
+            println!("{:?}", specs.0[0].to_ranges());
             assert!(specs.satisfied_by(&version).unwrap());
         }
     }
@@ -235,7 +235,7 @@ mod test {
             println!("Matching {:?} against {:?}", version_str, spec_str);
             let version: Version = version_str.try_into().unwrap();
             let specs: Specifiers = spec_str.try_into().unwrap();
-            println!("{:?}", specs.0[0].op.to_ranges(&specs.0[0].value));
+            println!("{:?}", specs.0[0].to_ranges());
             assert!(!specs.satisfied_by(&version).unwrap());
         }
     }

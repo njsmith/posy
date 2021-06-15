@@ -198,19 +198,15 @@ fn whl_url_to_metadata(agent: &ureq::Agent, url: &Url) -> Result<CoreMetadata> {
     anyhow::bail!("didn't find METADATA");
 }
 
-fn specifier_to_pubgrub(spec: &Specifier) -> Result<Range<Version>> {
-    let ranges = spec.op.to_ranges(&spec.value)?;
-    Ok(ranges.into_iter().fold(Range::none(), |accum, r| {
-        accum.union(&Range::between(r.start, r.end))
-    }))
-}
-
 fn specifiers_to_pubgrub(specs: &Specifiers) -> Result<Range<Version>> {
-    let mut range = Range::any();
+    let mut final_range = Range::any();
     for spec in &specs.0 {
-        range = range.intersection(&specifier_to_pubgrub(&spec)?)
+        let spec_range = spec.to_ranges()?.into_iter().fold(Range::none(), |accum, r| {
+            accum.union(&Range::between(r.start, r.end))
+        });
+        final_range = final_range.intersection(&spec_range);
     }
-    Ok(range)
+    Ok(final_range)
 }
 
 impl pubgrub::solver::DependencyProvider<ResPkg, Version> for PythonDependencies {
