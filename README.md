@@ -1,12 +1,19 @@
 
-## Interpretations
+## Interpretations/deviations from standards
 
-### Extra names
+### Extra name syntax
 
 It's really unclear what the validation and normalization rules for
 "extra" names is supposed to be. I decided to use the same rules as
 package names. (= alphanumeric or `-_.`, but `-_.` are all treated as
-equivalent in comparisons)
+equivalent in comparisons internally... though I'm not quite sure what
+the string comparisons in environment markers do, since those cast
+back to string before comparing.)
+
+
+### `===` and `@`
+
+Neither is currently implemented.
 
 
 ### Prereleases in specifiers
