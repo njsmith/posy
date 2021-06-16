@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-#[derive(Debug, Clone, DeserializeFromStr, SerializeDisplay, Derivative)]
+#[derive(Debug, Clone, DeserializeFromStr, Derivative)]
 #[derivative(Hash, PartialEq, Eq)]
 pub struct PackageName {
     #[derivative(Hash = "ignore", PartialEq = "ignore")]
@@ -47,12 +47,6 @@ impl TryFrom<&str> for PackageName {
 
 try_from_str_boilerplate!(PackageName);
 
-impl Display for PackageName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_given)
-    }
-}
-
 #[cfg(test)]
 mod test {
     use std::convert::TryInto;
@@ -73,9 +67,6 @@ mod test {
 
         let name3: PackageName = "foo-barbaz".try_into().unwrap();
         assert_ne!(name1, name3);
-
-        assert_eq!(format!("hello {}", name1), "hello Foo-Bar-Baz");
-        assert_eq!(format!("hello {}", name2), "hello foo_bar.baz");
     }
 
     #[test]
@@ -95,9 +86,6 @@ mod test {
         assert_eq!(via_serde[0], direct);
         assert_eq!(via_serde[0].as_given(), "foo_bar.baz");
         assert_eq!(via_serde[0].normalized(), "foo-bar-baz");
-
-        let from_serde = serde_json::to_string(&via_serde).unwrap();
-        assert_eq!(from_serde, r#"["foo_bar.baz"]"#);
 
         let bad: serde_json::Result<PackageName> =
             serde_json::from_str(r#" "foo bar" "#);

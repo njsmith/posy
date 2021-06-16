@@ -29,6 +29,10 @@ impl Version {
         })
     });
 
+    pub fn is_prerelease(&self) -> bool {
+        self.0.pre.is_some() || self.0.dev.is_some()
+    }
+
     /// Returns the smallest PEP 440 version that is larger than self.
     pub fn next(&self) -> Version {
         let mut new = self.clone();

@@ -122,7 +122,7 @@ impl Display for WheelName {
         write!(
             f,
             "{dist}-{ver}{build}-{ctag}.whl",
-            dist = self.distribution,
+            dist = self.distribution.as_given(),
             ver = self.version,
             build = build_tag,
             ctag = self.compressed_tag()

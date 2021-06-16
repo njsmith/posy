@@ -17,7 +17,7 @@
 
 use crate::prelude::*;
 
-#[derive(Debug, Clone, Deserialize, Serialize, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Hash, PartialEq, Eq)]
 pub struct Extra(PackageName);
 
 impl Extra {
@@ -27,12 +27,6 @@ impl Extra {
 
     pub fn normalized(&self) -> &str {
         &self.0.normalized()
-    }
-}
-
-impl Display for Extra {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 
