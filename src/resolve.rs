@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use pubgrub::range::Range;
+use pubgrub::report::Reporter;
 use pubgrub::solver::{Dependencies, DependencyConstraints};
 
 use crate::package_index::{Artifact, PackageIndex};
@@ -25,40 +26,83 @@ pub fn resolve(
 
     // XX this error reporting is terrible. It's a hack to work around PubGrubError not
     // being convertible to anyhow::Error, because anyhow::Error requires Send.
-    let solution = pubgrub::solver::resolve(&state, ResPkg::Root, ROOT_VERSION.clone())
-        .map_err(|e| anyhow!("Well, that didn't work: {:?}", e))?;
+    let result = pubgrub::solver::resolve(&state, ResPkg::Root, ROOT_VERSION.clone());
 
-    Ok(solution
-        .into_iter()
-        .filter_map(|(pkg, v)| match pkg {
-            ResPkg::Root => None,
-            ResPkg::Package(_, Some(_)) => None,
-            ResPkg::Package(name, None) => Some({
-                let (cm, provenance) = state
-                    .metadata
-                    .borrow_mut()
-                    .remove(&(name.clone(), v.clone()))
-                    .unwrap();
+    use pubgrub::error::PubGrubError::*;
 
-                PinnedPackage {
-                    name: name.clone(),
-                    version: v.clone(),
-                    known_artifacts: state
-                        .releases
-                        .borrow()
-                        .get(&name)
-                        .unwrap()
-                        .get(&v)
-                        .unwrap()
-                        .iter()
-                        .map(|artifact| (artifact.url.clone(), artifact.hash.clone()))
-                        .collect(),
-                    expected_requirements: Rc::try_unwrap(cm).unwrap().requires_dist,
-                    expected_requirements_source: Rc::try_unwrap(provenance).unwrap(),
-                }
-            }),
-        })
-        .collect())
+    match result {
+        Ok(solution) => Ok(solution
+            .into_iter()
+            .filter_map(|(pkg, v)| match pkg {
+                ResPkg::Root => None,
+                ResPkg::Package(_, Some(_)) => None,
+                ResPkg::Package(name, None) => Some({
+                    let (cm, provenance) = state
+                        .metadata
+                        .borrow_mut()
+                        .remove(&(name.clone(), v.clone()))
+                        .unwrap();
+
+                    PinnedPackage {
+                        name: name.clone(),
+                        version: v.clone(),
+                        known_artifacts: state
+                            .releases
+                            .borrow()
+                            .get(&name)
+                            .unwrap()
+                            .get(&v)
+                            .unwrap()
+                            .iter()
+                            .map(|artifact| {
+                                (artifact.url.clone(), artifact.hash.clone())
+                            })
+                            .collect(),
+                        expected_requirements: Rc::try_unwrap(cm)
+                            .unwrap()
+                            .requires_dist,
+                        expected_requirements_source: Rc::try_unwrap(provenance)
+                            .unwrap(),
+                    }
+                }),
+            })
+            .collect()),
+        Err(err) => Err(match err {
+            ErrorRetrievingDependencies {
+                package,
+                version,
+                source,
+            } => anyhow!("{}", source)
+                .context(format!("fetching dependencies of {} v{}", package, version)),
+            ErrorChoosingPackageVersion(boxed_err) => {
+                anyhow!("{}", boxed_err.to_string())
+            }
+            ErrorInShouldCancel(boxed_err) => anyhow!("{}", boxed_err.to_string()),
+            Failure(s) => anyhow!("{}", s),
+            // XX Maybe the empty-range and self-dependency cases should be filtered out
+            // inside our code, for robustness?
+            DependencyOnTheEmptySet {
+                package,
+                version,
+                dependent,
+            } => anyhow!(
+                "{} v{}'s dependency on {} has self-contradictory version ranges",
+                package,
+                version,
+                dependent
+            ),
+            SelfDependency { package, version } => {
+                anyhow!("{} v{} depends on itself", package, version)
+            }
+            NoSolution(mut derivation_tree) => {
+                derivation_tree.collapse_no_versions();
+                anyhow!(
+                    "{}",
+                    pubgrub::report::DefaultStringReporter::report(&derivation_tree)
+                )
+            }
+        }),
+    }
 }
 
 #[derive(Debug)]
@@ -292,12 +336,16 @@ impl<'a> PubgrubState<'a> {
 fn specifiers_to_pubgrub(specs: &Specifiers) -> Result<Range<Version>> {
     let mut final_range = Range::any();
     for spec in &specs.0 {
-        let spec_range = spec
-            .to_ranges()?
-            .into_iter()
-            .fold(Range::none(), |accum, r| {
-                accum.union(&Range::between(r.start, r.end))
-            });
+        let spec_range =
+            spec.to_ranges()?
+                .into_iter()
+                .fold(Range::none(), |accum, r| {
+                    accum.union(&if r.end < *Version::INFINITY {
+                        Range::between(r.start, r.end)
+                    } else {
+                        Range::higher_than(r.start)
+                    })
+                });
         final_range = final_range.intersection(&spec_range);
     }
     Ok(final_range)

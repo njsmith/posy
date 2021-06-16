@@ -73,7 +73,7 @@ impl PackageIndex {
 
         let url = self
             .base_url
-            .join(&format!("pypi/{}/json", p.normalized()))?;
+            .join(&format!("pypi/{}/json/", p.normalized()))?;
         let page: ReleasesPage =
             self.agent.request_url("GET", &url).call()?.into_json()?;
 
