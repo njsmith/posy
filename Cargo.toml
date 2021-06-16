@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0.40"
-serde = { version = "1.0.126", features = ["derive", "rc"] }
+serde = { version = "1.0.126", features = ["derive"] }
 pep440 = "0.1.1"
 ureq = { version = "2.1.1", features = ["json", "rustls-native-certs", "cookies"] }
 zip = "0.5.13"

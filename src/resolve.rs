@@ -6,8 +6,7 @@ use crate::pypi::{Artifact, PyPI};
 use std::io::Read;
 use std::{borrow::Borrow, cell::RefCell};
 
-use std::rc::Rc;
-const ENV: Lazy<HashMap<String, Rc<str>>> = Lazy::new(|| {
+const ENV: Lazy<HashMap<String, String>> = Lazy::new(|| {
     // Copied from
     //   print(json.dumps(packaging.markers.default_environment(), sort_keys=True, indent=4))
     serde_json::from_str(
@@ -31,15 +30,15 @@ const ENV: Lazy<HashMap<String, Rc<str>>> = Lazy::new(|| {
 });
 
 struct HashEnv<'a> {
-    basic_env: &'a HashMap<String, Rc<str>>,
-    extra: Rc<str>,
+    basic_env: &'a HashMap<String, String>,
+    extra: &'a str,
 }
 
 impl<'a> marker::Env for HashEnv<'a> {
-    fn get_marker_var(&self, var: &str) -> Option<Rc<str>> {
+    fn get_marker_var(&self, var: &str) -> Option<&str> {
         match var {
-            "extra" => Some(self.extra.clone()),
-            _ => self.basic_env.get(var).map(|s| s.clone()),
+            "extra" => Some(self.extra),
+            _ => self.basic_env.get(var).map(|s| s.as_ref()),
         }
     }
 }
@@ -120,9 +119,9 @@ impl PythonDependencies {
         dc: &mut DependencyConstraints<ResPkg, Version>,
         extra: &Option<Extra>,
     ) {
-        let extra_str: Rc<str> = match extra {
-            Some(e) => e.to_string().into(),
-            None => "".to_string().into(),
+        let extra_str: &str = match extra {
+            Some(e) => e.normalized(),
+            None => "",
         };
         let env = HashEnv {
             basic_env: &*ENV,

@@ -44,7 +44,7 @@ pub mod marker {
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum Value {
         Variable(String),
-        Literal(Rc<str>),
+        Literal(String),
     }
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -61,20 +61,19 @@ pub mod marker {
         Operator { op: Op, lhs: Value, rhs: Value },
     }
 
-    use std::rc::Rc;
     pub trait Env {
-        fn get_marker_var(&self, var: &str) -> Option<Rc<str>>;
+        fn get_marker_var(&self, var: &str) -> Option<&str>;
     }
 
     impl Value {
-        pub fn eval(&self, env: &dyn Env) -> Result<Rc<str>> {
+        pub fn eval<'a>(&'a self, env: &'a dyn Env) -> Result<&'a str> {
             match self {
                 Value::Variable(varname) => {
-                    env.get_marker_var(&varname).ok_or_else(|| {
+                    env.get_marker_var(&varname).map(|s| s.as_ref()).ok_or_else(|| {
                         anyhow!("no environment marker named '{}'", varname)
                     })
                 }
-                Value::Literal(s) => Ok(s.clone()),
+                Value::Literal(s) => Ok(s),
             }
         }
     }
@@ -88,14 +87,14 @@ pub mod marker {
                     let lhs_val = lhs.eval(env)?;
                     let rhs_val = rhs.eval(env)?;
                     match op {
-                        Op::In => rhs_val.contains(lhs_val.as_ref()),
-                        Op::NotIn => !rhs_val.contains(lhs_val.as_ref()),
+                        Op::In => rhs_val.contains(lhs_val),
+                        Op::NotIn => !rhs_val.contains(lhs_val),
                         Op::Compare(op) => {
                             // If both sides can be parsed as versions (or the RHS can
                             // be parsed as a wildcard with a wildcard-accepting op),
                             // then we do a version comparison
                             if let Ok(lhs_ver) = lhs_val.parse() {
-                                if let Ok(rhs_ranges) = op.to_ranges(rhs_val.as_ref()) {
+                                if let Ok(rhs_ranges) = op.to_ranges(rhs_val) {
                                     return Ok(rhs_ranges
                                         .into_iter()
                                         .any(|r| r.contains(&lhs_ver)));
