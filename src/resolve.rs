@@ -107,12 +107,12 @@ pub fn resolve(
 
 #[derive(Debug)]
 pub struct PinnedPackage {
-    name: PackageName,
-    version: Version,
-    known_artifacts: Vec<(Url, super::package_index::ArtifactHash)>,
+    pub name: PackageName,
+    pub version: Version,
+    pub known_artifacts: Vec<(Url, super::package_index::ArtifactHash)>,
     // For install-time consistency checking/debugging
-    expected_requirements: Vec<Requirement>,
-    expected_requirements_source: String,
+    pub expected_requirements: Vec<Requirement>,
+    pub expected_requirements_source: String,
 }
 
 struct HashMapEnv<'a> {

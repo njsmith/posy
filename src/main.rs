@@ -65,7 +65,11 @@ fn main() -> Result<()> {
 
     let pins =
         resolve::resolve(&root_reqs, &*ENV, &index, &HashMap::new(), &|_| false)?;
-    println!("Resolution: {:?}", pins);
+    for pin in pins {
+        println!("{} v{}", pin.name.as_given(), pin.version);
+        println!("   requirements from {}", pin.expected_requirements_source);
+        println!("   requirements: {:?}", pin.expected_requirements);
+    }
 
     Ok(())
 }
