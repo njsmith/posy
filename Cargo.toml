@@ -31,5 +31,7 @@ structopt = "0.3.21"
 data-encoding = "2.3.2"
 pubgrub = "0.2.0"
 indoc = "1.0.3"
+tempfile = "3.2.0"
+ring = "0.16.20"
 
 [dev-dependencies]

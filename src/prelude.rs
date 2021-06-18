@@ -18,5 +18,5 @@ pub use crate::vocab::*;
 use directories::ProjectDirs;
 pub static PROJECT_DIRS: Lazy<ProjectDirs> = Lazy::new(|| {
     // ...Can this actually return None?
-    ProjectDirs::from("", "Trio Collective", "Ovi").unwrap()
+    ProjectDirs::from("", "Trio Collective", env!("CARGO_PKG_NAME")).unwrap()
 });
