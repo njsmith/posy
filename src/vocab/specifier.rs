@@ -188,7 +188,7 @@ impl CompareOp {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::util::from_commented_json;
+    use crate::test_util::from_commented_json;
 
     #[test]
     fn test_invalid_specifiers_table() {

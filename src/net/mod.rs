@@ -2,7 +2,6 @@ mod lazy_get;
 
 use crate::prelude::*;
 
-use std::cmp;
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::time::Duration;

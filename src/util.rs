@@ -1,5 +1,3 @@
-use crate::prelude::*;
-
 /// Work around an annoyance in Rust's standard traits -- if you define
 /// TryFrom<&str>, then you probably also want TryFrom<String> and FromStr,
 /// and the implementation is trivial in terms of TryFrom<&str>. So this macro
@@ -23,15 +21,4 @@ macro_rules! try_from_str_boilerplate {
             }
         }
     };
-}
-
-#[cfg(test)]
-pub fn from_commented_json<T>(input: &str) -> T
-where
-    T: serde::de::DeserializeOwned,
-{
-    static COMMENT: Lazy<Regex> = Lazy::new(|| Regex::new(r"#.*").unwrap());
-
-    let replaced = COMMENT.replace_all(input, "");
-    serde_json::from_str(&replaced).unwrap()
 }

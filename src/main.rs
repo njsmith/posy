@@ -8,6 +8,9 @@ mod resolve;
 mod util;
 mod vocab;
 
+#[cfg(test)]
+mod test_util;
+
 use anyhow::Result;
 use std::time::Duration;
 use ureq::AgentBuilder;
