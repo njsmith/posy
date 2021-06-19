@@ -36,3 +36,5 @@ ring = "0.16.20"
 log = "0.4.14"
 
 [dev-dependencies]
+tokio = { version = "1.7.0", features = ["rt-multi-thread", "sync"] }
+warp = "0.3.1"

@@ -6,12 +6,12 @@ pub use std::str::FromStr;
 
 pub use anyhow::{anyhow, bail, Context, Result};
 pub use derivative::Derivative;
+pub use log::{info, trace, warn};
 pub use once_cell::sync::Lazy;
 pub use regex::Regex;
 pub use serde::{Deserialize, Serialize};
 pub use serde_with::{DeserializeFromStr, SerializeDisplay};
 pub use url::Url;
-pub use log::{info, trace, warn};
 
 pub use crate::try_from_str_boilerplate;
 pub use crate::vocab::*;
