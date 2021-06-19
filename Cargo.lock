@@ -452,6 +452,7 @@ dependencies = [
  "derivative",
  "directories",
  "indoc",
+ "log",
  "once_cell",
  "peg",
  "pep440",

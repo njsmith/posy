@@ -1,52 +1,3 @@
-// There's an "atomicwrites" crate but it looks
-
-// Cache lets you store key (hashed for simplicity) -> value (as file)
-// get File if already there
-// write to a temp file and then once complete move to a key
-//
-// Will be used through several facades:
-// - fetch API response + ETag (revalidating if cached)
-// - fetch static resource, hopefully with known hash, but maybe not (?)
-// - fetch static resource lazily so can read end of wheel file without
-//   fetching whole thing? not sure what the best strategy is for this.
-//   will also want to work with hashes here -- get hash on write if don't
-//   have it before?
-// - store locally-built wheel
-
-// for pypi-hosted artifacts, we know the hash ahead of time, including all
-// variants on all systems.
-// for artifacts hosted elsewhere (URL, python environments for now, ...),
-// we don't necessarily. (None of the big blog storage services provide this;
-// neither does github releases. oh well.)
-// nuget does make it available through an undocumented x-ms-meta-SHA512
-// header that you can HEAD the nupkg to get.
-
-// when we implement pinning, we'll need to fetch the hash for all artifacts
-// across all known systems.
-
-// ...I guess we really do *have* to distinguish between the lazy version and
-// the "get this whole file" version in the API, because for the latter case
-// we need to validate hashes before doing anything else.
-//
-// And the lazy version is only useful for the specific case of wanting to get
-// a wheel METADATA without fetching the whole file, during resolution. And
-// for that a trivial heuristic like "fetch the last X bytes, and if that
-// isn't enough, fetch the whole thing" should work fine. So we might as well
-// just have cache entries for "the last X bytes" and "the whole file" and
-// call it good.
-//
-// Or! could fetch the info incrementally the first time in memory, and then
-// dump it into the cache once we've gotten all the bits we need. Or! could
-// just... cache the relevant parts of METADATA once we get it. Or the
-// METADATA file as a whole, why not.
-
-// Some filesystems don't cope well with a single directory containing lots of files. So
-// we disperse our files over multiple nested directories. This is the nesting depth, so
-// "3" means our paths will look like:
-//   ${BASE}/${CHAR}/${CHAR}/${CHAR}/${ENTRY}
-// And our fanout is 64, so this would split our files over 64**3 = 262144 directories.
-const DIR_NEST_DEPTH: usize = 3;
-
 use crate::prelude::*;
 use std::fs::{self, File};
 use std::io::prelude::*;
@@ -54,6 +5,13 @@ use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 
 use ring::digest;
+
+// Some filesystems don't cope well with a single directory containing lots of files. So
+// we disperse our files over multiple nested directories. This is the nesting depth, so
+// "3" means our paths will look like:
+//   ${BASE}/${CHAR}/${CHAR}/${CHAR}/${ENTRY}
+// And our fanout is 64, so this would split our files over 64**3 = 262144 directories.
+const DIR_NEST_DEPTH: usize = 3;
 
 /// Naive key/value cache, one value per file.
 ///
