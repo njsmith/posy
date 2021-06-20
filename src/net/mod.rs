@@ -1,4 +1,4 @@
-mod lazy_get;
+mod lazy_remote_file;
 
 use crate::prelude::*;
 
@@ -48,6 +48,6 @@ impl Net {
     }
 
     pub fn get_lazy_artifact(&self, url: &Url) -> Result<impl Read + Seek> {
-        Ok(lazy_get::LazyGet::new(&self.agent, &url)?)
+        Ok(lazy_remote_file::LazyRemoteFile::new(&self.agent, &url)?)
     }
 }
