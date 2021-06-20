@@ -34,6 +34,7 @@ indoc = "1.0.3"
 tempfile = "3.2.0"
 ring = "0.16.20"
 log = "0.4.14"
+serde_bytes = "0.11.5"
 
 [dev-dependencies]
 fastrand = "1.4.1"

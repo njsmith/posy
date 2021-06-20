@@ -1,7 +1,6 @@
 use crate::prelude::*;
 
-// XX: move all URL access behind a caching layer
-use ureq::Agent;
+use crate::net::Net;
 
 // XX probably will want to make this configurable
 // XX probably switch to using the simple API also
@@ -42,14 +41,8 @@ pub struct Artifact {
 }
 
 pub struct PackageIndex {
-    agent: Agent,
-    base_url: Url,
-}
-
-impl PackageIndex {
-    pub fn new(agent: Agent, base_url: Url) -> PackageIndex {
-        PackageIndex { agent, base_url }
-    }
+    pub net: Net,
+    pub base_url: Url,
 }
 
 impl PackageIndex {
@@ -75,7 +68,7 @@ impl PackageIndex {
             .base_url
             .join(&format!("pypi/{}/json/", p.normalized()))?;
         let page: ReleasesPage =
-            self.agent.request_url("GET", &url).call()?.into_json()?;
+            serde_json::from_slice(self.net.get_etagged(&url)?.as_slice())?;
 
         let mut releases = HashMap::new();
         for (ver, pypi_artifacts) in page.releases {
@@ -102,7 +95,7 @@ impl PackageIndex {
 
 impl PackageIndex {
     pub fn wheel_metadata(&self, url: &Url) -> Result<CoreMetadata> {
-        use std::io::{Cursor, Read, Seek};
+        use std::io::{Read, Seek};
 
         println!("Fetching and parsing {}", url);
 
@@ -110,10 +103,7 @@ impl PackageIndex {
             bail!("This URL doesn't seem to be a wheel: {}", url);
         }
 
-        let resp = self.agent.request_url("GET", &url).call()?;
-        let mut body = Vec::new();
-        resp.into_reader().read_to_end(&mut body)?;
-        let body = Cursor::new(body);
+        let body = self.net.get_lazy_artifact(&url)?;
         let mut zip = zip::ZipArchive::new(body)?;
         let names: Vec<String> = zip.file_names().map(|s| s.to_owned()).collect();
 

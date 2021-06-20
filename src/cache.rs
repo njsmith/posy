@@ -21,6 +21,7 @@ const DIR_NEST_DEPTH: usize = 3;
 /// Currently has no eviction policy at all -- just grows without bound. That's... bad,
 /// maybe? Does pip's cache have any eviction policy? Do we need to store any extra
 /// metadata to help with evictions (e.g. last accessed time)?
+#[derive(Debug, Clone)]
 pub struct Cache {
     base: PathBuf,
 }
@@ -100,10 +101,11 @@ impl Cache {
         T: FnOnce(&mut File) -> Result<()>,
     {
         let p = self.path_for_key(basket, key);
+        fs::create_dir_all(p.parent().unwrap())
+            .context("Failed to create cache directory")?;
         let mut tmp = tempfile::NamedTempFile::new_in(&self.base)?;
 
         write(&mut tmp.as_file_mut())?;
-        fs::create_dir_all(p.parent().unwrap())?;
         let mut f = tmp.persist(&p)?;
         f.seek(SeekFrom::Start(0))?;
         Ok(f)

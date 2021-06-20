@@ -55,10 +55,14 @@ fn main() -> Result<()> {
         .timeout_write(Duration::from_secs(5))
         .build();
 
-    let index = package_index::PackageIndex::new(
-        agent.clone(),
-        package_index::ROOT_URL.clone(),
-    );
+    let cache: cache::Cache = Default::default();
+
+    let net = net::Net { agent, cache };
+
+    let index = package_index::PackageIndex {
+        net: net.clone(),
+        base_url: package_index::ROOT_URL.clone(),
+    };
 
     let root_reqs = opt
         .inputs

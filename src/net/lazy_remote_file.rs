@@ -58,6 +58,9 @@ impl Seek for LazyRemoteFile {
 }
 
 enum RangeResponse {
+    NotSatisfiable {
+        total_len: u64,
+    },
     Partial {
         offset: u64,
         total_len: u64,
@@ -72,13 +75,24 @@ fn fetch_range(agent: &Agent, url: &Url, range_header: &str) -> Result<RangeResp
     // but this is the only format that's actually *useful* to us.
     static CONTENT_RANGE_RE: Lazy<Regex> =
         Lazy::new(|| Regex::new(r"^bytes ([0-9]+)-[0-9]+/([0-9]+)$").unwrap());
+    static CONTENT_RANGE_LEN_ONLY_RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"^bytes [^/]*/([0-9]+)$").unwrap());
 
     println!("fetching {}", range_header);
 
-    let response = agent
+    let response_result = agent
         .request_url("GET", &url)
         .set("Range", range_header)
-        .call()?;
+        .call();
+
+    let response = match response_result {
+        Ok(response) => response,
+        Err(ureq::Error::Status(_, response)) => response,
+        _ => {
+            response_result?;
+            unreachable!()
+        }
+    };
 
     Ok(match response.status() {
         // 206 Partial Content
@@ -105,6 +119,22 @@ fn fetch_range(agent: &Agent, url: &Url, range_header: &str) -> Result<RangeResp
                 }
             }
         }
+        // 416 Range Not Satisfiable
+        // e.g. because we requested past the end or beginning (particularly likely on
+        // our first fetch, where we don't know how large the file is)
+        416 => match response.header("Content-Range") {
+            None => bail!("416 response is missing Content-Range"),
+            Some(content_range) => {
+                match CONTENT_RANGE_LEN_ONLY_RE.captures(&content_range) {
+                    None => bail!("failed to parse 416 Content-Range"),
+                    Some(captures) => {
+                        let total_len: u64 =
+                            captures.get(1).unwrap().as_str().parse()?;
+                        RangeResponse::NotSatisfiable { total_len }
+                    }
+                }
+            }
+        },
         // 200 Ok -> server doesn't like Range: requests and is just sending the full
         // data
         200 => RangeResponse::Complete(Box::new(response.into_reader())),
@@ -119,6 +149,9 @@ impl LazyRemoteFile {
             &self.url,
             &format!("bytes={}-{}", offset, offset.saturating_add(length) - 1),
         )? {
+            RangeResponse::NotSatisfiable { .. } => {
+                bail!("Server didn't like my range request and I don't know why");
+            }
             RangeResponse::Partial { offset, data, .. } => {
                 self.loaded.insert(offset, slurp(data)?);
                 Ok(())
@@ -193,7 +226,7 @@ impl Read for LazyRemoteFile {
             None => self.length,
         };
         let fetch_start = if gap_end - self.seek_pos < LAZY_FETCH_SIZE {
-            gap_end - LAZY_FETCH_SIZE
+            gap_end.saturating_sub(LAZY_FETCH_SIZE)
         } else {
             self.seek_pos
         };
@@ -220,6 +253,9 @@ impl LazyRemoteFile {
             seek_pos: 0,
         };
         match fetch_range(&agent, &url, &format!("bytes=-{}", LAZY_FETCH_SIZE))? {
+            RangeResponse::NotSatisfiable { total_len } => {
+                remote.length = total_len;
+            }
             RangeResponse::Partial {
                 offset,
                 total_len,
@@ -303,6 +339,14 @@ mod test {
             panic!();
         }
 
+        // Fetching an invalid range at least tells us what the valid range is
+        let rr = fetch_range(&agent, &url, "bytes=10000-20000").unwrap();
+        if let RangeResponse::NotSatisfiable { total_len } = rr {
+            assert_eq!(total_len, 3000);
+        } else {
+            panic!();
+        }
+
         // Error propagation happens
         let res = fetch_range(&agent, &server.url("missing"), "bytes=100-200");
         assert!(res.is_err());
@@ -376,8 +420,11 @@ mod test {
                     r.seek(pos).unwrap();
                     r.read_to_end(&mut buf).unwrap();
                     buf
-                },
-                other => { other.unwrap(); unreachable!() },
+                }
+                other => {
+                    other.unwrap();
+                    unreachable!()
+                }
             }
         }
 
