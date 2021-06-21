@@ -1,5 +1,6 @@
 use crate::prelude::*;
 
+use crate::cache::{Basket, Cache};
 use crate::net::Net;
 
 // XX probably will want to make this configurable
@@ -41,6 +42,7 @@ pub struct Artifact {
 }
 
 pub struct PackageIndex {
+    pub cache: Cache,
     pub net: Net,
     pub base_url: Url,
 }
@@ -103,6 +105,10 @@ impl PackageIndex {
             bail!("This URL doesn't seem to be a wheel: {}", url);
         }
 
+        if let Some(metadata) = self.cache.get(Basket::PackageMetadata, url.as_str()) {
+            return Ok(CoreMetadata::parse(&metadata)?);
+        }
+
         let body = self.net.get_lazy_artifact(&url)?;
         let mut zip = zip::ZipArchive::new(body)?;
         let names: Vec<String> = zip.file_names().map(|s| s.to_owned()).collect();
@@ -123,7 +129,10 @@ impl PackageIndex {
                 WheelMetadata::parse(&get(&mut zip, &name)?)?;
             }
             if name.ends_with(".dist-info/METADATA") {
-                return Ok(CoreMetadata::parse(&get(&mut zip, &name)?)?);
+                let metadata = get(&mut zip, &name)?;
+                let parsed = CoreMetadata::parse(&metadata)?;
+                self.cache.put(Basket::PackageMetadata, url.as_str(), &metadata)?;
+                return Ok(parsed);
             }
         }
 

@@ -60,9 +60,10 @@ fn main() -> Result<()> {
 
     let cache: cache::Cache = Default::default();
 
-    let net = net::Net { agent, cache };
+    let net = net::Net { agent, cache: cache.clone() };
 
     let index = package_index::PackageIndex {
+        cache: cache.clone(),
         net: net.clone(),
         base_url: package_index::ROOT_URL.clone(),
     };
