@@ -1,5 +1,5 @@
 [package]
-name = "ovi"
+name = "posy"
 version = "0.1.0"
 authors = ["Nathaniel J. Smith <njs@pobox.com>"]
 edition = "2018"

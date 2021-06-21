@@ -781,37 +781,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28988d872ab76095a6e6ac88d99b54fd267702734fd7ffe610ca27f533ddb95a"
 
 [[package]]
-name = "ovi"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "data-encoding",
- "derivative",
- "directories",
- "fastrand",
- "indoc",
- "log",
- "once_cell",
- "peg",
- "pep440",
- "pubgrub",
- "regex",
- "ring",
- "serde",
- "serde_bytes",
- "serde_cbor",
- "serde_json",
- "serde_with",
- "structopt",
- "tempfile",
- "tokio",
- "ureq",
- "url",
- "warp",
- "zip",
-]
-
-[[package]]
 name = "peg"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -891,6 +860,37 @@ name = "pkg-config"
 version = "0.3.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3831453b3449ceb48b6d9c7ad7c96d5ea673e9b470a1dc578c2ce6521230884c"
+
+[[package]]
+name = "posy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "data-encoding",
+ "derivative",
+ "directories",
+ "fastrand",
+ "indoc",
+ "log",
+ "once_cell",
+ "peg",
+ "pep440",
+ "pubgrub",
+ "regex",
+ "ring",
+ "serde",
+ "serde_bytes",
+ "serde_cbor",
+ "serde_json",
+ "serde_with",
+ "structopt",
+ "tempfile",
+ "tokio",
+ "ureq",
+ "url",
+ "warp",
+ "zip",
+]
 
 [[package]]
 name = "ppv-lite86"
