@@ -1,6 +1,10 @@
 // XX automatic retries!
 
 mod lazy_remote_file;
+mod retry;
+mod user_agent;
+
+pub use user_agent::user_agent;
 
 use crate::prelude::*;
 
@@ -36,7 +40,7 @@ impl Net {
         if let Some(cached) = &maybe_cached {
             req = req.set("If-None-Match", cached.etag);
         }
-        let resp = req.call()?;
+        let resp = retry::call_with_retry(req)?;
         match resp.status() {
             // 304 Not Modified
             304 => Ok(maybe_cached.unwrap().body.to_owned()),
@@ -74,10 +78,7 @@ impl Net {
             Ok(f)
         } else {
             self.cache.put_file(Basket::Artifact, url.as_str(), |f| {
-                let resp = self.agent.request_url("GET", &url).call()?;
-                if resp.status() != 200 {
-                    bail!("got status {} while fetching {}", resp.status(), url);
-                }
+                let resp = retry::call_with_retry(self.agent.request_url("GET", &url))?;
                 io::copy(&mut resp.into_reader(), f)?;
                 Ok(())
             })

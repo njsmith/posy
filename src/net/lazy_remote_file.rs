@@ -80,19 +80,11 @@ fn fetch_range(agent: &Agent, url: &Url, range_header: &str) -> Result<RangeResp
 
     println!("fetching {}", range_header);
 
-    let response_result = agent
-        .request_url("GET", &url)
-        .set("Range", range_header)
-        .call();
-
-    let response = match response_result {
-        Ok(response) => response,
-        Err(ureq::Error::Status(_, response)) => response,
-        _ => {
-            response_result?;
-            unreachable!()
-        }
-    };
+    use ureq::OrAnyStatus;
+    let response = super::retry::call_with_retry(
+        agent.request_url("GET", &url).set("Range", range_header),
+    )
+    .or_any_status()?;
 
     Ok(match response.status() {
         // 206 Partial Content

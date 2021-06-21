@@ -50,9 +50,12 @@ const ENV: Lazy<HashMap<String, String>> = Lazy::new(|| {
 fn main() -> Result<()> {
     let opt = Opt::from_args();
 
+    println!("user agent: {}", net::user_agent());
+
     let agent = AgentBuilder::new()
-        .timeout_read(Duration::from_secs(5))
-        .timeout_write(Duration::from_secs(5))
+        .user_agent(&net::user_agent())
+        .timeout_read(Duration::from_secs(15))
+        .timeout_write(Duration::from_secs(15))
         .build();
 
     let cache: cache::Cache = Default::default();
