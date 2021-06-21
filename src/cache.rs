@@ -34,7 +34,7 @@ pub enum Basket {
     Artifact,
     // url -> METADATA file
     PackageMetadata,
-    // XX todo for locally-built wheels. What should this be indexed by?
+    // XX todo for locally-built wheels. What should this be indexed by? sdist url?
     //LocallyBuilt,
 }
 
@@ -51,7 +51,7 @@ impl Basket {
 impl Default for Cache {
     fn default() -> Self {
         Cache {
-            base: PROJECT_DIRS.cache_dir().join("kvcache"),
+            base: PROJECT_DIRS.cache_dir().into(),
         }
     }
 }
