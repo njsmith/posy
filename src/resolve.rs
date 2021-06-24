@@ -386,8 +386,8 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
             ResPkg::Package(name, _) => {
                 // why does this have to be 'parse' instead of 'try_into'?! it is a
                 // mystery
-                let python_version: Version =
-                    self.env.get("python_version").unwrap().parse()?;
+                let python_full_version: Version =
+                    self.env.get("python_full_version").unwrap().parse()?;
 
                 for version in self.versions(pkg.borrow())?.iter() {
                     if !range.borrow().contains(&version) {
@@ -400,7 +400,7 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
                     let (metadata, _) = self.metadata(&name, &version)?;
 
                     // check if this version is even compatible with our python
-                    match metadata.requires_python.satisfied_by(&python_version) {
+                    match metadata.requires_python.satisfied_by(&python_full_version) {
                         Err(e) => {
                             println!("Error checking Requires-Python: {}; skipping", e);
                             continue;
@@ -408,7 +408,7 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
                         Ok(false) => {
                             println!(
                                 "Python {} doesn't satisfy Requires-Python: {:?}",
-                                python_version, metadata.requires_python
+                                python_full_version, metadata.requires_python
                             );
                             continue;
                         }
