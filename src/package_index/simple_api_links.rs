@@ -11,17 +11,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// for simple api requests, what pip does is send Accept: text/html, and then check
-// Content-Type .lower().startswith("text/html")
-
-// ureq has .content_type() and .charset() accessors
-
-// it also checks for charset in the Content-Type header
-
-// it also checks for <base href=...> to set the document's base url
-
-// inspired by
-
 use crate::prelude::*;
 
 use encoding_rs::Encoding;
@@ -37,18 +26,28 @@ use html5ever::{expanded_name, local_name, namespace_url, ns, parse_document};
 use html5ever::{Attribute, ExpandedName, LocalNameStaticSet, QualName};
 use string_cache::Atom;
 
+const META_TAG: ExpandedName = expanded_name!(html "meta");
 const BASE_TAG: ExpandedName = expanded_name!(html "base");
 const A_TAG: ExpandedName = expanded_name!(html "a");
 const HREF_ATTR: Atom<LocalNameStaticSet> = html5ever::local_name!("href");
+const NAME_ATTR: Atom<LocalNameStaticSet> = html5ever::local_name!("name");
+const CONTENT_ATTR: Atom<LocalNameStaticSet> = html5ever::local_name!("content");
 static REQUIRES_PYTHON_ATTR: Lazy<Atom<LocalNameStaticSet>> =
     Lazy::new(|| Atom::from("data-requires-python"));
 static YANKED_ATTR: Lazy<Atom<LocalNameStaticSet>> =
     Lazy::new(|| Atom::from("data-yanked"));
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct SimpleAPILink {
     url: Url,
     requires_python: Option<String>,
     yanked: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq, Default)]
+pub struct SimpleAPIPage {
+    repository_version: Option<String>,
+    links: Vec<SimpleAPILink>,
 }
 
 struct Sink {
@@ -56,7 +55,7 @@ struct Sink {
     names: HashMap<usize, QualName>,
     base: Url,
     changed_base: bool,
-    links: Vec<SimpleAPILink>,
+    page: SimpleAPIPage,
 }
 
 impl Sink {
@@ -91,6 +90,12 @@ impl TreeSink for Sink {
         attrs: Vec<Attribute>,
         _: ElementFlags,
     ) -> usize {
+        if name.expanded() == META_TAG {
+            if let Some("pypi:repository-version") = get_attr(&NAME_ATTR, &attrs) {
+                self.page.repository_version = get_attr(&CONTENT_ATTR, &attrs).map(String::from);
+            }
+        }
+
         if name.expanded() == BASE_TAG {
             // HTML spec says that only the first <base> is respected
             if !self.changed_base {
@@ -112,7 +117,7 @@ impl TreeSink for Sink {
                             .map(String::from);
                     let yanked =
                         get_attr(YANKED_ATTR.borrow(), &attrs).map(String::from);
-                    self.links.push(SimpleAPILink {
+                    self.page.links.push(SimpleAPILink {
                         url,
                         requires_python,
                         yanked,
@@ -190,7 +195,22 @@ impl TreeSink for Sink {
     fn mark_script_already_started(&mut self, _node: &usize) {}
 }
 
-pub fn extract<T>(page: ureq::Response) -> Result<Vec<SimpleAPILink>> {
+fn run_sink<T: std::io::Read>(base: Url, body: &mut T) -> Result<SimpleAPIPage> {
+    let sink = Sink {
+        next_id: 1,
+        base,
+        changed_base: false,
+        names: HashMap::new(),
+        page: Default::default(),
+    };
+    Ok(parse_document(sink, Default::default())
+        .from_utf8()
+        .read_from(body)?
+        .page)
+}
+
+// XX: for simple api requests, remember to send Accept: text/html
+pub fn extract<T>(page: ureq::Response) -> Result<SimpleAPIPage> {
     if page.content_type() != "text/html" {
         bail!(
             "simple API page expected Content-Type: text/html, but got {}",
@@ -204,15 +224,51 @@ pub fn extract<T>(page: ureq::Response) -> Result<Vec<SimpleAPILink>> {
         .encoding(Encoding::for_label(page.charset().as_bytes()))
         .build(page.into_reader());
 
-    let sink = Sink {
-        next_id: 1,
-        base,
-        changed_base: false,
-        names: HashMap::new(),
-        links: Vec::new(),
-    };
-    Ok(parse_document(sink, Default::default())
-        .from_utf8()
-        .read_from(&mut utf8_body)?
-        .links)
+    run_sink(base, &mut utf8_body)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_sink_simple() {
+        let base = Url::parse("https://example.com/old-base/").unwrap();
+        let body = r#"<html>
+                <head>
+                  <meta name="pypi:repository-version" content="1.0">
+                  <base href="https://example.com/new-base/">
+                </head>
+                <body>
+                  <a href="link1">link1</a>
+                  <a href="/link2" data-yanked="some reason">link2</a>
+                  <a href="link3" data-requires-python=">= 3.17">link3</a>
+                </body>
+              </html>
+            "#;
+        let parsed = run_sink(base, &mut std::io::Cursor::new(body)).unwrap();
+        assert_eq!(
+            parsed,
+            SimpleAPIPage {
+                repository_version: Some("1.0".to_owned()),
+                links: vec![
+                    SimpleAPILink {
+                        url: Url::parse("https://example.com/new-base/link1").unwrap(),
+                        requires_python: None,
+                        yanked: None,
+                    },
+                    SimpleAPILink {
+                        url: Url::parse("https://example.com/link2").unwrap(),
+                        requires_python: None,
+                        yanked: Some("some reason".to_owned()),
+                    },
+                    SimpleAPILink {
+                        url: Url::parse("https://example.com/new-base/link3").unwrap(),
+                        requires_python: Some(">= 3.17".to_owned()),
+                        yanked: None,
+                    },
+                ]
+            }
+        )
+    }
 }
