@@ -39,15 +39,15 @@ static YANKED_ATTR: Lazy<Atom<LocalNameStaticSet>> =
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct SimpleAPILink {
-    url: Url,
-    requires_python: Option<String>,
-    yanked: Option<String>,
+    pub url: Url,
+    pub requires_python: Option<String>,
+    pub yanked: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq, Default)]
 pub struct SimpleAPIPage {
-    repository_version: Option<String>,
-    links: Vec<SimpleAPILink>,
+    pub repository_version: Option<String>,
+    pub links: Vec<SimpleAPILink>,
 }
 
 struct Sink {

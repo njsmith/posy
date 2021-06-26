@@ -1,4 +1,4 @@
-mod simple_api_links;
+mod simple_api_page;
 
 use crate::prelude::*;
 
