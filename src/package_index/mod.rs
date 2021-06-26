@@ -1,3 +1,5 @@
+mod simple_api_links;
+
 use crate::prelude::*;
 
 use crate::cache::{Basket, Cache};
