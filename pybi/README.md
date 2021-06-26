@@ -32,11 +32,11 @@ filename is more idiomatically written as
 A `.pybi` file is a zip file, that can be unpacked directly into an
 arbitrary location and then used as a self-contained Python
 environment. There's no `.data` directory or install scheme keys,
-because the Python environment itself gets to pick which install
-scheme it's using.
+because the Python environment knows which install scheme it's using,
+so it can just put things in the right places to start with.
 
-The directory `{distribution}-{version}.dist-info/` must exist, and
-must contain:
+Similar to wheels, the directory `{distribution}-{version}.dist-info/`
+must exist, and must contain:
 
 * `.../METADATA`: In the same format as described in the current core
   metadata spec, except that the following keys are forbidden because
@@ -52,29 +52,88 @@ must contain:
   ```
   Pybi-Version: 1.0
   Generator: {name} {version}
-  Tag: {platform tag}
+  Tag: {platform tag}   # may be repeated
   Build: 1   # optional
   ```
 
 * `.../RECORD`: same as in wheels.
 
-* `.../pybi.json`: A JSON file containing an object with the
-  following keys:
+* `.../pybi.json`: A JSON file. Example:
+
+  ```json
+  {
+      "markers_env": {
+          "implementation_name": "cpython",
+          "implementation_version": "3.9.5",
+          "os_name": "posix",
+          "platform_machine": "x86_64",
+          "platform_python_implementation": "CPython",
+          "platform_system": "Linux",
+          "python_full_version": "3.9.5",
+          "python_version": "3.9",
+          "sys_platform": "linux"
+      },
+      "tags": [
+          "cp39-cp39-PLATFORM",
+          "cp39-abi3-PLATFORM",
+          "cp39-none-PLATFORM",
+          "cp38-abi3-PLATFORM",
+          "cp37-abi3-PLATFORM",
+          "cp36-abi3-PLATFORM",
+          "cp35-abi3-PLATFORM",
+          "cp34-abi3-PLATFORM",
+          "cp33-abi3-PLATFORM",
+          "cp32-abi3-PLATFORM",
+          "py39-none-PLATFORM",
+          "py3-none-PLATFORM",
+          "py38-none-PLATFORM",
+          "py37-none-PLATFORM",
+          "py36-none-PLATFORM",
+          "py35-none-PLATFORM",
+          "py34-none-PLATFORM",
+          "py33-none-PLATFORM",
+          "py32-none-PLATFORM",
+          "py31-none-PLATFORM",
+          "py30-none-PLATFORM",
+          "py39-none-any",
+          "py3-none-any",
+          "py38-none-any",
+          "py37-none-any",
+          "py36-none-any",
+          "py35-none-any",
+          "py34-none-any",
+          "py33-none-any",
+          "py32-none-any",
+          "py31-none-any",
+          "py30-none-any"
+      ]
+      "paths": {
+          "data": ".",
+          "include": "include/python3.9",
+          "platinclude": "include/python3.9",
+          "platlib": "lib/python3.9/site-packages",
+          "platstdlib": "lib/python3.9",
+          "purelib": "lib/python3.9/site-packages",
+          "scripts": "bin",
+          "stdlib": "lib/python3.9"
+      },
+  }
+  ```
+
+  More formally, it must be an object with the following keys:
 
   * `markers_env`: The value of all PEP 508 marker values that are
     static across installs of this Pybi. (So e.g., it should have
     `python_version`, but not `platform_version`, which on my system
     looks like `#60-Ubuntu SMP Thu May 6 07:46:32 UTC 2021`).
     
-    In most cases, this should allow a resolver running on Linux to
-    compute package pins for a Python environment on Windows, or
-    vice-versa, so long as the resolver has access to the target
-    platform's .pybi file. (It would allow it in all cases, if we
-    deprecated the maybe-not-very-useful `platform_release` and
-    `platform_version` markers, and had static dependency metadata
-    available for all packages.)
+    Rationale: In many cases, this should allow a resolver running on
+    Linux to compute package pins for a Python environment on Windows,
+    or vice-versa, so long as the resolver has access to the target
+    platform's .pybi file. (Note that Requires-Python constraints can
+    be checked by using the `python_full_version` value.)
 
-    It's also just a bunch of generally useful information. For
+    This is also just a bunch of generally useful information. For
     example, if you have a `pypy3-7.3.2` pybi, and you want to know
     what version of the Python language that supports, then that's
     recorded in the `python_version` marker.
@@ -82,27 +141,12 @@ must contain:
   * `tags`: The PEP 425 tags supported by this interpreter, in
     preference order, except that the special platform tag `PLATFORM`
     should replace any platform tags that depend on the final
-    installation system. So e.g.:
-    
-    ```
-    [
-      "cp39-cp39-PLATFORM",
-      "cp39-abi3-PLATFORM",
-      "cp38-abi3-PLATFORM",
-      ...
-      "py39-none-PLATFORM",
-      "py3-none-PLATFORM",
-      "py39-none-any",
-      "py3-none-any",
-      "py38-none-any",
-      ...
-    ]
-    ```
+    installation system.
 
-    Pybi installers already need to be able to compute the set of
-    platform tags for a given system in order to determine whether a
-    `.pybi` file is compatible. So the idea is that they can combine
-    their own list of platform tags with this list of
+    Rationale: Pybi installers already need to be able to compute the
+    set of platform tags for a given system in order to determine
+    whether a `.pybi` file is compatible. So the idea is that they can
+    combine their own list of platform tags with this list of
     platform-independent tags to determine which wheels are compatible
     with a given Pybi environment, without installing or running the
     Pybi environment.
@@ -110,23 +154,15 @@ must contain:
   * `paths`: The install paths needed to install wheels, as relative
     paths starting at the root of the zip file.
 
-    The intent is that `tags` and `paths` together should be enough to
-    let an installer choose wheels and install them into an unpacked
-    pybi environment, without invoking Python.
+    Rationale: `tags` and `paths` together should be enough to let an
+    installer choose wheels and install them into an unpacked pybi
+    environment, without invoking Python.
 
     In addition: it must be possible to invoke the Python interpreter
     by running `{paths["scripts"]}/python`. If there are alternative
     interpreter entry points (e.g. `pythonw` for Windows GUI apps),
     then they should also be in that directory under their
     conventional names, with no version number attached.
-
-  * `extra_bin_path`: 
-  
-    It would simpler if we could rely on the python executables living
-    in `sysconfig.get_paths()["scripts"]`. That's generally true on
-    unix, but it's not true in Steve's nuget packages for windows.
-    TODO: Talk to Steve about whether this can be changed?
-    
 
   You can probably generate a valid `pybi.json` file by doing:
 
@@ -163,7 +199,7 @@ must contain:
 
   json.dump({"markers_env": markers_env, "tags": str_tags, "paths": paths}, sys.stdout)
   ```
-
+  
 
 ## Todo
 
@@ -172,7 +208,7 @@ Currently on Unix it's common for environments to have e.g.
 `bin/python3.X`. Is that important to preserve? It wouldn't be a huge
 deal to allow symlinks in the zip files, but most zip libraries
 (including Python's) don't support them by default, so if we want them
-to work then we'll probably need to say so.
+to work then we'll need to say that explicitly.
 
 Should we say anything about other tools installed by default, like
 e.g. pip? In general it's kind of up to the pybi builder what they
