@@ -35,8 +35,11 @@ environment. There's no `.data` directory or install scheme keys,
 because the Python environment knows which install scheme it's using,
 so it can just put things in the right places to start with.
 
-Similar to wheels, the directory `{distribution}-{version}.dist-info/`
-must exist, and must contain:
+Similar to wheels, a top-level directory `pybi-info/` must exist.
+(Rationale: `pybi-info` vs `dist-info` makes sure that tools don't get
+confused about which kind of metadata they're looking at; leaving off
+the `{name}-{version}` part is fine only one pybi can be installed
+into a given directory.) It must contain:
 
 * `.../METADATA`: In the same format as described in the current core
   metadata spec, except that the following keys are forbidden because
@@ -56,7 +59,7 @@ must exist, and must contain:
   Build: 1   # optional
   ```
 
-* `.../RECORD`: same as in wheels.
+* `.../RECORD`: same as in wheels, except see the note about symlinks, below.
 
 * `.../pybi.json`: A JSON file. Example:
 
@@ -201,14 +204,116 @@ must exist, and must contain:
   ```
   
 
-## Todo
+## Symlinks
 
-Currently on Unix it's common for environments to have e.g.
-`bin/python` as a symlink to `bin/python3`, which is a symlink to
-`bin/python3.X`. Is that important to preserve? It wouldn't be a huge
-deal to allow symlinks in the zip files, but most zip libraries
-(including Python's) don't support them by default, so if we want them
-to work then we'll need to say that explicitly.
+Currently, symlinks are used by default in all Unix Python installs
+(e.g., `bin/python3 -> bin/python3.9`). And fruthermore, symlinks are
+*required* to store macOS framework builds in `pybi` files. So,
+`.pybi` files must be able to represent symlinks.
+
+
+### Representing symlinks in zip files
+
+The de-facto standard for representing symlinks in zip files is the
+Info-Zip symlink extension, which works as follows:
+
+- The symlink's target path is stored as if it were the file contents
+- The top 4 bits of the Unix permissions field are set to `0xa`, i.e.:
+  `permissions & 0xf000 == 0xa000`
+- The Unix permissions field, in turn, is stored as the top 16 bits of
+  the "external attributes" field.
+  
+So if using Python's `zipfile` module, you can check whether a
+`ZipInfo` represents a symlink by doing:
+
+```python
+(zip_info.external_attr >> 16) & 0xf000 == 0xa000
+```
+
+Or if using Rust's `zip` crate, the equivalent check is:
+
+```rust
+fn is_symlink(zip_file: &zip::ZipFile) -> bool {
+    match zip_file.unix_mode() {
+        Some(mode) => mode & 0xf000 == 0xa000,
+        None => false,
+    }
+}
+```
+
+If you're on Unix, your `zip` command probably understands this format
+already.
+
+
+### Representing symlinks in RECORD files
+
+Normally, a `RECORD` file lists each file + its hash + its length:
+
+```csv
+my/favorite/file,sha256=...,12345
+```
+
+For symlinks, we instead write:
+
+```csv
+name/of/symlink,symlink=path/to/symlink/target
+```
+
+That is: we use a special "hash function" called `symlink`, and then
+store the actual symlink target as the "hash value". And the length is
+left empty.
+
+Rationale: we're already committed to the `RECORD` file containing a
+redundant version of everything in the main archive, so for symlinks
+we at least need to store some kind of hash, plus some kind of flag to
+indicate that this is a symlink. Given that symlink target strings are
+roughly the same size as a hash, we might as well store them directly.
+This also makes the symlink information easier to access for tools
+that don't understand the Info-Zip symlink extension, and makes it
+possible to losslessly unpack and repack a Unix pybi on a Windows
+system, which someone might find handy at some point.
+
+
+### Storing symlinks in `pybi` files
+
+When a pybi creator stores a symlink, they MUST use both of the
+mechanisms defined above: storing it in the zip archive directly using
+the Info-Zip representation, and also recording it in the `RECORD`
+file.
+
+Pybi consumers SHOULD validate that the symlinks in the archive and
+`RECORD` file are consistent with each other.
+
+We also considered using *only* the `RECORD` file to store symlinks,
+but it seems useful to let pybi's be unpacked by the regular `unzip`
+tool, and it only understands the Info-Zip extensions.
+
+
+### Limitations
+
+Symlinks enable a lot of potential messiness. To keep things under
+control, we impose the following restrictions:
+
+- Symlinks MUST NOT be used in `.pybi`s targeting Windows, or other
+  platforms that are missing first-class symlink support.
+
+- Symlink targets MUST be relative paths, and MUST be inside the pybi
+  directory.
+  
+- If `A/B/...` is recorded as a symlink in the archive, then there
+  MUST NOT be any other entries in the archive named like `A/B/.../C`.
+  
+  For example, if an archive has a symlink `foo -> bar`, and then
+  later in the archive there's a regular file named `foo/blah.py`,
+  then a naive unpacker could potentially end up writing a file called
+  `bar/blah.py`.
+
+Unpackers MUST verify that these rules are followed, because without
+them attackers could create evil symlinks like `foo -> /etc/passwd` or
+`foo -> ../../../../../etc/passwd` and cause havoc.
+
+
+## Todo
 
 Should we say anything about other tools installed by default, like
 e.g. pip? In general it's kind of up to the pybi builder what they
@@ -218,7 +323,7 @@ minimal, because it's easier to add than to take away. Plus tools like
 environment, which is harder if there's unexpected stuff in there.
 
 Should we say anything about superfluous bits of the stdlib that take
-up a lot of space, like 'tests'?
+up a lot of space, like `tests`?
 
 Should we say anything about script entry points like idle3 and making
 them relocatable? I guess all we need to say is like, FYI, if you have
