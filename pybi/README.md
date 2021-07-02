@@ -136,10 +136,10 @@ into a given directory.) It must contain:
     platform's .pybi file. (Note that Requires-Python constraints can
     be checked by using the `python_full_version` value.)
 
-    This is also just a bunch of generally useful information. For
-    example, if you have a `pypy3-7.3.2` pybi, and you want to know
-    what version of the Python language that supports, then that's
-    recorded in the `python_version` marker.
+    The markers are also just generally useful information to have
+    accessible. For example, if you have a `pypy3-7.3.2` pybi, and you
+    want to know what version of the Python language that supports,
+    then that's recorded in the `python_version` marker.
 
   * `tags`: The PEP 425 tags supported by this interpreter, in
     preference order, except that the special platform tag `PLATFORM`
@@ -154,6 +154,24 @@ into a given directory.) It must contain:
     with a given Pybi environment, without installing or running the
     Pybi environment.
 
+    TODO: is this really workable? There are also cases where the
+    platform tags depend on the installed binary. For example, most
+    Windows *systems* are compatible with both `win32` and
+    `win_amd64`, and you can use either for the Python install, but
+    then once you pick one you have to use the same platform for
+    wheels. So a pybi installer needs to know that `win32` and
+    `win_amd64` are both ok tags for pybis, but it feels awkward to
+    also expect it to hardcode the knowledge of how those affect the
+    resulting wheels.
+    
+    I guess in this particular case it could be worked around within
+    the pybi itself. On Windows, the interpreter also determines the
+    full set of platform tags, so there's no need to use the
+    `PLATFORM` wildcard at all -- the `pybi.json` can just list the
+    full set of explicit tags. But there are probably similar cases on
+    other systems? E.g. Linux 32/64 bit, or macOS on ARM with Rosetta
+    2?
+    
   * `paths`: The install paths needed to install wheels, as relative
     paths starting at the root of the zip file.
 
@@ -296,6 +314,11 @@ control, we impose the following restrictions:
 
 - Symlinks MUST NOT be used in `.pybi`s targeting Windows, or other
   platforms that are missing first-class symlink support.
+
+- Symlinks MUST NOT be used inside the `.pybi-info` directory.
+  (Rationale: there's no need, and it makes things simpler for
+  resolvers that need to extract info from `.pybi-info` without
+  unpacking the whole archive.)
 
 - Symlink targets MUST be relative paths, and MUST be inside the pybi
   directory.
