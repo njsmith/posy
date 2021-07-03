@@ -1,7 +1,14 @@
 # Pybi (*Py*thon *Bi*nary) format
 
-"Like wheels, but instead of a python package, it's an entire python
-interpreter environment"
+"Like wheels, but instead of a pre-built python package, it's a
+pre-built python interpreter"
+
+End goal: Pypi.org has pre-built packages for all Python versions on
+all popular platforms, so automated tools can easily grab any of them
+and set it up. It becomes quick and easy to try Python prereleases,
+pin Python versions in CI, make a temporary environment to reproduce
+a bug report that only happens on an older Python point release, etc.
+
 
 ## Filename
 
@@ -34,6 +41,10 @@ arbitrary location and then used as a self-contained Python
 environment. There's no `.data` directory or install scheme keys,
 because the Python environment knows which install scheme it's using,
 so it can just put things in the right places to start with.
+
+The "arbitrary location" part is important: the pybi can't contain any
+hardcoded absolute paths. In particular, any preinstalled scripts
+MUST NOT embed absolute paths in their shebang lines.
 
 Similar to wheels, a top-level directory `pybi-info/` must exist.
 (Rationale: `pybi-info` vs `dist-info` makes sure that tools don't get
@@ -336,27 +347,54 @@ them attackers could create evil symlinks like `foo -> /etc/passwd` or
 `foo -> ../../../../../etc/passwd` and cause havoc.
 
 
-## Todo
+## Sdists
 
-Should we say anything about other tools installed by default, like
-e.g. pip? In general it's kind of up to the pybi builder what they
-include, but I feel like "by default" the install should be pretty
-minimal, because it's easier to add than to take away. Plus tools like
-`posy` want to have full control over what's installed into the new
-environment, which is harder if there's unexpected stuff in there.
+It might be cool to have an "sdist" equivalent for pybis, i.e., some
+kind of format for a Python source release that's structured-enough to
+let tools automatically fetch and build it into a pybi, for platforms
+where prebuilt pybis aren't available. But, this isn't necessary for
+the MVP and opens a can of worms, so let's ignore it for now.
 
-Should we say anything about superfluous bits of the stdlib that take
-up a lot of space, like `tests`?
 
-Should we say anything about script entry points like idle3 and making
-them relocatable? I guess all we need to say is like, FYI, if you have
-any scripts included in your pybi, they'd better be relocatable b/c
-otherwise they just won't work?
+## What packages should be included in a pybi?
 
-Probably should explicitly say that .pyc files shouldn't be included,
-to save space? I guess can make it a SHOULD rather than MUST, on the
-grounds that if some .pybi builder decides that the space/time
-tradeoff is worth it for them then it's not a big deal? IIRC
-generating .pyc files locally will also tend to produce better
-tracebacks, since tracebacks use the original path to the .py files,
-not the current path.
+When building a pybi, you MAY pick and choose what exactly goes
+inside. For example, you could include some preinstalled packages in
+the pybi's `site-packages` directory, or prune out bits of the stdlib
+that you don't want. We can't stop you! Just make sure that if you do
+preinstall packages, then you also include the correct metadata
+(`.dist-info` etc.), so that it's possible for tools to figure out
+what's going on.
+
+But, here's what I'm doing for "general purpose" pybi's:
+
+- Make sure `site-packages` is *empty*.
+
+  Rationale: for regular standalone python installers, like the ones
+  distributed by Python.org, you probably want to include at least
+  `pip`, to [avoid bootstrapping
+  issues](https://www.python.org/dev/peps/pep-0453/). But pybis are
+  designed to be installed by "smart" installers, that consume the
+  pybi as part of some kind of environment setup automation. It's
+  easier for these installers to start from a blank slate and then add
+  whatever they need, than for them to start with some preinstalled
+  packages that they may or may not want.
+
+- Include the full stdlib, *except* for `test`.
+
+  Rationale: the top-level `test` module contains CPython's own test
+  suite. It's huge (CPython without `test` is ~37 MB, then `test` adds
+  another ~25 MB on top of that!), and essentially never used by
+  regular user code. Also, as precedent, the official nuget packages,
+  the official manylinux images, and multiple Linux distributions all
+  leave it out, and this hasn't caused any major problems.
+  
+  So this seems like the best way to balance broad compatibility with
+  reasonable download/install sizes.
+
+- I'm not shipping any `.pyc` files. They can be generated on the
+  final system at minimal cost, and it removes a source of
+  location-dependence. (`.pyc` files store the absolute path of the
+  corresponding `.py` file and include it in tracebacks; but, pybis
+  are relocatable, so the correct path isn't known until after
+  install.)
