@@ -1,3 +1,32 @@
+# What is this?
+
+Take your pick:
+
+- Me messing around in Rust for fun (just a hobby, won't be big and
+  serious like `pip`)
+  
+- An incomplete but mostly functional implementation of Python's major
+  packaging standards in Rust, including a full resolver based on [the
+  PubGrub algorithm](https://nex3.medium.com/pubgrub-2fb6470504f) (as
+  provided by [`pubgrub`](https://docs.rs/pubgrub/).
+
+- A [draft
+  spec](https://github.com/njsmith/posy/blob/main/pybi/README.md) for
+  "PyBi" files, which are like wheels but for Python interpreters.
+  
+- (Someday) A project-oriented Python workflow manager, designed to
+  make it easy for beginners to write their first Python script or
+  notebook, and then grow with you to developing complex standalone
+  apps and libraries with many contributors.
+  
+- A combined replacement for pyenv, deadsnakes, tox, venv, pip,
+  pip-compile/pipenv, and PEP 582, all in a single-file executable
+  with zero system requirements (not even Python).
+
+- An 🐘
+  [elephant](https://mail.python.org/archives/list/distutils-sig@python.org/thread/YFJITQB37MZOPOFJJF3OAQOY4TOAFXYM/#YFJITQB37MZOPOFJJF3OAQOY4TOAFXYM)
+  🐘
+
 
 ## Interpretations/deviations from standards
 
