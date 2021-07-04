@@ -9,6 +9,11 @@ and set it up. It becomes quick and easy to try Python prereleases,
 pin Python versions in CI, make a temporary environment to reproduce
 a bug report that only happens on an older Python point release, etc.
 
+Example pybi builds:
+
+- [pybi.vorpus.org](https://pybi.vorpus.org)
+- [tooling used to create the above](https://github.com/njsmith/pybi-tools)
+
 
 ## Filename
 
