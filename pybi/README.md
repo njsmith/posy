@@ -51,11 +51,13 @@ The "arbitrary location" part is important: the pybi can't contain any
 hardcoded absolute paths. In particular, any preinstalled scripts
 MUST NOT embed absolute paths in their shebang lines.
 
-Similar to wheels, a top-level directory `pybi-info/` must exist.
-(Rationale: `pybi-info` vs `dist-info` makes sure that tools don't get
+Similar to wheels' `.dist-info` directory, the pybi archive must
+contain a top-level directory named `pybi-info/`. (Rationale: calling
+it `pybi-info` instead `dist-info` makes sure that tools don't get
 confused about which kind of metadata they're looking at; leaving off
-the `{name}-{version}` part is fine only one pybi can be installed
-into a given directory.) It must contain:
+the `{name}-{version}` part is fine because only one pybi can be
+installed into a given directory.) The `pybi-info/` directory contains
+at least the following files:
 
 * `.../METADATA`: In the same format as described in the current core
   metadata spec, except that the following keys are forbidden because
@@ -125,7 +127,7 @@ into a given directory.) It must contain:
           "py32-none-any",
           "py31-none-any",
           "py30-none-any"
-      ]
+      ],
       "paths": {
           "data": ".",
           "include": "include/python3.9",
@@ -237,8 +239,8 @@ into a given directory.) It must contain:
   str_tags = [str(t).replace("xyzzy", "PLATFORM") for t in tags]
 
   (base_path,) = sysconfig.get_config_vars("installed_base")
-  # For some reason, macOS framework builds report their base_path as a directory deep
-  # inside the framework
+  # For some reason, macOS framework builds report their
+  # installed_base as a directory deep inside the framework.
   while "Python.framework" in base_path:
       base_path = os.path.dirname(base_path)
   paths = {key: os.path.relpath(path, base_path) for (key, path) in sysconfig.get_paths().items()}
@@ -250,7 +252,7 @@ into a given directory.) It must contain:
 ## Symlinks
 
 Currently, symlinks are used by default in all Unix Python installs
-(e.g., `bin/python3 -> bin/python3.9`). And fruthermore, symlinks are
+(e.g., `bin/python3 -> bin/python3.9`). And furthermore, symlinks are
 *required* to store macOS framework builds in `pybi` files. So,
 `.pybi` files must be able to represent symlinks.
 
@@ -299,7 +301,7 @@ my/favorite/file,sha256=...,12345
 For symlinks, we instead write:
 
 ```csv
-name/of/symlink,symlink=path/to/symlink/target
+name/of/symlink,symlink=path/to/symlink/target,
 ```
 
 That is: we use a special "hash function" called `symlink`, and then
@@ -307,8 +309,8 @@ store the actual symlink target as the "hash value". And the length is
 left empty.
 
 Rationale: we're already committed to the `RECORD` file containing a
-redundant version of everything in the main archive, so for symlinks
-we at least need to store some kind of hash, plus some kind of flag to
+redundant check on everything in the main archive, so for symlinks we
+at least need to store some kind of hash, plus some kind of flag to
 indicate that this is a symlink. Given that symlink target strings are
 roughly the same size as a hash, we might as well store them directly.
 This also makes the symlink information easier to access for tools
@@ -361,7 +363,7 @@ them attackers could create evil symlinks like `foo -> /etc/passwd` or
 `foo -> ../../../../../etc/passwd` and cause havoc.
 
 
-## Sdists
+## Sdists (or not)
 
 It might be cool to have an "sdist" equivalent for pybis, i.e., some
 kind of format for a Python source release that's structured-enough to
