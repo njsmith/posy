@@ -13,8 +13,8 @@
 
 use crate::prelude::*;
 
-use encoding_rs::Encoding;
-use encoding_rs_io::DecodeReaderBytesBuilder;
+use crate::net::SmallTextPage;
+
 use std::borrow::Borrow;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -55,7 +55,7 @@ struct Sink {
     names: HashMap<usize, QualName>,
     base: Url,
     changed_base: bool,
-    page: SimpleAPIPage,
+    api_page: SimpleAPIPage,
 }
 
 impl Sink {
@@ -92,7 +92,8 @@ impl TreeSink for Sink {
     ) -> usize {
         if name.expanded() == META_TAG {
             if let Some("pypi:repository-version") = get_attr(&NAME_ATTR, &attrs) {
-                self.page.repository_version = get_attr(&CONTENT_ATTR, &attrs).map(String::from);
+                self.api_page.repository_version =
+                    get_attr(&CONTENT_ATTR, &attrs).map(String::from);
             }
         }
 
@@ -117,7 +118,7 @@ impl TreeSink for Sink {
                             .map(String::from);
                     let yanked =
                         get_attr(YANKED_ATTR.borrow(), &attrs).map(String::from);
-                    self.page.links.push(SimpleAPILink {
+                    self.api_page.links.push(SimpleAPILink {
                         url,
                         requires_python,
                         yanked,
@@ -195,38 +196,29 @@ impl TreeSink for Sink {
     fn mark_script_already_started(&mut self, _node: &usize) {}
 }
 
-fn run_sink<T: std::io::Read>(base: Url, body: &mut T) -> Result<SimpleAPIPage> {
-    let sink = Sink {
-        next_id: 1,
-        base,
-        changed_base: false,
-        names: HashMap::new(),
-        page: Default::default(),
-    };
-    Ok(parse_document(sink, Default::default())
-        .from_utf8()
-        .read_from(body)?
-        .page)
-}
+impl TryFrom<SmallTextPage> for SimpleAPIPage {
+    type Error = anyhow::Error;
 
-// XX: for simple api requests, remember to send Accept: text/html
-pub fn extract<T>(page: ureq::Response) -> Result<SimpleAPIPage> {
-    if page.content_type() != "text/html" {
-        bail!(
-            "simple API page expected Content-Type: text/html, but got {}",
-            page.content_type()
-        )
+    fn try_from(value: SmallTextPage) -> Result<Self, Self::Error> {
+        if value.content_type != "text/html" {
+            bail!(
+                "simple API page expected Content-Type: text/html, but got {}",
+                value.content_type
+            )
+        }
+
+        let sink = Sink {
+            next_id: 1,
+            base: value.url,
+            changed_base: false,
+            names: HashMap::new(),
+            api_page: Default::default(),
+        };
+
+        Ok(parse_document(sink, Default::default())
+            .one(value.body)
+            .api_page)
     }
-
-    let base: Url = page.get_url().parse()?;
-
-    // XXXX this decoding needs to move into the higher level, so we can cache the
-    // result!
-    let mut utf8_body = DecodeReaderBytesBuilder::new()
-        .encoding(Encoding::for_label(page.charset().as_bytes()))
-        .build(page.into_reader());
-
-    run_sink(base, &mut utf8_body)
 }
 
 #[cfg(test)]
@@ -235,8 +227,10 @@ mod test {
 
     #[test]
     fn test_sink_simple() {
-        let base = Url::parse("https://example.com/old-base/").unwrap();
-        let body = r#"<html>
+        let html_page = SmallTextPage {
+            url: Url::parse("https://example.com/old-base/").unwrap(),
+            content_type: "text/html".into(),
+            body: r#"<html>
                 <head>
                   <meta name="pypi:repository-version" content="1.0">
                   <base href="https://example.com/new-base/">
@@ -247,8 +241,10 @@ mod test {
                   <a href="link3" data-requires-python=">= 3.17">link3</a>
                 </body>
               </html>
-            "#;
-        let parsed = run_sink(base, &mut std::io::Cursor::new(body)).unwrap();
+            "#
+            .into(),
+        };
+        let parsed: SimpleAPIPage = html_page.try_into().unwrap();
         assert_eq!(
             parsed,
             SimpleAPIPage {

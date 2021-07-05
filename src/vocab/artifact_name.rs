@@ -1,7 +1,65 @@
 use crate::prelude::*;
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum SdistFormat {
+    Zip,
+    TarGz,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct SdistName {
+    pub distribution: PackageName,
+    pub version: Version,
+    pub format: SdistFormat,
+}
+
+impl TryFrom<&str> for SdistName {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        static SDIST_NAME_RE: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"^([^-]*)-([^-]*)\.(zip|tar\.gz)").unwrap());
+
+        match SDIST_NAME_RE.captures(&value) {
+            None => bail!("invalid sdist name"),
+            Some(captures) => {
+                let distribution: PackageName =
+                    captures.get(1).unwrap().as_str().parse()?;
+                let version: Version = captures.get(2).unwrap().as_str().parse()?;
+                let format = match captures.get(3).unwrap().as_str() {
+                    "zip" => SdistFormat::Zip,
+                    "tar.gz" => SdistFormat::TarGz,
+                    _ => unreachable!(),
+                };
+                Ok(SdistName {
+                    distribution,
+                    version,
+                    format,
+                })
+            }
+        }
+    }
+}
+
+try_from_str_boilerplate!(SdistName);
+
+impl Display for SdistName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}-{}.{}",
+            self.distribution.as_given(),
+            self.version,
+            match self.format {
+                SdistFormat::Zip => "zip",
+                SdistFormat::TarGz => "tar.gz",
+            }
+        )
+    }
+}
+
 // https://packaging.python.org/specifications/binary-distribution-format/#file-name-convention
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct WheelName {
     pub distribution: PackageName,
     pub version: Version,
@@ -42,7 +100,7 @@ impl WheelName {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PybiName {
     pub distribution: PackageName,
     pub version: Version,
@@ -187,9 +245,65 @@ impl Display for PybiName {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArtifactName {
+    Sdist(SdistName),
+    Wheel(WheelName),
+    Pybi(PybiName),
+}
+
+impl ArtifactName {
+    pub fn distribution(&self) -> &PackageName {
+        match self {
+            ArtifactName::Sdist(inner) => &inner.distribution,
+            ArtifactName::Wheel(inner) => &inner.distribution,
+            ArtifactName::Pybi(inner) => &inner.distribution,
+        }
+    }
+
+    pub fn version(&self) -> &Version {
+        match self {
+            ArtifactName::Sdist(inner) => &inner.version,
+            ArtifactName::Wheel(inner) => &inner.version,
+            ArtifactName::Pybi(inner) => &inner.version,
+        }
+    }
+}
+
+impl TryFrom<&str> for ArtifactName {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.ends_with(".whl") {
+            Ok(ArtifactName::Wheel(value.try_into()?))
+        } else if value.ends_with(".pybi") {
+            Ok(ArtifactName::Pybi(value.try_into()?))
+        } else {
+            Ok(ArtifactName::Sdist(value.try_into()?))
+        }
+    }
+}
+
+impl Display for ArtifactName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ArtifactName::Sdist(inner) => write!(f, "{}", &inner),
+            ArtifactName::Wheel(inner) => write!(f, "{}", &inner),
+            ArtifactName::Pybi(inner) => write!(f, "{}", &inner),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_sdist_name_from_str() {
+        let sn: SdistName = "trio-0.19a0.tar.gz".try_into().unwrap();
+        assert_eq!(sn.distribution, "trio".try_into().unwrap());
+        assert_eq!(sn.version, "0.19a0".try_into().unwrap());
+    }
 
     #[test]
     fn test_wheel_name_from_str() {

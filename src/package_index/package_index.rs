@@ -3,6 +3,8 @@ use crate::prelude::*;
 use crate::cache::{Basket, Cache};
 use crate::net::Net;
 
+use super::simple_api_page::{SimpleAPILink, SimpleAPIPage};
+
 // XX probably will want to make this configurable
 // XX probably switch to using the simple API also
 //   nb this will make it possible to fetch requires-python metadata as part of
@@ -13,7 +15,6 @@ pub static ROOT_URL: Lazy<Url> = Lazy::new(|| "https://pypi.org/".try_into().unw
 pub enum HashMode {
     SHA256,
 }
-use HashMode::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ArtifactHash {
@@ -29,6 +30,14 @@ impl ArtifactHash {
         })
     }
 
+    pub fn from_url_fragment(fragment: &str) -> Result<ArtifactHash> {
+        if let Some(suffix) = fragment.strip_prefix("sha256=") {
+            ArtifactHash::from_hex(HashMode::SHA256, suffix)
+        } else {
+            bail!("Unrecognized hash fragment {:?}", fragment)
+        }
+    }
+
     pub fn to_base64_urlsafe_unpadded(&self) -> String {
         data_encoding::BASE64URL_NOPAD.encode(&self.raw_data)
     }
@@ -36,6 +45,7 @@ impl ArtifactHash {
 
 #[derive(Debug, Clone)]
 pub struct Artifact {
+    pub name: ArtifactName,
     pub hash: ArtifactHash,
     pub url: Url,
     pub yanked: Option<String>,
@@ -48,52 +58,71 @@ pub struct PackageIndex {
     pub base_url: Url,
 }
 
+fn try_decode_link(p: &PackageName, link: SimpleAPILink) -> Result<Artifact> {
+    let mut segments = link
+        .url
+        .path_segments()
+        .ok_or_else(|| anyhow!("url has no filename"))?;
+    // unwrap safe because: "When Some is returned [from path_segments], the
+    // iterator always contains at least one string"
+    let filename = segments.next_back().unwrap();
+    let name: ArtifactName = filename.try_into()?;
+    if p != name.distribution() {
+        bail!(
+            "was expecting artifact for package {}, but found one for {} instead",
+            p.normalized(),
+            name.distribution().normalized()
+        );
+    }
+    let fragment = link
+        .url
+        .fragment()
+        .ok_or_else(|| anyhow!("link has no hash"))?;
+    let hash = ArtifactHash::from_url_fragment(fragment)?;
+    let yanked = link.yanked;
+    let requires_python = match link.requires_python {
+        Some(value) => Specifiers::try_from(value)?,
+        None => Specifiers::any(),
+    };
+    let mut url = link.url;
+    url.set_fragment(None);
+    Ok(Artifact {
+        name,
+        hash,
+        url,
+        yanked,
+        requires_python,
+    })
+}
+
 impl PackageIndex {
     pub fn releases(&self, p: &PackageName) -> Result<HashMap<Version, Vec<Artifact>>> {
-        #[derive(Debug, Deserialize)]
-        struct PyPIDigests {
-            sha256: String,
+        let url = self.base_url.join(&format!("simple/{}/", p.normalized()))?;
+        let text_page = self.net.get_fresh_text(&url)?;
+        let api_page: SimpleAPIPage = text_page.try_into()?;
+
+        if let Some(ver_string) = api_page.repository_version {
+            if !ver_string.starts_with("1.") {
+                bail!("Unrecognized repository API version {:?}", ver_string);
+            }
         }
 
-        #[derive(Debug, Deserialize)]
-        struct PyPIArtifact {
-            digests: PyPIDigests,
-            url: Url,
-            yanked_reason: Option<String>,
+        let mut versions: HashMap<Version, Vec<Artifact>> = HashMap::new();
+        for link in api_page.links.into_iter() {
+            let link_url = link.url.clone();
+            let result = try_decode_link(p, link).with_context(|| {
+                format!("In {}, error parsing link: {}", url, link_url)
+            });
+            match result {
+                Err(err) => warn!("Invalid simple API link: {}", err),
+                Ok(artifact) => versions
+                    .entry(artifact.name.version().clone())
+                    .or_default()
+                    .push(artifact),
+            }
         }
 
-        #[derive(Debug, Deserialize)]
-        struct ReleasesPage {
-            releases: HashMap<String, Vec<PyPIArtifact>>,
-        }
-
-        let url = self
-            .base_url
-            .join(&format!("pypi/{}/json/", p.normalized()))?;
-        let page: ReleasesPage =
-            serde_json::from_str(&self.net.get_fresh_text(&url)?.body)?;
-
-        let mut releases = HashMap::new();
-        for (ver, pypi_artifacts) in page.releases {
-            let artifacts = pypi_artifacts
-                .into_iter()
-                .map(|pa| {
-                    Ok(Artifact {
-                        hash: ArtifactHash::from_hex(SHA256, &pa.digests.sha256)?,
-                        url: pa.url,
-                        yanked: pa.yanked_reason,
-                        requires_python: Specifiers::any(),
-                    })
-                })
-                .collect::<Result<Vec<Artifact>>>()?;
-
-            // XX for robustification will probably need to tolerate versions that fail
-            // to parse here, so one weird old version doesn't make it impossible to
-            // work with a package entirely.
-            releases.insert(ver.try_into()?, artifacts);
-        }
-
-        Ok(releases)
+        Ok(versions)
     }
 }
 
@@ -133,7 +162,8 @@ impl PackageIndex {
             if name.ends_with(".dist-info/METADATA") {
                 let metadata = get(&mut zip, &name)?;
                 let parsed = CoreMetadata::parse(&metadata)?;
-                self.cache.put(Basket::WheelMetadata, url.as_str(), &metadata)?;
+                self.cache
+                    .put(Basket::WheelMetadata, url.as_str(), &metadata)?;
                 return Ok(parsed);
             }
         }

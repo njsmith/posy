@@ -13,24 +13,21 @@ pub struct PybiMetadata {}
 fn parse_bin_metadata_and_check_version(
     input: &[u8],
     version_field: &str,
-    next_major: &Version,
 ) -> Result<RFC822ish> {
     let input: &str = std::str::from_utf8(input)?;
     let mut parsed = RFC822ish::parse(&input)?;
 
-    let version: Version = parsed.take_the(version_field)?.try_into()?;
-    if version >= *next_major {
-        bail!("unsupported {}: {}", version_field, version);
+    let version = parsed.take_the(version_field)?;
+    if !version.starts_with("1.") {
+        bail!("unsupported {}: {:?}", version_field, version);
     }
+
     Ok(parsed)
 }
 
 impl WheelMetadata {
     pub fn parse(input: &[u8]) -> Result<WheelMetadata> {
-        static NEXT_MAJOR_WHEEL_VERSION: Lazy<Version> =
-            Lazy::new(|| "2".try_into().unwrap());
-
-        let mut parsed = parse_bin_metadata_and_check_version(input, "Wheel-Version", &NEXT_MAJOR_WHEEL_VERSION)?;
+        let mut parsed = parse_bin_metadata_and_check_version(input, "Wheel-Version")?;
 
         let root_is_purelib = match &parsed.take_the("Root-Is-Purelib")?[..] {
             "true" => true,
@@ -49,10 +46,7 @@ impl WheelMetadata {
 
 impl PybiMetadata {
     pub fn parse(input: &[u8]) -> Result<PybiMetadata> {
-        static NEXT_MAJOR_PYBI_VERSION: Lazy<Version> =
-            Lazy::new(|| "2".try_into().unwrap());
-
-        parse_bin_metadata_and_check_version(input, "Pybi-Version", &NEXT_MAJOR_PYBI_VERSION)?;
+        parse_bin_metadata_and_check_version(input, "Pybi-Version")?;
         Ok(PybiMetadata {})
     }
 }

@@ -13,6 +13,7 @@ pub struct Net {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SmallTextPage {
+    pub url: Url,
     pub content_type: String,
     pub body: String,
 }
@@ -26,6 +27,8 @@ impl Net {
     /// revalidates, so users can see the packages they uploaded show up immediately.
     /// See: https://github.com/pypa/pip/pull/5791
     /// Also loads the whole document into a text string, respecting charset.
+    ///
+    /// XX: should we make it possible to pass through an Accept: header?
     pub fn get_fresh_text(&self, url: &Url) -> Result<SmallTextPage> {
         #[derive(Serialize, Deserialize, Debug)]
         struct CacheEntry<'a> {
@@ -67,7 +70,7 @@ impl Net {
                 let date = resp.header("Last-Modified").map(String::from);
                 let content_type = resp.content_type().to_string();
                 let body = resp.into_string()?;
-                let page = SmallTextPage { content_type, body };
+                let page = SmallTextPage { url: url.clone(), content_type, body };
                 if etag.is_some() || date.is_some() {
                     let new_entry = CacheEntry {
                         etag,
