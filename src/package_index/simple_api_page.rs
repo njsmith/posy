@@ -220,6 +220,8 @@ pub fn extract<T>(page: ureq::Response) -> Result<SimpleAPIPage> {
 
     let base: Url = page.get_url().parse()?;
 
+    // XXXX this decoding needs to move into the higher level, so we can cache the
+    // result!
     let mut utf8_body = DecodeReaderBytesBuilder::new()
         .encoding(Encoding::for_label(page.charset().as_bytes()))
         .build(page.into_reader());

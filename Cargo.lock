@@ -1929,6 +1929,7 @@ dependencies = [
  "chunked_transfer",
  "cookie",
  "cookie_store",
+ "encoding_rs",
  "log",
  "once_cell",
  "rustls",

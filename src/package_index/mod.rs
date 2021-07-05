@@ -72,7 +72,7 @@ impl PackageIndex {
             .base_url
             .join(&format!("pypi/{}/json/", p.normalized()))?;
         let page: ReleasesPage =
-            serde_json::from_slice(self.net.get_etagged(&url)?.as_slice())?;
+            serde_json::from_str(&self.net.get_fresh_text(&url)?.body)?;
 
         let mut releases = HashMap::new();
         for (ver, pypi_artifacts) in page.releases {
@@ -107,7 +107,7 @@ impl PackageIndex {
             bail!("This URL doesn't seem to be a wheel: {}", url);
         }
 
-        if let Some(metadata) = self.cache.get(Basket::PackageMetadata, url.as_str()) {
+        if let Some(metadata) = self.cache.get(Basket::WheelMetadata, url.as_str()) {
             return Ok(CoreMetadata::parse(&metadata)?);
         }
 
@@ -133,7 +133,7 @@ impl PackageIndex {
             if name.ends_with(".dist-info/METADATA") {
                 let metadata = get(&mut zip, &name)?;
                 let parsed = CoreMetadata::parse(&metadata)?;
-                self.cache.put(Basket::PackageMetadata, url.as_str(), &metadata)?;
+                self.cache.put(Basket::WheelMetadata, url.as_str(), &metadata)?;
                 return Ok(parsed);
             }
         }

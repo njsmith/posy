@@ -10,7 +10,7 @@ edition = "2018"
 anyhow = "1.0.40"
 serde = { version = "1.0.126", features = ["derive"] }
 pep440 = "0.1.1"
-ureq = { version = "2.1.1", features = ["json", "rustls-native-certs", "cookies"] }
+ureq = { version = "2.1.1", features = ["json", "rustls-native-certs", "cookies", "charset"] }
 zip = "0.5.13"
 serde_json = "1.0.64"
 url = { version = "2.2.2", features = ["serde"] }

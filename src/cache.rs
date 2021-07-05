@@ -28,22 +28,24 @@ pub struct Cache {
 
 #[derive(Debug, Copy, Clone)]
 pub enum Basket {
-    // url -> (page contents + etag to allow revalidation)
-    Etagged,
+    // url -> (page contents as a string + cache revalidation info)
+    FreshText,
     // url -> wheel/sdist/whatever
     Artifact,
     // url -> METADATA file
-    PackageMetadata,
+    WheelMetadata,
     // XX todo for locally-built wheels. What should this be indexed by? sdist url?
     //LocallyBuilt,
+    // XX todo
+    //PybiMetadata,
 }
 
 impl Basket {
     fn dirname(&self) -> &str {
         match self {
-            Basket::Etagged => "etagged",
-            Basket::Artifact => "artifacts",
-            Basket::PackageMetadata => "metadata",
+            Basket::FreshText => "fresh-text",
+            Basket::Artifact => "artifact",
+            Basket::WheelMetadata => "wheel-metadata",
         }
     }
 }
@@ -132,12 +134,12 @@ mod test {
         let (_d, c) = tmp_cache();
 
         // Can save and restore
-        c.put(Basket::Etagged, "foo", b"foo value").unwrap();
-        assert_eq!(c.get(Basket::Etagged, "foo"), Some(b"foo value".to_vec()));
+        c.put(Basket::FreshText, "foo", b"foo value").unwrap();
+        assert_eq!(c.get(Basket::FreshText, "foo"), Some(b"foo value".to_vec()));
 
         // Can overwrite values
-        c.put(Basket::Etagged, "foo", b"new value").unwrap();
-        assert_eq!(c.get(Basket::Etagged, "foo"), Some(b"new value".to_vec()));
+        c.put(Basket::FreshText, "foo", b"new value").unwrap();
+        assert_eq!(c.get(Basket::FreshText, "foo"), Some(b"new value".to_vec()));
 
         // Different baskets have separate keyspaces
         c.put(Basket::Artifact, "foo", b"other value").unwrap();
@@ -145,7 +147,7 @@ mod test {
             c.get(Basket::Artifact, "foo"),
             Some(b"other value".to_vec())
         );
-        assert_eq!(c.get(Basket::Etagged, "foo"), Some(b"new value".to_vec()));
+        assert_eq!(c.get(Basket::FreshText, "foo"), Some(b"new value".to_vec()));
     }
 
     #[test]
@@ -153,18 +155,18 @@ mod test {
         let (_d, c) = tmp_cache();
 
         let mut f = c
-            .put_file(Basket::PackageMetadata, "key", |f| Ok(f.write_all(b"xxx")?))
+            .put_file(Basket::WheelMetadata, "key", |f| Ok(f.write_all(b"xxx")?))
             .unwrap();
         let mut buf = Vec::new();
         f.read_to_end(&mut buf).unwrap();
         assert_eq!(buf, b"xxx".to_vec());
 
         assert_eq!(
-            c.get(Basket::PackageMetadata, "key").unwrap(),
+            c.get(Basket::WheelMetadata, "key").unwrap(),
             b"xxx".to_vec()
         );
 
-        let mut f2 = c.get_file(Basket::PackageMetadata, "key").unwrap();
+        let mut f2 = c.get_file(Basket::WheelMetadata, "key").unwrap();
         let mut buf2 = Vec::new();
         f2.read_to_end(&mut buf2).unwrap();
         assert_eq!(buf2, b"xxx".to_vec());
