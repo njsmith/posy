@@ -52,9 +52,7 @@ impl Basket {
 
 impl Default for Cache {
     fn default() -> Self {
-        Cache {
-            base: PROJECT_DIRS.cache_dir().into(),
-        }
+        Cache::new(PROJECT_DIRS.cache_dir())
     }
 }
 
