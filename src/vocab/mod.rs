@@ -16,6 +16,6 @@ pub use self::extra::Extra;
 pub use self::package_name::PackageName;
 pub use self::requirement::{marker, ParseExtra, Requirement};
 pub use self::specifier::{CompareOp, Specifier, Specifiers};
-pub use self::version::Version;
+pub use self::version::{Version, VERSION_ZERO, VERSION_INFINITY};
 pub use self::bin_format_metadata::{WheelMetadata, PybiMetadata};
 pub use self::artifact_name::{WheelName, PybiName, SdistName, ArtifactName};

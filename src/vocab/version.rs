@@ -8,26 +8,27 @@ use std::hash::{Hash, Hasher};
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Version(pub pep440::Version);
 
-impl Version {
-    pub const ZERO: Lazy<Version> = Lazy::new(|| "0a0.dev0".try_into().unwrap());
+pub static VERSION_ZERO: Lazy<Version> = Lazy::new(|| "0a0.dev0".try_into().unwrap());
 
+pub static VERSION_INFINITY: Lazy<Version> = Lazy::new(|| {
+    // Technically there is no largest PEP 440 version. But this should be good
+    // enough that no-one will notice the difference...
+    Version(pep440::Version {
+        epoch: u32::MAX,
+        release: vec![u32::MAX, u32::MAX, u32::MAX],
+        pre: None,
+        post: Some(u32::MAX),
+        dev: None,
+        local: vec![],
+    })
+});
+
+
+impl Version {
     // XX BUG IN pep440 crate: the actuall smallest post-prefix is .post0. And X.Y.post0
     // is strictly larger than X.Y. BUT, PEP 440 treats these as the same. (This may
     // also screw up our hashing, but I'll worry about that later...).
     pub const SMALLEST_POST: Option<u32> = Some(1);
-
-    pub const INFINITY: Lazy<Version> = Lazy::new(|| {
-        // Technically there is no largest PEP 440 version. But this should be good
-        // enough that no-one will notice the difference...
-        Version(pep440::Version {
-            epoch: u32::MAX,
-            release: vec![u32::MAX, u32::MAX, u32::MAX],
-            pre: None,
-            post: Some(u32::MAX),
-            dev: None,
-            local: vec![],
-        })
-    });
 
     pub fn is_prerelease(&self) -> bool {
         self.0.pre.is_some() || self.0.dev.is_some()
@@ -92,7 +93,7 @@ impl Hash for Version {
 
 impl pubgrub::version::Version for Version {
     fn lowest() -> Self {
-        Version::ZERO.to_owned()
+        VERSION_ZERO.to_owned()
     }
 
     fn bump(&self) -> Self {

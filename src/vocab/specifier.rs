@@ -105,7 +105,7 @@ impl CompareOp {
             match self {
                 Equal => vec![low..high],
                 NotEqual => {
-                    vec![Version::ZERO.clone()..low, high..Version::INFINITY.clone()]
+                    vec![VERSION_ZERO.clone()..low, high..VERSION_INFINITY.clone()]
                 }
                 _ => bail!("Can't use wildcard with {:?}", self),
             }
@@ -118,14 +118,14 @@ impl CompareOp {
             }
             match self {
                 // These two are simple
-                LessThanEqual => vec![Version::ZERO.clone()..version.next()],
-                GreaterThanEqual => vec![version.clone()..Version::INFINITY.clone()],
+                LessThanEqual => vec![VERSION_ZERO.clone()..version.next()],
+                GreaterThanEqual => vec![version.clone()..VERSION_INFINITY.clone()],
                 // These are also pretty simple, because we took care of the wildcard
                 // cases up above.
                 Equal => vec![version.clone()..version.next()],
                 NotEqual => vec![
-                    Version::ZERO.clone()..version.clone(),
-                    version.next()..Version::INFINITY.clone(),
+                    VERSION_ZERO.clone()..version.clone(),
+                    version.next()..VERSION_INFINITY.clone(),
                 ],
                 // "The exclusive ordered comparison >V MUST NOT allow a post-release of
                 // the given version unless V itself is a post release."
@@ -144,7 +144,7 @@ impl CompareOp {
                         // hope no-one actually makes a version like this in practice.
                         low.0.post = Some(u32::MAX);
                     }
-                    vec![low..Version::INFINITY.clone()]
+                    vec![low..VERSION_INFINITY.clone()]
                 }
                 // "The exclusive ordered comparison <V MUST NOT allow a pre-release of
                 // the specified version unless the specified version is itself a
@@ -155,10 +155,10 @@ impl CompareOp {
                         new_max.0.dev = Some(0);
                         new_max.0.post = None;
                         new_max.0.local = vec![];
-                        vec![Version::ZERO.clone()..new_max]
+                        vec![VERSION_ZERO.clone()..new_max]
                     } else {
                         // Otherwise, some kind of pre-release
-                        vec![Version::ZERO.clone()..version]
+                        vec![VERSION_ZERO.clone()..version]
                     }
                 }
                 // ~= X.Y.suffixes is the same as >= X.Y.suffixes && == X.*

@@ -130,7 +130,7 @@ impl PackageIndex {
     pub fn wheel_metadata(&self, url: &Url) -> Result<CoreMetadata> {
         use std::io::{Read, Seek};
 
-        println!("Fetching and parsing {}", url);
+        println!("Fetching metadata from {}", url);
 
         if !url.path().ends_with(".whl") {
             bail!("This URL doesn't seem to be a wheel: {}", url);

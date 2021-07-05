@@ -79,7 +79,7 @@ fn main() -> Result<()> {
     for pin in pins {
         println!("{} v{}", pin.name.as_given(), pin.version);
         println!("   requirements from {}", pin.expected_requirements_source);
-        println!("   requirements: {:?}", pin.expected_requirements);
+        //println!("   requirements: {:?}", pin.expected_requirements);
     }
 
     Ok(())

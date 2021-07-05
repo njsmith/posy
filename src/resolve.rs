@@ -166,7 +166,7 @@ static ROOT_VERSION: Lazy<Version> = Lazy::new(|| "0".try_into().unwrap());
 impl Display for ResPkg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ResPkg::Root => write!(f, "*root*"),
+            ResPkg::Root => write!(f, "<root>"),
             ResPkg::Package(name, None) => write!(f, "{}", name.as_given()),
             ResPkg::Package(name, Some(extra)) => {
                 write!(f, "{}[{}]", name.as_given(), extra.as_given())
@@ -323,11 +323,11 @@ impl<'a> PubgrubState<'a> {
             }
 
             for maybe_extra in maybe_extras {
+                let pkg = ResPkg::Package(req.name.clone(), maybe_extra);
                 // XX bad unwrap
-                dc.insert(
-                    ResPkg::Package(req.name.clone(), maybe_extra),
-                    specifiers_to_pubgrub(&req.specifiers).unwrap(),
-                );
+                let range = specifiers_to_pubgrub(&req.specifiers).unwrap();
+                println!("adding dependency: {} {}", pkg, range);
+                dc.insert(pkg, range);
             }
         }
     }
@@ -340,7 +340,7 @@ fn specifiers_to_pubgrub(specs: &Specifiers) -> Result<Range<Version>> {
             spec.to_ranges()?
                 .into_iter()
                 .fold(Range::none(), |accum, r| {
-                    accum.union(&if r.end < *Version::INFINITY {
+                    accum.union(&if r.end < *VERSION_INFINITY {
                         Range::between(r.start, r.end)
                     } else {
                         Range::higher_than(r.start)
@@ -360,6 +360,7 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
         T: Borrow<ResPkg>,
         U: Borrow<Range<Version>>,
     {
+        println!("----> pubgrub called choose_package_version");
         // Heuristic: for our next package candidate, use the package with the fewest
         // remaining versions to consider. This tends to drive to either a workable
         // version or a conflict as fast as possible.
@@ -372,17 +373,20 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
         };
 
         let (pkg, range) = potential_packages
+            .map(|(p, range)| { println!("-> For {}, allowed range is: {}", p.borrow(), range.borrow()); (p, range) })
             .min_by_key(count_valid)
             .ok_or_else(|| anyhow!("No packages found within range"))?;
 
         println!(
-            "Looking for versions of {} ({:?})",
+            "Chose package {}; now let's decide which version",
             pkg.borrow(),
-            range.borrow()
         );
 
         match pkg.borrow() {
-            ResPkg::Root => Ok((pkg, Some(ROOT_VERSION.clone()))),
+            ResPkg::Root => {
+                println!("<---- decision: root package magic version 0");
+                Ok((pkg, Some(ROOT_VERSION.clone())))
+            },
             ResPkg::Package(name, _) => {
                 // why does this have to be 'parse' instead of 'try_into'?! it is a
                 // mystery
@@ -412,10 +416,14 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
                             );
                             continue;
                         }
-                        Ok(true) => return Ok((pkg, Some(version.clone()))),
+                        Ok(true) => {
+                            println!("<---- decision: {} v{}", pkg.borrow(), version);
+                            return Ok((pkg, Some(version.clone())))
+                        },
                     }
                 }
 
+                println!("<---- decision: no versions of {} in range", pkg.borrow());
                 Ok((pkg, None))
             }
         }
@@ -429,14 +437,14 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
         pubgrub::solver::Dependencies<ResPkg, Version>,
         Box<dyn std::error::Error>,
     > {
-        println!("Fetching dependencies for {} v{}", pkg, version);
+        println!("----> pubgrub called get_dependencies {} v{}", pkg, version);
 
         match pkg {
             ResPkg::Root => {
                 let mut dc: DependencyConstraints<ResPkg, Version> =
                     vec![].into_iter().collect();
                 self.requirements_to_pubgrub(&self.root_reqs, &mut dc, &None);
-                println!("root dc: {:?}", dc);
+                println!("<---- dependencies complete");
                 Ok(Dependencies::Known(dc))
             }
             ResPkg::Package(name, extra) => {
@@ -455,6 +463,7 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
                     );
                 }
 
+                println!("<---- dependencies complete");
                 Ok(Dependencies::Known(dc))
             }
         }
