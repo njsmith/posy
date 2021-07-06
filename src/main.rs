@@ -10,6 +10,7 @@ mod vocab;
 
 #[cfg(test)]
 mod test_util;
+mod platform_tags;
 
 use anyhow::Result;
 use std::time::Duration;
