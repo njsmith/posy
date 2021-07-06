@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use pubgrub::range::Range;
+use pubgrub::report::DerivationTree;
 use pubgrub::report::Reporter;
 use pubgrub::solver::{Dependencies, DependencyConstraints};
 
@@ -94,8 +95,34 @@ pub fn resolve(
             SelfDependency { package, version } => {
                 anyhow!("{} v{} depends on itself", package, version)
             }
+
             NoSolution(mut derivation_tree) => {
+                fn dump_tree(tree: &DerivationTree<ResPkg, Version>, depth: usize) {
+                    let indent = "   ".repeat(depth);
+                    match tree {
+                        DerivationTree::External(inner) => {
+                            println!("{}external: {}", indent, inner);
+                        },
+                        DerivationTree::Derived(inner) => {
+                            println!("{}derived (id={:?})", indent, inner.shared_id);
+                            for (pkg, term) in inner.terms.iter() {
+                                println!("{}  {} -> {}", indent, pkg, term);
+                            }
+                            println!("{}cause 1:", indent);
+                            dump_tree(&inner.cause1, depth + 1);
+                            println!("{}cause 2:", indent);
+                            dump_tree(&inner.cause2, depth + 1);
+                        },
+                    }
+                }
+
+                println!("\n-------- derivation tree --------");
+                //println!("{:?}", derivation_tree);
+                dump_tree(&derivation_tree, 0);
                 derivation_tree.collapse_no_versions();
+                println!("\n-------- derivation tree (collapsed) --------");
+                //println!("{:?}", derivation_tree);
+                dump_tree(&derivation_tree, 0);
                 anyhow!(
                     "{}",
                     pubgrub::report::DefaultStringReporter::report(&derivation_tree)
