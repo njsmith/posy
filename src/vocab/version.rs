@@ -25,11 +25,6 @@ pub static VERSION_INFINITY: Lazy<Version> = Lazy::new(|| {
 
 
 impl Version {
-    // XX BUG IN pep440 crate: the actuall smallest post-prefix is .post0. And X.Y.post0
-    // is strictly larger than X.Y. BUT, PEP 440 treats these as the same. (This may
-    // also screw up our hashing, but I'll worry about that later...).
-    pub const SMALLEST_POST: Option<u32> = Some(1);
-
     pub fn is_prerelease(&self) -> bool {
         self.0.pre.is_some() || self.0.dev.is_some()
     }
@@ -56,7 +51,7 @@ impl Version {
         } else if let Some(post) = &mut new.0.post {
             *post += 1;
         } else {
-            new.0.post = Version::SMALLEST_POST;
+            new.0.post = Some(0);
             new.0.dev = Some(0);
         }
         new

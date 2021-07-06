@@ -40,6 +40,10 @@ encoding_rs_io = "0.1.7"
 string_cache = "0.8.1"
 encoding_rs = "0.8.28"
 
+[patch.crates-io]
+# Required until https://github.com/relrod/pep440-rs/pull/3 is merged+released
+pep440 = { git = "https://github.com/njsmith/pep440-rs", branch = "fix-comparisons" }
+
 [dev-dependencies]
 fastrand = "1.4.1"
 tokio = { version = "1.7.0", features = ["rt-multi-thread", "sync"] }

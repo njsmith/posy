@@ -878,8 +878,7 @@ checksum = "c719dcf55f09a3a7e764c6649ab594c18a177e3599c467983cdf644bfc0a4088"
 [[package]]
 name = "pep440"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fc36a268b11e0c50ec9aeef0253895faf3bdfb6bca98b4f8ddcf91a2d32d918"
+source = "git+https://github.com/njsmith/pep440-rs?branch=fix-comparisons#cf345f9272bbd18e085540598ce15f5ff88796e1"
 dependencies = [
  "lazy_static",
  "regex",
