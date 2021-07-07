@@ -89,15 +89,28 @@ fn glibc_tags(py_arch: &str, detector: &[u8]) -> Result<Vec<String>> {
             Some(captures) => {
                 let major: u32 = captures.get(1).unwrap().as_str().parse()?;
                 let minor: u32 = captures.get(2).unwrap().as_str().parse()?;
+                // if there's ever a glibc 3, then we'll need to update this code (at
+                // least to hard-code the largest glibc2 version)
                 if major > 2 {
                     bail!(
                         "glibc 3? I don't understand glibc 3 (got version: {})",
                         output_text.trim()
                     )
                 };
+                // 2.5 was the first glibc to ever have manylinux support
                 Ok((5..=minor)
                     .rev()
-                    .map(|n| format!("manylinux_{}_{}_{}", major, n, py_arch))
+                    .flat_map(|n| {
+                        let mut tags =
+                            vec![format!("manylinux_{}_{}_{}", major, n, py_arch)];
+                        match (major, n) {
+                            (2, 17) => tags.push(format!("manylinux2014_{}", py_arch)),
+                            (2, 12) => tags.push(format!("manylinux2010_{}", py_arch)),
+                            (2, 5) => tags.push(format!("manylinux1_{}", py_arch)),
+                            _ => ()
+                        }
+                        tags
+                    })
                     .collect())
             }
         }
@@ -151,6 +164,8 @@ pub fn platform_tags() -> Result<Vec<String>> {
         }
     }
 
+    // Put musllinux after manylinux, since at least for now, manylinux is a smoother
+    // path (more wheels available etc.)
     for (musl_arch, py_arch) in MUSL_ARCH_MAP {
         let loader: PathBuf = format!("/lib/ld-musl-{}.so.1", musl_arch).into();
         if loader.exists() {
