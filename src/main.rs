@@ -52,6 +52,7 @@ fn main() -> Result<()> {
     let opt = Opt::from_args();
 
     println!("user agent: {}", net::user_agent());
+    println!("platform tags: {:?}", platform_tags::platform_tags());
 
     let agent = AgentBuilder::new()
         .user_agent(&net::user_agent())
