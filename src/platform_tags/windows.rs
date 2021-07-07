@@ -13,13 +13,12 @@ extern "system" {
 
 fn is_wow64_guest_machine_supported(machine: u16) -> Result<bool> {
     let mut out: u8 = 0;
-    unsafe {
-        let hresult = IsWow64GuestMachineSupported(machine, u8.as_mut_ptr());
-    }
-    if hresult {
-        Err(std::error::last_os_error())
+    let hresult =
+        unsafe { IsWow64GuestMachineSupported(machine, (&mut out) as *mut u8) };
+    if hresult != 0 {
+        Err(std::io::Error::last_os_error())?
     } else {
-        Ok(out as bool)
+        Ok(out != 0)
     }
 }
 
@@ -28,12 +27,12 @@ pub fn platform_tags() -> Result<Vec<String>> {
     if cfg!(target_arch = "x86_64")
         || is_wow64_guest_machine_supported(IMAGE_FILE_MACHINE_AMD64)?
     {
-        tags.push("win_amd64");
+        tags.push("win_amd64".into());
     }
     if cfg!(target_arch = "x86")
         || is_wow64_guest_machine_supported(IMAGE_FILE_MACHINE_I386)?
     {
-        tags.push("win32");
+        tags.push("win32".into());
     }
     Ok(tags)
 }
