@@ -190,6 +190,35 @@ at least the following files:
     other systems? E.g. Linux 32/64 bit, or macOS on ARM with Rosetta
     2?
     
+    I guess all of these cases have in common that there are multiple
+    platform tags at the system level, but then the choice of
+    interpreter restricts you to just a subset of them, and the subset
+    can be determined by doing a simple string match on the suffix of
+    the platform tags (because that's where we put basic arch stuff).
+    So we could potentially add a field like `"restrict_platforms":
+    ["_x86_64"]` or `"restrict_platforms": ["_universal2", "_arm64"]`?
+
+    macOS is particularly tricky with its fat binaries. Suppose we're
+    on Apple Silicon:
+    
+    - if your interpreter and *all* of your packages are `universal2`,
+      then you can run the interpreter in either ARM or x86-64 mode
+      (via Rosetta 2).
+    - if your interpreter is `universal2`, and all of your packages
+      are `universal2` or ARM, then you can run the interpreter in ARM
+      mode and it's fine.
+    - if your interpreter is `universal2`, and all of your packages
+      are `universal2` or x86-64, then you *have* to run the interpreter
+      in x86-64 mode (which requires a special request at startup),
+      but then it will work
+
+    So a `universal2` pybi lets you pick which kind of environment you
+    want, but you do have to pick at install time! So what would you
+    put in `restrict_platforms` for a `universal2` pybi?
+    
+    In some ways it would be easier if we always had separate binaries
+    for x86-64/arm64...
+
   * `paths`: The install paths needed to install wheels, as relative
     paths starting at the root of the zip file.
 
