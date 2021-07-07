@@ -219,6 +219,15 @@ at least the following files:
     In some ways it would be easier if we always had separate binaries
     for x86-64/arm64...
 
+    UGH: actually the thing I said above about suffixes is also wrong
+    for another reason: my laptop is primarily glibc based, but it has
+    musl installed to (`apt install musl` on ubuntu). So at the
+    platform level it actually can install both manylinux and musl
+    interpreters, but then once you pick one, you need your wheels to
+    match. So uh... `"restrict_platforms": ["musllinux_*_x86_64"]`?
+    this is getting messy... regex or glob, which regex/glob syntax...
+    maybe we should give up on the whole approach?
+
   * `paths`: The install paths needed to install wheels, as relative
     paths starting at the root of the zip file.
 
