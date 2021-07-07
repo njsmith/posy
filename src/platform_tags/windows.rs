@@ -7,6 +7,7 @@ const IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
 #[link(name = "kernel32")]
 #[allow(non_snake_case)]
 extern "system" {
+    #[must_use]
     fn IsWow64GuestMachineSupported(machine: u16, out: *mut u8) -> u32;
 }
 
