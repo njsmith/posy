@@ -1,15 +1,14 @@
 use crate::prelude::*;
 
 use std::ffi::CString;
-use std::io::Error;
-use std::process::Command;
+use std::ptr;
 
-const ENOENT: int = 2;
+const ENOENT: i32 = 2;
 
 extern "system" {
     #[must_use]
     fn sysctlbyname(
-        name: *const u8,
+        name: *const i8,
         oldp: *mut u8,
         oldlenp: *mut usize,
         newp: *mut u8,
@@ -17,17 +16,27 @@ extern "system" {
     ) -> u32;
 }
 
-fn get_sysctl(name: &str, mut len: usize) -> Result<Vec<u8>> {
+fn get_sysctl(
+    name: &str,
+    mut len: usize,
+) -> std::result::Result<Vec<u8>, std::io::Error> {
     let mut buf: Vec<u8> = Vec::new();
     buf.resize(len, 0);
-    let name = CString::new(name);
+    let name = CString::new(name)?;
+    let result;
     unsafe {
-        let result = sysctlbyname(name.as_ptr(), len.as_mut_ptr(), 0 as *mut usize, 0);
+        result = sysctlbyname(
+            name.as_ptr(),
+            buf.as_mut_ptr(),
+            (&mut len) as *mut usize,
+            ptr::null_mut::<u8>(),
+            0,
+        );
     }
     if result != 0 {
         return Err(std::io::Error::last_os_error());
     }
-    assert!(len <= buf.length());
+    assert!(len <= buf.len());
     buf.truncate(len);
     Ok(buf)
 }
@@ -38,6 +47,7 @@ fn running_under_rosetta_2() -> bool {
             if err.raw_os_error() == Some(ENOENT) {
                 // "sysctl.proc_translated" wasn't recognized -- must be old
                 // macOS without rosetta 2 support.
+                println!("ENOENT");
                 false
             } else {
                 unreachable!(
@@ -46,7 +56,7 @@ fn running_under_rosetta_2() -> bool {
                 );
             }
         }
-        Ok(flag_bytes) => u32::from_ne_bytes(flag_bytes.to_slice()) == 1,
+        Ok(flag_bytes) => u32::from_ne_bytes(flag_bytes.try_into().unwrap()) == 1,
     }
 }
 
@@ -60,7 +70,7 @@ fn running_under_rosetta_2() -> bool {
 // which is: sysctlbyname("sysctl.proc_translated")
 // https://developer.apple.com/forums/thread/653009
 
-fn arches() -> Vec<&str> {
+fn arches() -> Vec<&'static str> {
     // all in-support macs support x86-64, either natively or emulated
     let mut arches: Vec<&str> = vec![
         "x86_64",
@@ -76,9 +86,6 @@ fn arches() -> Vec<&str> {
     arches
 }
 
-static MACOS_VERSION_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"([0-9]+)\.([0-9]+)\.([0-9]+)"));
-
 fn version() -> Result<(u32, u32, u32)> {
     // let product_version_str = Command::new("/usr/bin/sw_vers")
     //     .arg("-productVersion")
@@ -86,38 +93,40 @@ fn version() -> Result<(u32, u32, u32)> {
     // longest string possible right now is 8: XX.XX.XX
     // so 50 should give us plenty of headroom :-)
     let product_version_str =
-        String::from_lossy_utf8(get_sysctl("kern.osproductversion", 50)?);
-    let pieces: Vec<u32> = product_version_str
+        String::from_utf8(get_sysctl("kern.osproductversion", 50)?)?;
+    println!("product_version_str = {}", product_version_str);
+    let pieces = product_version_str
+        .trim_end_matches('\0')
         .split(".")
-        .map(|s| s.try_into::<u32>()?)
-        .collect();
-    assert!(pieces.length() == 3);
-    (pieces[0], pieces[1], pieces[2])
+        .collect::<Vec<&str>>();
+    assert!(pieces.len() == 3);
+    println!("{:?}", pieces);
+    Ok((pieces[0].parse()?, pieces[1].parse()?, pieces[2].parse()?))
 }
 
 pub fn platform_tags() -> Result<Vec<String>> {
     let mut tags: Vec<String> = Vec::new();
     let arches = arches();
-    let (major, minor, micro) = version()?;
-    if (major, minor) >= 11 {
+    let (major, minor, _) = version()?;
+    if major >= 11 {
         for compat_major in (11..=major).rev() {
-            for arch in arches {
+            for arch in &arches {
                 tags.push(format!("macosx_{}_0_{}", compat_major, arch));
             }
         }
         for compat_minor in (4..=16).rev() {
-            for arch in arches {
+            for arch in &arches {
                 tags.push(format!("macosx_10_{}_{}", compat_minor, arch));
             }
         }
     } else {
         assert!(major == 10);
         for compat_minor in (4..=minor).rev() {
-            for arch in arches {
+            for arch in &arches {
                 tags.push(format!("macosx_10_{}_{}", compat_minor, arch));
             }
         }
     }
 
-    Ok(tags);
+    Ok(tags)
 }

@@ -1,5 +1,3 @@
-#![forbid(unsafe_code)]
-
 mod cache;
 mod net;
 mod package_index;
