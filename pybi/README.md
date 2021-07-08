@@ -159,87 +159,94 @@ at least the following files:
     want to know what version of the Python language that supports,
     then that's recorded in the `python_version` marker.
 
-  * `tags`: The PEP 425 tags supported by this interpreter, in
-    preference order, except that the special platform tag `PLATFORM`
-    should replace any platform tags that depend on the final
-    installation system.
+  * [Provisional] `tags`: The wheel tags supported by this
+    interpreter, in preference order, except that the special platform
+    tag `PLATFORM` should replace any platform tags that depend on the
+    final installation system.
 
-    Rationale: Pybi installers already need to be able to compute the
-    set of platform tags for a given system in order to determine
-    whether a `.pybi` file is compatible. So the idea is that they can
-    combine their own list of platform tags with this list of
-    platform-independent tags to determine which wheels are compatible
-    with a given Pybi environment, without installing or running the
-    Pybi environment.
+    Discussion: It would be nice™ if installers could compute a pybi's
+    corresponding wheel tags ahead of time, so that they could install
+    wheels into the unpacked pybi without needing to actually invoke
+    the python interpreter to query its tags – both for efficiency and
+    to allow for more exotic use cases like setting up a Windows
+    environment from a Linux host.
 
-    TODO: is this really workable? There are also cases where the
-    platform tags depend on the installed binary. For example, most
-    Windows *systems* are compatible with both `win32` and
-    `win_amd64`, and you can use either for the Python install, but
-    then once you pick one you have to use the same platform for
-    wheels. So a pybi installer needs to know that `win32` and
-    `win_amd64` are both ok tags for pybis, but it feels awkward to
-    also expect it to hardcode the knowledge of how those affect the
-    resulting wheels.
+    But unfortunately, it's impossible to compute the full set of
+    platform tags supported by a Python installation ahead of time,
+    because they can depend on the final system:
     
-    I guess in this particular case it could be worked around within
-    the pybi itself. On Windows, the interpreter also determines the
-    full set of platform tags, so there's no need to use the
-    `PLATFORM` wildcard at all -- the `pybi.json` can just list the
-    full set of explicit tags. But there are probably similar cases on
-    other systems? E.g. Linux 32/64 bit, or macOS on ARM with Rosetta
-    2?
-    
-    I guess all of these cases have in common that there are multiple
-    platform tags at the system level, but then the choice of
-    interpreter restricts you to just a subset of them, and the subset
-    can be determined by doing a simple string match on the suffix of
-    the platform tags (because that's where we put basic arch stuff).
-    So we could potentially add a field like `"restrict_platforms":
-    ["_x86_64"]` or `"restrict_platforms": ["_universal2", "_arm64"]`?
+    - A pybi tagged `manylinux_2_12_x86_64` can always use wheels
+      tagged as `manylinux_2_12_x86_64`. It also *might* be able to
+      use wheels tagged `manylinux_2_17_x86_64`, but only if the final
+      installation system has glibc 2.17+.
+      
+    - A pybi tagged `macosx_11_0_universal2` (= x86-64 + arm64 support
+      in the same binary) might be able to use wheels tagged as
+      `macosx_11_0_arm64`, but only if it's installed on an "Apple
+      Silicon" machine.
 
-    macOS is particularly tricky with its fat binaries. Suppose we're
-    on Apple Silicon:
-    
-    - if your interpreter and *all* of your packages are `universal2`,
-      then you can run the interpreter in either ARM or x86-64 mode
-      (via Rosetta 2).
-    - if your interpreter is `universal2`, and all of your packages
-      are `universal2` or ARM, then you can run the interpreter in ARM
-      mode and it's fine.
-    - if your interpreter is `universal2`, and all of your packages
-      are `universal2` or x86-64, then you *have* to run the interpreter
-      in x86-64 mode (which requires a special request at startup),
-      but then it will work
+    In these two cases, an installation tool can still work out the
+    appropriate set of wheel tags by computing the local platform
+    tags, taking the wheel tag templates from `pybi.json`, and
+    swapping in the actual supported platforms in place of the magic
+    `PLATFORM` string. Since pybi installers already need to compute
+    platform tags to pick a pybi in the first place, this is pretty
+    simple.
 
-    So a `universal2` pybi lets you pick which kind of environment you
-    want, but you do have to pick at install time! So what would you
-    put in `restrict_platforms` for a `universal2` pybi?
-    
-    In some ways it would be easier if we always had separate binaries
-    for x86-64/arm64...
+    However, there are other cases that are even more complicated:
 
-    UGH: actually the thing I said above about suffixes is also wrong
-    for another reason: my laptop is primarily glibc based, but it has
-    musl installed to (`apt install musl` on ubuntu). So at the
-    platform level it actually can install both manylinux and musl
-    interpreters, but then once you pick one, you need your wheels to
-    match. So uh... `"restrict_platforms": ["musllinux_*_x86_64"]`?
-    this is getting messy... regex or glob, which regex/glob syntax...
-    maybe we should give up on the whole approach?
+    - You can (usually) run both 32- and 64-bit apps on 64-bit
+      Windows. So a pybi installer might compute the set of allowable
+      pybi tags as [`win32`, `win_amd64`]. But you can't then just
+      take that set and swap it into the pybi's wheel tag template or
+      you get nonsense:
+      
+      ```
+        [
+          "cp39-cp39-win32",
+          "cp39-cp39-win_amd64",
+          "cp39-abi3-win32",
+          "cp39-abi3-win_amd64",
+          ...
+        ]
+      ```
 
-  * `paths`: The install paths needed to install wheels, as relative
-    paths starting at the root of the zip file.
+      To handle this, the installer needs to somehow understand that a
+      `manylinux_2_12_x86_64` pybi can use a `manylinux_2_17_x86_64`
+      wheel, even though those tags are different, but a `win32` pybi
+      *can't* use a `win_amd64` wheel, because those tags are
+      different.
 
-    Rationale: `tags` and `paths` together should be enough to let an
-    installer choose wheels and install them into an unpacked pybi
-    environment, without invoking Python.
+      And similar issues arise for other 64-bit OSes.
 
-    In addition: it must be possible to invoke the Python interpreter
-    by running `{paths["scripts"]}/python`. If there are alternative
-    interpreter entry points (e.g. `pythonw` for Windows GUI apps),
-    then they should also be in that directory under their
-    conventional names, with no version number attached.
+    - A pybi tagged `macosx_11_0_universal2` might be able to use
+      wheels tagged as `macosx_11_0_x86_64`, but only if it's
+      installed on an x86-64 machine *or* it's installed on an ARM
+      machine *and* the interpreter is invoked with the magic
+      incantation that tells macOS to run a binary in x86-64 mode. So
+      how the installer plans to invoke the pybi matters too!
+
+    So... it's not 100% clear if the `tags` field is useful, since
+    taking advantage of it seems to require hard-coded logic in the
+    pybi installer. But the cost of included it seems pretty low
+    (worst case, installers just ignore it), so I guess we'll include
+    it now with a [Provisional] marking?
+
+  * `paths`: The install paths needed to install wheels (same keys as
+    `sysconfig.get_paths()`), as relative paths starting at the root
+    of the zip file.
+
+    It must be possible to invoke the Python interpreter by running
+    `{paths["scripts"]}/python`. If there are alternative interpreter
+    entry points (e.g. `pythonw` for Windows GUI apps), then they
+    should also be in that directory under their conventional names,
+    with no version number attached.
+
+    Rationale: `tags` (if usable) and `paths` together are enough to
+    let an installer choose wheels and install them into an unpacked
+    pybi environment, without invoking Python. Besides, we need to
+    write down the interpreter location somewhere, so it's two birds
+    with one stone.
 
   You can probably generate a valid `pybi.json` file by doing:
 
@@ -291,8 +298,8 @@ at least the following files:
 
 Currently, symlinks are used by default in all Unix Python installs
 (e.g., `bin/python3 -> bin/python3.9`). And furthermore, symlinks are
-*required* to store macOS framework builds in `pybi` files. So,
-`.pybi` files must be able to represent symlinks.
+*required* to store macOS framework builds in `pybi` files. So, unlike
+wheel files, `.pybi` files must be able to represent symlinks.
 
 
 ### Representing symlinks in zip files
