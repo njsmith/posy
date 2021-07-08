@@ -41,6 +41,16 @@ fn get_sysctl(
     Ok(buf)
 }
 
+// figuring out supported arches: in the modern era, there are three possibilities:
+// - x86-64 running natively
+// - x86-64 running emulated on arm64
+// - arm64 running natively
+//
+// so we just need to know what we were built for (x86-64 vs arm64), which rust knows at
+// build time, and then at runtime check if we're running emulated or not
+// which is: sysctlbyname("sysctl.proc_translated")
+// https://developer.apple.com/forums/thread/653009
+
 fn running_under_rosetta_2() -> bool {
     match get_sysctl("sysctl.proc_translated", 4) {
         Err(err) => {
@@ -59,16 +69,6 @@ fn running_under_rosetta_2() -> bool {
         Ok(flag_bytes) => u32::from_ne_bytes(flag_bytes.try_into().unwrap()) == 1,
     }
 }
-
-// figuring out supported arches: in the modern era, there are three possibilities:
-// - x86-64 running natively
-// - x86-64 running emulated on arm64
-// - arm64 running natively
-//
-// so we just need to know what we were built for (x86-64 vs arm64), which rust knows at
-// build time, and then at runtime check if we're running emulated or not
-// which is: sysctlbyname("sysctl.proc_translated")
-// https://developer.apple.com/forums/thread/653009
 
 fn arches() -> Vec<&'static str> {
     // all in-support macs support x86-64, either natively or emulated
