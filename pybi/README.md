@@ -375,8 +375,8 @@ Pybi consumers SHOULD validate that the symlinks in the archive and
 `RECORD` file are consistent with each other.
 
 We also considered using *only* the `RECORD` file to store symlinks,
-but it seems useful to let pybi's be unpacked by the regular `unzip`
-tool, and it only understands the Info-Zip extensions.
+but then the vanilla `unzip` tool wouldn't be able to unpack them, and
+that would make it hard to install a pybi from a shell script.
 
 
 ### Limitations
@@ -401,11 +401,11 @@ control, we impose the following restrictions:
   For example, if an archive has a symlink `foo -> bar`, and then
   later in the archive there's a regular file named `foo/blah.py`,
   then a naive unpacker could potentially end up writing a file called
-  `bar/blah.py`.
+  `bar/blah.py`. Don't be naive.
 
 Unpackers MUST verify that these rules are followed, because without
 them attackers could create evil symlinks like `foo -> /etc/passwd` or
-`foo -> ../../../../../etc/passwd` and cause havoc.
+`foo -> ../../../../../etc` + `foo/passwd -> ...` and cause havoc.
 
 
 ## Sdists (or not)
@@ -431,15 +431,15 @@ But, here's what I'm doing for my prototype "general purpose" pybi's:
 
 - Make sure `site-packages` is *empty*.
 
-  Rationale: for regular standalone python installers, like the ones
-  distributed by Python.org, you probably want to include at least
-  `pip`, to [avoid bootstrapping
+  Rationale: for traditional standalone python installers that are
+  targeted at end-users, you probably want to include at least `pip`,
+  to [avoid bootstrapping
   issues](https://www.python.org/dev/peps/pep-0453/). But pybis are
-  designed to be installed by "smart" installers, that consume the
-  pybi as part of some kind of environment setup automation. It's
-  easier for these installers to start from a blank slate and then add
-  whatever they need, than for them to start with some preinstalled
-  packages that they may or may not want.
+  different: they're designed to be installed by "smart" tooling, that
+  consume the pybi as part of some kind of larger automated deployment
+  process. It's easier for these installers to start from a blank
+  slate and then add whatever they need, than for them to start with
+  some preinstalled packages that they may or may not want.
 
 - Include the full stdlib, *except* for `test`.
 
@@ -453,9 +453,9 @@ But, here's what I'm doing for my prototype "general purpose" pybi's:
   So this seems like the best way to balance broad compatibility with
   reasonable download/install sizes.
 
-- I'm not shipping any `.pyc` files. They can be generated on the
-  final system at minimal cost, and it removes a source of
-  location-dependence. (`.pyc` files store the absolute path of the
-  corresponding `.py` file and include it in tracebacks; but, pybis
-  are relocatable, so the correct path isn't known until after
-  install.)
+- I'm not shipping any `.pyc` files. They take up space in the
+  download, can be generated on the final system at minimal cost, and
+  dropping them removes a source of location-dependence. (`.pyc` files
+  store the absolute path of the corresponding `.py` file and include
+  it in tracebacks; but, pybis are relocatable, so the correct path
+  isn't known until after install.)
