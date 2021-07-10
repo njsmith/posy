@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 anyhow = "1.0.40"
 serde = { version = "1.0.126", features = ["derive"] }
-pep440 = "0.1.1"
+pep440 = "0.2.0"
 ureq = { version = "2.1.1", features = ["json", "rustls-native-certs", "cookies", "charset"] }
 zip = "0.5.13"
 serde_json = "1.0.64"
@@ -39,10 +39,6 @@ html5ever = "0.25.1"
 encoding_rs_io = "0.1.7"
 string_cache = "0.8.1"
 encoding_rs = "0.8.28"
-
-[patch.crates-io]
-# Required until https://github.com/relrod/pep440-rs/pull/3 is merged+released
-pep440 = { git = "https://github.com/njsmith/pep440-rs", branch = "fix-comparisons" }
 
 [dev-dependencies]
 fastrand = "1.4.1"
