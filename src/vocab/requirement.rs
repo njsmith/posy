@@ -79,6 +79,21 @@ pub mod marker {
         }
     }
 
+    impl Display for Value {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Value::Variable(var) => write!(f, "{}", var),
+                Value::Literal(literal) => {
+                    if literal.contains('"') {
+                        write!(f, "'{}'", literal)
+                    } else {
+                        write!(f, "\"{}\"", literal)
+                    }
+                }
+            }
+        }
+    }
+
     impl Expr {
         pub fn eval(&self, env: &dyn Env) -> Result<bool> {
             Ok(match self {
@@ -120,6 +135,30 @@ pub mod marker {
             })
         }
     }
+
+    impl Display for Expr {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                // XX maybe it would be nice to reduce redundant parentheses here?
+                Expr::And(lhs, rhs) => write!(f, "({} and {})", lhs, rhs)?,
+                Expr::Or(lhs, rhs) => write!(f, "({} or {})", lhs, rhs)?,
+                Expr::Operator { op, lhs, rhs } => {
+                    write!(
+                        f,
+                        "{} {} {}",
+                        lhs,
+                        match op {
+                            Op::Compare(compare_op) => compare_op.to_string(),
+                            Op::In => "in".to_string(),
+                            Op::NotIn => "not in".to_string(),
+                        },
+                        rhs,
+                    )?
+                }
+            }
+            Ok(())
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -143,6 +182,31 @@ impl Requirement {
                 format!("Failed parsing requirement string {:?})", input)
             })?;
         Ok(req)
+    }
+}
+
+impl Display for Requirement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name.as_given())?;
+        if !self.extras.is_empty() {
+            write!(f, "[")?;
+            let mut first = true;
+            for extra in &self.extras {
+                if !first {
+                    write!(f, ",")?;
+                }
+                first = false;
+                write!(f, "{}", extra.as_given())?;
+            }
+            write!(f, "]")?;
+        }
+        if !self.specifiers.0.is_empty() {
+            write!(f, " {}", self.specifiers)?;
+        }
+        if let Some(env_marker) = &self.env_marker {
+            write!(f, "; {}", env_marker)?;
+        }
+        Ok(())
     }
 }
 

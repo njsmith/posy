@@ -17,6 +17,12 @@ impl Specifier {
     }
 }
 
+impl Display for Specifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.op, self.value)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Specifiers(pub Vec<Specifier>);
 
@@ -32,6 +38,20 @@ impl Specifiers {
             }
         }
         Ok(true)
+    }
+}
+
+impl Display for Specifiers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut first = true;
+        for spec in &self.0 {
+            if !first {
+                write!(f, ", ")?
+            }
+            first = false;
+            write!(f, "{}", spec)?
+        }
+        Ok(())
     }
 }
 
@@ -58,6 +78,46 @@ pub enum CompareOp {
     StrictlyGreaterThan,
     Compatible,
 }
+
+impl Display for CompareOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use CompareOp::*;
+        write!(
+            f,
+            "{}",
+            match self {
+                LessThanEqual => "<=",
+                StrictlyLessThan => "<",
+                NotEqual => "!=",
+                Equal => "==",
+                GreaterThanEqual => ">=",
+                StrictlyGreaterThan => ">",
+                Compatible => "~=",
+            }
+        )
+    }
+}
+
+impl TryFrom<&str> for CompareOp {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        use CompareOp::*;
+        Ok(match &value[..] {
+            "==" => Equal,
+            "!=" => NotEqual,
+            "<=" => LessThanEqual,
+            "<" => StrictlyLessThan,
+            ">=" => GreaterThanEqual,
+            ">" => StrictlyGreaterThan,
+            "~=" => Compatible,
+            "===" => bail!("'===' is not implemented"),
+            _ => bail!("unrecognized operator: {:?}", value),
+        })
+    }
+}
+
+try_from_str_boilerplate!(CompareOp);
 
 fn parse_version_wildcard(input: &str) -> Result<(Version, bool)> {
     let (vstr, wildcard) = if let Some(vstr) = input.strip_suffix(".*") {

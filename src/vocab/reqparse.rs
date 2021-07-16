@@ -21,22 +21,18 @@ peg::parser! {
 
         rule version_one() -> Specifier
             = _ op:version_cmp() _ v:$(version())
-            {?
-                use CompareOp::*;
-                Ok(Specifier {
-                    op: match &op[..] {
-                        "==" => Equal,
-                        "!=" => NotEqual,
-                        "<=" => LessThanEqual,
-                        "<" => StrictlyLessThan,
-                        ">=" => GreaterThanEqual,
-                        ">" => StrictlyGreaterThan,
-                        "~=" => Compatible,
-                        "===" => return Err("'===' is not implemented"),
-                        _ => panic!("op can't be {:?}!", op)
-                    },
-                    value: v.into(),
-                })
+           {?
+                // peg requires &str for errors, so we can't pass through the result of
+                // try_from directly
+                if op == "===" {
+                    Err("'===' is not implemented")
+                } else {
+                    Ok(Specifier {
+                        // unwrap ok because: the parser rule only accepts valid operators
+                        op: op.try_into().unwrap(),
+                       value: v.into(),
+                    })
+                }
             }
 
         rule version_many() -> Specifiers

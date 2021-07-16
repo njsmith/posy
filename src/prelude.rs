@@ -4,6 +4,9 @@ pub use std::fmt::Display;
 pub use std::rc::Rc;
 pub use std::str::FromStr;
 
+pub use fn_error_context::context;
+pub use shrinkwraprs::Shrinkwrap;
+
 pub use anyhow::{anyhow, bail, Context, Result};
 pub use derivative::Derivative;
 pub use log::{info, trace, warn};
