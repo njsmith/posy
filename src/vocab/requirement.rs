@@ -142,19 +142,17 @@ pub mod marker {
                 // XX maybe it would be nice to reduce redundant parentheses here?
                 Expr::And(lhs, rhs) => write!(f, "({} and {})", lhs, rhs)?,
                 Expr::Or(lhs, rhs) => write!(f, "({} or {})", lhs, rhs)?,
-                Expr::Operator { op, lhs, rhs } => {
-                    write!(
-                        f,
-                        "{} {} {}",
-                        lhs,
-                        match op {
-                            Op::Compare(compare_op) => compare_op.to_string(),
-                            Op::In => "in".to_string(),
-                            Op::NotIn => "not in".to_string(),
-                        },
-                        rhs,
-                    )?
-                }
+                Expr::Operator { op, lhs, rhs } => write!(
+                    f,
+                    "{} {} {}",
+                    lhs,
+                    match op {
+                        Op::Compare(compare_op) => compare_op.to_string(),
+                        Op::In => "in".to_string(),
+                        Op::NotIn => "not in".to_string(),
+                    },
+                    rhs,
+                )?,
             }
             Ok(())
         }
@@ -210,17 +208,92 @@ impl Display for Requirement {
     }
 }
 
+#[derive(
+    Shrinkwrap, Debug, Clone, PartialEq, Eq, DeserializeFromStr, SerializeDisplay,
+)]
+pub struct PackageRequirement(Requirement);
+
+impl Display for PackageRequirement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<&str> for PackageRequirement {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(PackageRequirement(Requirement::parse(
+            value,
+            ParseExtra::Allowed,
+        )?))
+    }
+}
+
+try_from_str_boilerplate!(PackageRequirement);
+
+#[derive(
+    Shrinkwrap, Debug, Clone, PartialEq, Eq, DeserializeFromStr, SerializeDisplay,
+)]
+pub struct UserRequirement(Requirement);
+
+impl Display for UserRequirement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<&str> for UserRequirement {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(UserRequirement(Requirement::parse(
+            value,
+            ParseExtra::NotAllowed,
+        )?))
+    }
+}
+
+try_from_str_boilerplate!(UserRequirement);
+
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
-    fn test_smoke() {
-        let r = Requirement::parse(
-            "twisted[tls] >= 20, != 20.1.*; python_version >= '3'",
-            ParseExtra::Allowed,
-        )
-        .unwrap();
-        println!("{:?}", r);
+    fn test_package_requirement_basics() {
+        let r: PackageRequirement =
+            "twisted[tls] >= 20, != 20.1.*; python_version >= '3' and extra == 'hi'"
+                .try_into()
+                .unwrap();
+        insta::assert_debug_snapshot!(r);
+    }
+
+    #[test]
+    fn test_user_requirement_basics() {
+        assert!(UserRequirement::try_from("twisted; extra == 'hi'").is_err());
+        let r: UserRequirement = "twisted[tls] >= 20, != 20.1.*; python_version >= '3'"
+            .try_into()
+            .unwrap();
+        insta::assert_debug_snapshot!(r);
+    }
+
+    #[test]
+    fn test_requirement_roundtrip() {
+        let reqs = vec![
+            "foo",
+            "foo (>=2, <3)",
+            "foo >=1,<2, ~=3.1, ==0.0.*, !=7, >10, <= 8",
+            "foo[bar,baz, quux]",
+            "foo; python_version >= '3' and sys_platform == \"win32\" or sys_platform != \"linux\"",
+            "foo.bar-baz (~=7); 'win' in sys_platform or 'linux' not in sys_platform",
+        ];
+        for req in reqs {
+            let ur: UserRequirement = req.try_into().unwrap();
+            assert_eq!(ur, ur.to_string().try_into().unwrap());
+
+            let pr: PackageRequirement = req.try_into().unwrap();
+            assert_eq!(pr, pr.to_string().try_into().unwrap());
+        }
     }
 }

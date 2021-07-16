@@ -1,0 +1,59 @@
+---
+source: src/vocab/requirement.rs
+expression: r
+
+---
+PackageRequirement(
+    Requirement {
+        name: PackageName {
+            as_given: "twisted",
+            normalized: "twisted",
+        },
+        extras: [
+            Extra(
+                PackageName {
+                    as_given: "tls",
+                    normalized: "tls",
+                },
+            ),
+        ],
+        specifiers: Specifiers(
+            [
+                Specifier {
+                    op: GreaterThanEqual,
+                    value: "20",
+                },
+                Specifier {
+                    op: NotEqual,
+                    value: "20.1.*",
+                },
+            ],
+        ),
+        env_marker: Some(
+            And(
+                Operator {
+                    op: Compare(
+                        GreaterThanEqual,
+                    ),
+                    lhs: Variable(
+                        "python_version",
+                    ),
+                    rhs: Literal(
+                        "3",
+                    ),
+                },
+                Operator {
+                    op: Compare(
+                        Equal,
+                    ),
+                    lhs: Variable(
+                        "extra",
+                    ),
+                    rhs: Literal(
+                        "hi",
+                    ),
+                },
+            ),
+        ),
+    },
+)

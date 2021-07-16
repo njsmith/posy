@@ -38,9 +38,7 @@ impl WheelMetadata {
             ),
         };
 
-        Ok(WheelMetadata {
-            root_is_purelib,
-        })
+        Ok(WheelMetadata { root_is_purelib })
     }
 }
 
@@ -48,5 +46,43 @@ impl PybiMetadata {
     pub fn parse(input: &[u8]) -> Result<PybiMetadata> {
         parse_bin_metadata_and_check_version(input, "Pybi-Version")?;
         Ok(PybiMetadata {})
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_wheel_metadata() {
+        let wm = WheelMetadata::parse(b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\n")
+            .unwrap();
+        assert!(wm.root_is_purelib);
+
+        let wm = WheelMetadata::parse(b"Wheel-Version: 1.0\nRoot-Is-Purelib: false\n")
+            .unwrap();
+        assert!(!wm.root_is_purelib);
+
+        assert!(WheelMetadata::parse(b"").is_err());
+        assert!(
+            WheelMetadata::parse(b"Wheel-Version: 2.0\nRoot-Is-Purelib: true\n")
+                .is_err()
+        );
+        assert!(
+            WheelMetadata::parse(b"Wheel-Version: 1.0\nRoot-Is-Purelib: maybe\n")
+                .is_err()
+        );
+        assert!(
+            WheelMetadata::parse(b"Wheel-Version: 1.9\nRoot-Is-Purelib: true\n")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_pybi_metadata() {
+        assert!(PybiMetadata::parse(b"").is_err());
+        assert!(PybiMetadata::parse(b"Pybi-Version: 1.0\n").is_ok());
+        assert!(PybiMetadata::parse(b"Pybi-Version: 1.9\n").is_ok());
+        assert!(PybiMetadata::parse(b"Pybi-Version: 2.0\n").is_err());
     }
 }
