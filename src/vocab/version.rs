@@ -1,11 +1,9 @@
 use crate::prelude::*;
-use std::hash::{Hash, Hasher};
 
-// We lean on the 'pep440' crate for the heavy lifting part of representing
-// versions, but wrap it in our own type so that we can e.g. make it Hashable
-// and play nice with pubgrub.
+// We lean on the 'pep440' crate for the heavy lifting part of representing versions,
+// but wrap it in our own type so that we can e.g. make it play nice with pubgrub.
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct Version(pub pep440::Version);
 
 pub static VERSION_ZERO: Lazy<Version> = Lazy::new(|| "0a0.dev0".try_into().unwrap());
@@ -73,16 +71,6 @@ try_from_str_boilerplate!(Version);
 impl Display for Version {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-impl Hash for Version {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        // This is pretty inefficient compared to hashing the elements
-        // individually, but that gets awkward because there are embedded
-        // enums that aren't hashable either. XX we should fix this upstream in the
-        // pep440 crate.
-        self.0.normalize().hash(state)
     }
 }
 
