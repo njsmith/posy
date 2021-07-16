@@ -72,8 +72,8 @@ fn main() -> Result<()> {
     let root_reqs = opt
         .inputs
         .into_iter()
-        .map(|s| Requirement::parse(&s, ParseExtra::NotAllowed))
-        .collect::<Result<Vec<Requirement>>>()?;
+        .map(|s| s.try_into())
+        .collect::<Result<Vec<UserRequirement>>>()?;
 
     let pins =
         resolve::resolve(&root_reqs, &*ENV, &index, &HashMap::new(), &|_| false)?;

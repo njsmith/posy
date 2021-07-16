@@ -215,7 +215,7 @@ pub struct PackageRequirement(Requirement);
 
 impl Display for PackageRequirement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        self.0.fmt(f)
     }
 }
 
@@ -239,7 +239,7 @@ pub struct UserRequirement(Requirement);
 
 impl Display for UserRequirement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        self.0.fmt(f)
     }
 }
 

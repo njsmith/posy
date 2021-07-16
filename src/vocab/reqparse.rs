@@ -1,6 +1,7 @@
 use crate::prelude::*;
 
 pub use self::parser::{requirement, versionspec};
+use super::requirement::ParseExtra;
 
 peg::parser! {
     grammar parser() for str {

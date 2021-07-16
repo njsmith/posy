@@ -16,6 +16,6 @@ pub use self::bin_format_metadata::{PybiMetadata, WheelMetadata};
 pub use self::core_metadata::CoreMetadata;
 pub use self::extra::Extra;
 pub use self::package_name::PackageName;
-pub use self::requirement::{marker, ParseExtra, Requirement};
+pub use self::requirement::{marker, Requirement, UserRequirement, PackageRequirement};
 pub use self::specifier::{CompareOp, Specifier, Specifiers};
 pub use self::version::{Version, VERSION_INFINITY, VERSION_ZERO};

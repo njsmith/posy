@@ -8,7 +8,7 @@ use crate::package_index::{Artifact, PackageIndex};
 use std::{borrow::Borrow, cell::RefCell, rc::Rc};
 
 pub fn resolve(
-    requirements: &Vec<Requirement>,
+    requirements: &Vec<UserRequirement>,
     env: &HashMap<String, String>,
     index: &PackageIndex,
     preferred_versions: &HashMap<PackageName, Version>,
@@ -102,7 +102,7 @@ pub fn resolve(
                     match tree {
                         DerivationTree::External(inner) => {
                             println!("{}external: {}", indent, inner);
-                        },
+                        }
                         DerivationTree::Derived(inner) => {
                             println!("{}derived (id={:?})", indent, inner.shared_id);
                             for (pkg, term) in inner.terms.iter() {
@@ -112,7 +112,7 @@ pub fn resolve(
                             dump_tree(&inner.cause1, depth + 1);
                             println!("{}cause 2:", indent);
                             dump_tree(&inner.cause2, depth + 1);
-                        },
+                        }
                     }
                 }
 
@@ -138,7 +138,7 @@ pub struct PinnedPackage {
     pub version: Version,
     pub known_artifacts: Vec<(Url, super::package_index::ArtifactHash)>,
     // For install-time consistency checking/debugging
-    pub expected_requirements: Vec<Requirement>,
+    pub expected_requirements: Vec<PackageRequirement>,
     pub expected_requirements_source: String,
 }
 
@@ -205,7 +205,7 @@ impl Display for ResPkg {
 struct PubgrubState<'a> {
     // These are inputs to the resolve process
     index: &'a PackageIndex,
-    root_reqs: &'a Vec<Requirement>,
+    root_reqs: &'a Vec<UserRequirement>,
     env: &'a HashMap<String, String>,
     preferred_versions: &'a HashMap<PackageName, Version>,
     consider_prereleases: &'a dyn Fn(&PackageName) -> bool,
@@ -320,12 +320,14 @@ impl<'a> PubgrubState<'a> {
         })
     }
 
-    fn requirements_to_pubgrub(
+    fn requirements_to_pubgrub<'r, R, I>(
         &self,
-        reqs: &Vec<Requirement>,
+        reqs: I,
         dc: &mut DependencyConstraints<ResPkg, Version>,
         extra: &Option<Extra>,
-    ) {
+    )
+        where R: std::ops::Deref<Target=Requirement> + 'r, I: Iterator<Item = &'r R>
+    {
         let extra_str: &str = match extra {
             Some(e) => e.normalized(),
             None => "",
@@ -400,7 +402,14 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
         };
 
         let (pkg, range) = potential_packages
-            .map(|(p, range)| { println!("-> For {}, allowed range is: {}", p.borrow(), range.borrow()); (p, range) })
+            .map(|(p, range)| {
+                println!(
+                    "-> For {}, allowed range is: {}",
+                    p.borrow(),
+                    range.borrow()
+                );
+                (p, range)
+            })
             .min_by_key(count_valid)
             .ok_or_else(|| anyhow!("No packages found within range"))?;
 
@@ -413,7 +422,7 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
             ResPkg::Root => {
                 println!("<---- decision: root package magic version 0");
                 Ok((pkg, Some(ROOT_VERSION.clone())))
-            },
+            }
             ResPkg::Package(name, _) => {
                 // why does this have to be 'parse' instead of 'try_into'?! it is a
                 // mystery
@@ -445,8 +454,8 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
                         }
                         Ok(true) => {
                             println!("<---- decision: {} v{}", pkg.borrow(), version);
-                            return Ok((pkg, Some(version.clone())))
-                        },
+                            return Ok((pkg, Some(version.clone())));
+                        }
                     }
                 }
 
@@ -470,7 +479,7 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
             ResPkg::Root => {
                 let mut dc: DependencyConstraints<ResPkg, Version> =
                     vec![].into_iter().collect();
-                self.requirements_to_pubgrub(&self.root_reqs, &mut dc, &None);
+                self.requirements_to_pubgrub(self.root_reqs.iter(), &mut dc, &None);
                 println!("<---- dependencies complete");
                 Ok(Dependencies::Known(dc))
             }
@@ -481,7 +490,7 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
                 let mut dc: DependencyConstraints<ResPkg, Version> =
                     vec![].into_iter().collect();
 
-                self.requirements_to_pubgrub(&metadata.requires_dist, &mut dc, &extra);
+                self.requirements_to_pubgrub(metadata.requires_dist.iter(), &mut dc, &extra);
 
                 if let Some(_) = extra {
                     dc.insert(

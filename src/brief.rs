@@ -9,7 +9,7 @@ pub struct Brief {
     //  ">= 3"
     //  "== 3.8.*"
     //  "pypy3 >= 7.3"
-    python_requirement: Requirement,
+    python_requirement: UserRequirement,
 
     // maybe just predefine some named python types, and let them define their own as
     // well? py3XX -> cpython_unofficial == "3.XX.*"

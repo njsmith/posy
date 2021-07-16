@@ -9,7 +9,7 @@ pub struct CoreMetadata {
     pub metadata_version: Version,
     pub name: PackageName,
     pub version: Version,
-    pub requires_dist: Vec<Requirement>,
+    pub requires_dist: Vec<PackageRequirement>,
     pub requires_python: Specifiers,
     pub extras: HashSet<Extra>,
 }
@@ -24,7 +24,7 @@ impl CoreMetadata {
 
         let mut requires_dist = Vec::new();
         for req_str in parsed.take_all("Requires-Dist").drain(..) {
-            requires_dist.push(Requirement::parse(&req_str, ParseExtra::Allowed)?);
+            requires_dist.push(req_str.try_into()?);
         }
 
         let requires_python = match parsed.maybe_take_the("Requires-Python")? {
@@ -75,7 +75,6 @@ impl CoreMetadata {
 mod test {
     use super::*;
     use indoc::indoc;
-    use CompareOp::*;
 
     #[test]
     fn test_basic_parse() {
@@ -96,49 +95,6 @@ mod test {
 
         let metadata = CoreMetadata::parse(metadata_text).unwrap();
 
-        assert_eq!(metadata.metadata_version, "2.1".try_into().unwrap());
-        assert_eq!(metadata.name.normalized(), "trio");
-        assert_eq!(metadata.version, "0.16.0".try_into().unwrap());
-        assert_eq!(
-            metadata.requires_dist,
-            vec![
-                Requirement {
-                    name: "attrs".try_into().unwrap(),
-                    extras: vec![],
-                    specifiers: Specifiers(vec![Specifier {
-                        op: GreaterThanEqual,
-                        value: "19.2.0".into()
-                    }]),
-                    env_marker: None,
-                },
-                Requirement {
-                    name: "sortedcontainers".try_into().unwrap(),
-                    extras: vec![],
-                    specifiers: Specifiers(vec![]),
-                    env_marker: None,
-                },
-                Requirement {
-                    name: "contextvars".try_into().unwrap(),
-                    extras: vec!["foo".try_into().unwrap()],
-                    specifiers: Specifiers(vec![Specifier {
-                        op: GreaterThanEqual,
-                        value: "2.1".into()
-                    }]),
-                    env_marker: Some(marker::Expr::Operator {
-                        op: marker::Op::Compare(StrictlyLessThan),
-                        lhs: marker::Value::Variable("python_version".into()),
-                        rhs: marker::Value::Literal("3.7".into()),
-                    }),
-                },
-            ]
-        );
-        assert_eq!(
-            metadata.requires_python,
-            Specifiers(vec![Specifier {
-                op: GreaterThanEqual,
-                value: "3.6".into(),
-            }])
-        );
-        assert_eq!(metadata.extras, HashSet::new());
+        insta::assert_debug_snapshot!(metadata);
     }
 }
