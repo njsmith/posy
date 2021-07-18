@@ -132,11 +132,11 @@ pub fn resolve(
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PinnedPackage {
     pub name: PackageName,
     pub version: Version,
-    pub known_artifacts: Vec<(Url, super::package_index::ArtifactHash)>,
+    pub known_artifacts: Vec<(Url, ArtifactHash)>,
     // For install-time consistency checking/debugging
     pub expected_requirements: Vec<PackageRequirement>,
     pub expected_requirements_source: String,

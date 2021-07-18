@@ -11,38 +11,6 @@ use super::simple_api_page::{SimpleAPILink, SimpleAPIPage};
 //   Artifact, I think?
 pub static ROOT_URL: Lazy<Url> = Lazy::new(|| "https://pypi.org/".try_into().unwrap());
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum HashMode {
-    SHA256,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ArtifactHash {
-    pub mode: HashMode,
-    pub raw_data: Vec<u8>,
-}
-
-impl ArtifactHash {
-    pub fn from_hex(mode: HashMode, hex: &str) -> Result<ArtifactHash> {
-        Ok(ArtifactHash {
-            mode,
-            raw_data: data_encoding::HEXLOWER_PERMISSIVE.decode(hex.as_bytes())?,
-        })
-    }
-
-    pub fn from_url_fragment(fragment: &str) -> Result<ArtifactHash> {
-        if let Some(suffix) = fragment.strip_prefix("sha256=") {
-            ArtifactHash::from_hex(HashMode::SHA256, suffix)
-        } else {
-            bail!("Unrecognized hash fragment {:?}", fragment)
-        }
-    }
-
-    pub fn to_base64_urlsafe_unpadded(&self) -> String {
-        data_encoding::BASE64URL_NOPAD.encode(&self.raw_data)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Artifact {
     pub name: ArtifactName,
@@ -78,7 +46,7 @@ fn try_decode_link(p: &PackageName, link: SimpleAPILink) -> Result<Artifact> {
         .url
         .fragment()
         .ok_or_else(|| anyhow!("link has no hash"))?;
-    let hash = ArtifactHash::from_url_fragment(fragment)?;
+    let hash: ArtifactHash = fragment.try_into()?;
     let yanked = link.yanked;
     let requires_python = match link.requires_python {
         Some(value) => Specifiers::try_from(value)?,
@@ -124,9 +92,7 @@ impl PackageIndex {
 
         Ok(versions)
     }
-}
 
-impl PackageIndex {
     pub fn wheel_metadata(&self, url: &Url) -> Result<CoreMetadata> {
         use std::io::{Read, Seek};
 
