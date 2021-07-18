@@ -3,7 +3,17 @@ use crate::prelude::*;
 // We lean on the 'pep440' crate for the heavy lifting part of representing versions,
 // but wrap it in our own type so that we can e.g. make it play nice with pubgrub.
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Debug,
+    Hash,
+    SerializeDisplay,
+    DeserializeFromStr,
+)]
 pub struct Version(pub pep440::Version);
 
 pub static VERSION_ZERO: Lazy<Version> = Lazy::new(|| "0a0.dev0".try_into().unwrap());
@@ -20,7 +30,6 @@ pub static VERSION_INFINITY: Lazy<Version> = Lazy::new(|| {
         local: vec![],
     })
 });
-
 
 impl Version {
     pub fn is_prerelease(&self) -> bool {

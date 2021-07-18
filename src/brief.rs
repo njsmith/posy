@@ -1,64 +1,58 @@
 use crate::prelude::*;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PinPlatform {
+    Local,
+}
+
+/// An abstraction of what you need to know about a platform to pin packages for it
+impl PinPlatform {
+    pub fn markers(
+        &self,
+        py: PackageName,
+        pyver: Version,
+        index: super::package_index::PackageIndex,
+    ) -> Result<HashMap<String, String>> {
+        // some options:
+        // - find a pybi match the given settings and get its markers
+        // - calculate markers directly for current system (possibly based on some
+        //   explicit template), or even return a canned response
+        // - build a python locally and then query...
+        todo!()
+    }
+}
+
 /// A high-level description of an environment that a user would like to be able to
-/// build.
-#[derive(Debug, Clone)]
+/// build. Doesn't necessarily have to be what the user types in exactly, but has to
+/// represent their intentions, and *not* anything that requires looking at a package
+/// index.
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Brief {
-    // python:
-    //  [empty]
-    //  ">= 3"
-    //  "== 3.8.*"
-    //  "pypy3 >= 7.3"
-    python_requirement: UserRequirement,
+    // should this be a PythonRequirement? it can't have a marker expression...
+    pub python_requirement: UserRequirement,
+    // don't need python_constraints because we always install exactly one python
+    pub package_requires: Vec<UserRequirement>,
+    pub package_constraints: Vec<UserRequirement>,
+    // for now let's make this totally explicit: we allow prereleases iff the package is
+    // mentioned here (could be python package or a regular package)
+    // and we'll see how far we get with that + diagnostic hints for when the user
+    // should add a package here to make things work.
+    pub allow_pre: HashSet<PackageName>,
+    pub platforms: Vec<PinPlatform>,
+}
 
-    // maybe just predefine some named python types, and let them define their own as
-    // well? py3XX -> cpython_unofficial == "3.XX.*"
-    //   with prereleases automatically enabled for pythons that aren't out yet
-
-    // platforms they care about
-    // how to specify these? can abstract it but...
-    // need to be able to query for env markers? or just pick a pybi, and get the env
-    // markers from it?
-    // maybe it's just a list of env markers or "native"? or a function mapping python
-    // version -> env markers?
-
-    // I guess there's both the user-level case where they specify stuff,
-    // and the transient internal environments that we need to create for stuff like
-    // building wheels?
-    // or temporary overrides
-    //
-    // or using different ways to make an environment? build environments might want to
-    // do tricky stuff on the fly to be fast, might want to use a system python +
-    // venv...
-
-    // requirements
-    // constraints
-
-    // index servers
-
-    // explicit allow-pre/disallow-pre settings
-    //  (default to: allow iff mentioned in a requirement/constraint)
-    //  can name the python implementation here too
-    // or should these be attached to the requirement lines?
-    //  downside of that: want to be able to specify it for transitive dependencies too
-    // ... or should it be entirely explicit here, and make the frontend apply those
-    //  defaults?
-
-    // constraints and pre-release settings should go together, because they both are
-    // ways to control the universe of versions that are considered for a given package
-
-    // some equivalent of cargo's [patch]?
-
-    // I guess this doesn't need to *directly* be a user friendly thing (though being
-    // relatively friendly to construct from rust would be nice)
-    // e.g. doesn't need implicit handholding
-    // it just needs to express the user's intentions that are stable over time, and
-    // don't require hitting the network/package index
+impl Default for Brief {
+    fn default() -> Self {
+        Brief {
+            python_requirement: "cpython_unofficial >= 3".try_into().unwrap(),
+            platforms: vec![PinPlatform::Local],
+            ..Default::default()
+        }
+    }
 }
 
 impl Brief {
-    // XX needs index and stuff too
-    pub fn resolve(&self) -> Blueprint {
+    pub fn resolve(&self, index: super::package_index::PackageIndex) -> Blueprint {
         todo!()
     }
 }
@@ -66,28 +60,26 @@ impl Brief {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Blueprint {
     // the brief we were built from
-    // (except maybe not the platform requests?)
+// (except maybe not the platform requests?)
 
-    // set of package pins
-    // links to artifacts + hashes
-    // dependencies we used to compute the pins + provenance
-    // split up by platform / marker tags
+// set of package pins
+// links to artifacts + hashes
+// dependencies we used to compute the pins + provenance
+// split up by platform / marker tags
 }
 
 pub struct PyEnv {
     // for regular on-disk envs, need to be able to query to get:
-    //   markers
-    //   tags
-    //   installed packages
-    // and then renovate to remove existing packages, add new ones
-    // ideally in parallel, while handling file conflicts gracefully
+//   markers
+//   tags
+//   installed packages
+// and then renovate to remove existing packages, add new ones
+// ideally in parallel, while handling file conflicts gracefully
 }
 
-pub struct ProjectWorkspace {
-}
+pub struct ProjectWorkspace {}
 
-pub struct TempWorkspace {
-}
+pub struct TempWorkspace {}
 
 // represents a _posy directory with persistent named environments
 // I guess needs some locking?
