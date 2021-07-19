@@ -61,7 +61,7 @@ impl CoreMetadata {
         // there's a new metadata release. But for users, there are better
         // ways to nudge them to upgrade (e.g. checking on startup, like
         // pip does), and new metadata releases are so rare and so
-        // much-discussed beforehand that if a package tool authors don't know
+        // much-discussed beforehand that if a tool's authors don't know
         // about it it's because the tool is abandoned anyway.
         if retval.metadata_version >= *NEXT_MAJOR_METADATA_VERSION {
             anyhow::bail!("unsupported Metadata-Version {}", retval.metadata_version);

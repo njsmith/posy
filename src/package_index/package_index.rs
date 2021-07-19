@@ -6,9 +6,6 @@ use crate::net::Net;
 use super::simple_api_page::{SimpleAPILink, SimpleAPIPage};
 
 // XX probably will want to make this configurable
-// XX probably switch to using the simple API also
-//   nb this will make it possible to fetch requires-python metadata as part of
-//   Artifact, I think?
 pub static ROOT_URL: Lazy<Url> = Lazy::new(|| "https://pypi.org/".try_into().unwrap());
 
 #[derive(Debug, Clone)]
@@ -120,11 +117,14 @@ impl PackageIndex {
             Ok(buf)
         }
 
-        for name in names {
+        for name in &names {
             if name.ends_with(".dist-info/WHEEL") {
                 // will error out if the metadata is bad
                 WheelMetadata::parse(&get(&mut zip, &name)?)?;
             }
+        }
+
+        for name in &names {
             if name.ends_with(".dist-info/METADATA") {
                 let metadata = get(&mut zip, &name)?;
                 let parsed = CoreMetadata::parse(&metadata)?;

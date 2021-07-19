@@ -28,7 +28,8 @@ impl PinPlatform {
 /// index.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Brief {
-    // should this be a PythonRequirement? it can't have a marker expression...
+    // should this be a PythonRequirement? it can't have a marker expression or
+    // extras...
     pub python_requirement: UserRequirement,
     // don't need python_constraints because we always install exactly one python
     pub package_requires: Vec<UserRequirement>,
@@ -40,6 +41,9 @@ pub struct Brief {
     pub allow_pre: HashSet<PackageName>,
     pub platforms: Vec<PinPlatform>,
 }
+// should these all be Cow's? if we want to generalize allow_pre to functions (e.g. so
+// can do "resolve but with allow_pre=|pkg| {true}"!), then we'll want to be able to
+// borrow closures...
 
 impl Default for Brief {
     fn default() -> Self {
@@ -51,6 +55,21 @@ impl Default for Brief {
     }
 }
 
+// PackageIndex needs to memoize metadata within a single run, so things like multiple
+// resolutions will be consistent
+//  (maybe PackageDB would be a better name?)
+// and also eventually provide built wheels on demand
+//
+// also want to pull out the "pick a version" logic from resolve.rs somehow so can share
+// it with pick-a-python-version logic. quite a bit is shared actually:
+// - prioritizing newest version, unless have a previous blueprint
+// - yank handling (also depends on previous blueprint)
+// - pre handling (and retry if resolution failed)
+// - package pinning output struct
+
+// need a version of this that tries to stick to a previous blueprint too
+// (affects: yanking, package preference)
+
 impl Brief {
     pub fn resolve(&self, index: super::package_index::PackageIndex) -> Blueprint {
         todo!()
@@ -61,6 +80,8 @@ impl Brief {
 pub struct Blueprint {
     // the brief we were built from
 // (except maybe not the platform requests?)
+// (eh, I guess we should save them here for "is the blueprint stale" check, even if we
+// don't use them otherwise)
 
 // set of package pins
 // links to artifacts + hashes
