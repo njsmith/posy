@@ -141,6 +141,17 @@ at least the following files:
   }
   ```
 
+  [TODO: JSON is certainly nicer to work with than the METADATA
+  format, and historically it's just as easy to get any file in a
+  dist-info directory. But, now with [PEP
+  658](https://www.python.org/dev/peps/pep-0658/) and TUF coming,
+  METADATA has the substantial advantage that it will be cheap to
+  fetch + verify, without downloading the whole package. So maybe we
+  should rework this to put the pybi.json metadata into METADATA
+  instead? (If want to be lazy could even do `Pybi-Info: $JSON`. Or
+  a bit more aesthetically, `Pybi-Markers-Env: $JSON`, `Pybi-Paths:
+  $JSON`.)]
+
   More formally, it must be an object with the following keys:
 
   * `markers_env`: The value of all PEP 508 marker values that are
