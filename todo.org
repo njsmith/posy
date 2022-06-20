@@ -1,0 +1,24 @@
+https://www.lpalmieri.com/posts/2020-09-27-zero-to-production-4-are-we-observable-yet/#GDPR
+
+bundle licenses:
+ - cargo-about
+ - cargo-bundle-licenses
+ - cargo-lichking
+
+
+git resolving:
+keep git clones in cache
+https://docs.rs/git2/latest/git2/struct.Repository.html#method.resolve_reference_from_short_name
+https://docs.rs/git2/latest/git2/struct.Reference.html#method.peel_to_commit
+https://docs.rs/git2/latest/git2/struct.Commit.html#method.id
+
+
+quoting on posix: surround with ' and replace each internal ' with '"'"'
+
+
+in .posy/ workspace, create .gitignore with '*' in it, so automatically gitignored
+
+
+swap over to this for our newtypes?
+https://docs.rs/aliri_braid/latest/aliri_braid/index.html
+and also short strings
