@@ -131,3 +131,16 @@ impl Net {
         )
     }
 }
+
+pub struct LazyZipArtifact {
+    cache: Cache,
+    url: Url,
+    zip: ZipArchive<Box<dyn ReadPlusSeek>>,
+}
+
+impl LazyZipArtifact {
+    pub fn get(&self, path: &str) -> Result<Rc<Vec<u8>>> {
+
+        todo!()
+    }
+}
