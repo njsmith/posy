@@ -1,33 +1,4 @@
 use crate::prelude::*;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum PinPlatform {
-    Explicit {
-        markers: HashMap<String, String>,
-    },
-    Local,
-}
-
-/// An abstraction of what you need to know about a platform to pin packages for it
-impl PinPlatform {
-    pub fn markers(
-        &self,
-        py: PackageName,
-        pyver: Version,
-        index: super::package_index::PackageIndex,
-    ) -> Result<HashMap<String, String>> {
-        // some options:
-        // - find a pybi matching the given settings and get its markers
-        // - calculate markers directly for current system (possibly based on some
-        //   explicit template), or even return a canned response
-        // - build a python locally and then query...
-        Ok(match self {
-            PinPlatform::Explicit { markers } => markers.clone(),
-            PinPlatform::Local => todo!(),
-        })
-    }
-}
-
 // blueprint:
 // - exactly one pinned pybi
 // - list of marker predicates + value that were relied on to generate this, so can
@@ -35,26 +6,23 @@ impl PinPlatform {
 // - exact list of package+version(+url for @ dependencies?)
 // - hashes
 
-
 /// A high-level description of an environment that a user would like to be able to
 /// build. Doesn't necessarily have to be what the user types in exactly, but has to
 /// represent their intentions, and *not* anything that requires looking at a package
 /// index.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Brief {
-    // should this be a PythonRequirement? it can't have a marker expression or
-    // extras...
-    pub python_requirement: UserRequirement,
+    pub python: PythonRequirement,
     // don't need python_constraints because we always install exactly one python
-    pub package_requires: Vec<UserRequirement>,
-    pub package_constraints: Vec<UserRequirement>,
+    pub requires: Vec<UserRequirement>,
+    pub constraints: Vec<UserRequirement>,
     // for now let's make this totally explicit: we allow prereleases iff the package is
     // mentioned here (could be python package or a regular package)
     // and we'll see how far we get with that + diagnostic hints for when the user
     // should add a package here to make things work.
     pub allow_pre: HashSet<PackageName>,
     pub allow_pre_all: bool,
-    pub platforms: Vec<PinPlatform>,
+    pub platforms: Vec<String>,
 }
 // should these all be Cow's? if we want to generalize allow_pre to functions (e.g. so
 // can do "resolve but with allow_pre=|pkg| {true}"!), then we'll want to be able to
@@ -62,13 +30,56 @@ pub struct Brief {
 // meh for now we'll just leave it hardcoded, and adjust if needed. This also makes
 // Debug/Serialize way easier.
 
-impl Default for Brief {
-    fn default() -> Self {
-        Brief {
-            python_requirement: "cpython_unofficial >= 3".try_into().unwrap(),
-            platforms: vec![PinPlatform::Local],
-            ..Default::default()
-        }
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PinnedArtifact {
+    pub url: URL,
+    pub hashes: Vec<ArtifactHash>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PinnedPackage {
+    pub name: PackageName,
+    pub sources: Vec<PinnedArtifact>,
+    // This is a hint that's only used for resolving a new Blueprint that's "similar to"
+    // an old one. (E.g., when upgrading a single package, or trying to use some saved
+    // pins on a new platform.)
+    //
+    // None means there is no version hint, which should only happen if the package was
+    // resolved to an @ requirement.
+    pub version: Option<Version>,
+    // TODO: expected metadata + its provenance, to catch cases where wheels
+    // have mismatched requirements. (just Python-Requires and Requires-Dist?)
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Blueprint {
+    pub python: PinnedPackage,
+    pub packages: Vec<PinnedPackage>,
+    pub used_markers: HashMap<marker::Expr, bool>,
+}
+
+impl Brief {
+    pub fn resolve(
+        &self,
+        db: &str,
+        platform_tags: Vec<String>,
+    ) -> Result<Blueprint> {
+        self.resolve_with_preferences(db, platform_tags, &|package| None)
+    }
+
+    // Version that lets you specify the "preferred" version of some packages.
+    // This affects:
+    // - try to use those versions if can
+    // - will be willing to use those versions even if they're yanked (maybe with a
+    // warning)
+    pub fn resolve_with_preferences(
+        &self,
+        db: &str,
+        platform_tags: Vec<String>,
+        preferred_version: &dyn FnMut(&PackageName) -> Option<Version>,
+    ) -> Result<Blueprint>
+    {
+        todo!()
     }
 }
 
@@ -86,22 +97,6 @@ impl Default for Brief {
 
 // need a version of this that tries to stick to a previous blueprint too
 // (affects: yanking, package preference)
-
-impl Brief {
-    pub fn resolve(&self, index: super::package_index::PackageIndex) -> Blueprint {
-        todo!()
-    }
-}
-
-struct PackagePin
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Blueprint {
-    // set of package pins
-    // links to artifacts + hashes
-    // dependencies we used to compute the pins + provenance
-    // split up by platform / marker tags
-}
 
 pub trait PyEnvMaker {
     fn make(&self, blueprint: &Blueprint) -> Result<PyEnv>;

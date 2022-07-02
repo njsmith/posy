@@ -22,3 +22,35 @@ in .posy/ workspace, create .gitignore with '*' in it, so automatically gitignor
 swap over to this for our newtypes?
 https://docs.rs/aliri_braid/latest/aliri_braid/index.html
 and also short strings
+
+
+https://blog.yossarian.net/2022/05/09/A-most-vexing-parse-but-for-Python-packaging (and PEP 625 discussion)
+https://discuss.python.org/t/pep-625-file-name-of-a-source-distribution/4686/27
+
+
+switch to this for error reporting? https://docs.rs/miette/latest/miette/
+can make pretty toml errors (https://docs.rs/toml_edit/latest/toml_edit/struct.TomlError.html)
+but even better would be if can convince it to make pretty explanations of failed resolution! (well, might have to do this on our own)
+maybe also look at https://docs.rs/ariadne/0.1.5/ariadne/
+
+maybe we should use zip files as our cache objects
+they let you pack together multiple objects (like cache metadata + body), support random access to objects, and even random access within objects if you disable compression (ZipFile::data_start, ZipFile::size), and they're easy to introspect with random tools
+
+* PEP 643 (reliable metadata in sdists)
+apparently this is a thing now! in an sdist, look in PKG-INFO in the root, and if Metadata-Version >= 2.2 and the fields we need are not listed in Dynamic: then we're good.
+
+...and actually, I feel like a good resolution algorithm might be, trust PKG-INFO for all sdists, and then do the expensive prepare_metadata_for_build_wheel thing for all the unreliable sdists and replan if any of them turn out to have been wrong?
+
+(the idea is that in most cases, the PKG-INFO will be reliable, so we'll only
+
+* check if we're using the same method of finding .dist-info as pip
+https://github.com/pypa/pip/blob/bf91a079791f2daf4339115fb39ce7d7e33a9312/src/pip/_internal/utils/wheel.py#L84-L114
+
+
+* make resolution less wildly inefficient when choosing next candidate
+right now, every time pubgrub wants to consider a candidate, it gives us a set of ranges for all the packages under consideration, and then for every one, we do an O(n) loop through every package version, filtering out which ones fit into the range.
+This is at least accidentally quadratic, quite possibly worse. There's gotta be a better data structure here.
+
+One idea: with pubgrub custom Range trait support, have the range objects themselves aware of the complete version set and track which packages fit, propagating this incrementally through range operations?
+
+(Or just storing the candidate versions sorted could also help quite a lot, b/c could make counting ~O(number of spans in range * log(n)) and "find max in range" in even ~O(log(n))

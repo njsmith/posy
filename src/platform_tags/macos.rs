@@ -57,7 +57,7 @@ fn running_under_rosetta_2() -> bool {
             if err.raw_os_error() == Some(ENOENT) {
                 // "sysctl.proc_translated" wasn't recognized -- must be old
                 // macOS without rosetta 2 support.
-                println!("ENOENT");
+                //println!("ENOENT");
                 false
             } else {
                 unreachable!(
@@ -66,24 +66,17 @@ fn running_under_rosetta_2() -> bool {
                 );
             }
         }
-        Ok(flag_bytes) => u32::from_ne_bytes(flag_bytes.try_into().unwrap()) == 1,
+         Ok(flag_bytes) => u32::from_ne_bytes(flag_bytes.try_into().unwrap()) == 1,
     }
 }
 
-fn arches() -> Vec<&'static str> {
+fn arches() -> &'static [&'static str] {
     // all in-support macs support x86-64, either natively or emulated
-    let mut arches: Vec<&str> = vec![
-        "x86_64",
-        "universal2",
-        "intel",
-        "fat32",
-        "fat64",
-        "universal",
-    ];
     if cfg!(target_arch = "aarch64") || running_under_rosetta_2() {
-        arches.insert(0, "arm64");
+        ["arm64", "x86_64"]
+    } else {
+        ["x86_64"]
     }
-    arches
 }
 
 fn version() -> Result<(u32, u32, u32)> {
@@ -104,29 +97,12 @@ fn version() -> Result<(u32, u32, u32)> {
     Ok((pieces[0].parse()?, pieces[1].parse()?, pieces[2].parse()?))
 }
 
-pub fn platform_tags() -> Result<Vec<String>> {
+pub fn core_platform_tags() -> Result<Vec<String>> {
     let mut tags: Vec<String> = Vec::new();
     let arches = arches();
-    let (major, minor, _) = version()?;
+    let (major, mut minor, _) = version()?;
     if major >= 11 {
-        for compat_major in (11..=major).rev() {
-            for arch in &arches {
-                tags.push(format!("macosx_{}_0_{}", compat_major, arch));
-            }
-        }
-        for compat_minor in (4..=16).rev() {
-            for arch in &arches {
-                tags.push(format!("macosx_10_{}_{}", compat_minor, arch));
-            }
-        }
-    } else {
-        assert!(major == 10);
-        for compat_minor in (4..=minor).rev() {
-            for arch in &arches {
-                tags.push(format!("macosx_10_{}_{}", compat_minor, arch));
-            }
-        }
+        minor = 0;
     }
-
-    Ok(tags)
+    Ok(arches.map(|arch| format!("macosx_{}_{}_{}", major, minor, arch)).collect())
 }

@@ -13,8 +13,6 @@
 
 use crate::prelude::*;
 
-use crate::net::SmallTextPage;
-
 use std::borrow::Borrow;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -37,28 +35,16 @@ static REQUIRES_PYTHON_ATTR: Lazy<Atom<LocalNameStaticSet>> =
 static YANKED_ATTR: Lazy<Atom<LocalNameStaticSet>> =
     Lazy::new(|| Atom::from("data-yanked"));
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct SimpleAPILink {
-    pub url: Url,
-    pub requires_python: Option<String>,
-    pub yanked: Option<String>,
-}
-
-#[derive(Debug, PartialEq, Eq, Default)]
-pub struct SimpleAPIPage {
-    pub repository_version: Option<String>,
-    pub links: Vec<SimpleAPILink>,
-}
-
-struct Sink {
+struct Sink<'a> {
     next_id: usize,
     names: HashMap<usize, QualName>,
-    base: Url,
+    base: Cow<'a, Url>,
     changed_base: bool,
-    api_page: SimpleAPIPage,
+    api_version: Option<String>,
+    collected: &'a mut Vec<super::Artifact>,
 }
 
-impl Sink {
+impl<'a> Sink<'a>{
     fn get_id(&mut self) -> usize {
         let id = self.next_id;
         self.next_id += 2;
@@ -78,7 +64,7 @@ fn get_attr<'a>(
     None
 }
 
-impl TreeSink for Sink {
+impl<'a> TreeSink for Sink<'a> {
     type Handle = usize;
     type Output = Self;
 
@@ -92,8 +78,7 @@ impl TreeSink for Sink {
     ) -> usize {
         if name.expanded() == META_TAG {
             if let Some("pypi:repository-version") = get_attr(&NAME_ATTR, &attrs) {
-                self.api_page.repository_version =
-                    get_attr(&CONTENT_ATTR, &attrs).map(String::from);
+                self.api_version = get_attr(&CONTENT_ATTR, &attrs).map(String::from);
             }
         }
 
@@ -103,7 +88,7 @@ impl TreeSink for Sink {
                 self.changed_base = true;
                 if let Some(new_base_str) = get_attr(&HREF_ATTR, &attrs) {
                     if let Ok(new_base) = self.base.join(new_base_str) {
-                        self.base = new_base;
+                        self.base = Cow::Owned(new_base);
                     }
                 }
             }
@@ -196,10 +181,8 @@ impl TreeSink for Sink {
     fn mark_script_already_started(&mut self, _node: &usize) {}
 }
 
-impl TryFrom<SmallTextPage> for SimpleAPIPage {
-    type Error = anyhow::Error;
-
-    fn try_from(value: SmallTextPage) -> Result<Self, Self::Error> {
+pub fn collect_artifacts(url: &Url, content_type: &str, body: &str,
+collected: &mut Vec<super::Artifact>) -> Result<()> {
         if value.content_type != "text/html" {
             bail!(
                 "simple API page expected Content-Type: text/html, but got {}",
@@ -209,7 +192,7 @@ impl TryFrom<SmallTextPage> for SimpleAPIPage {
 
         let sink = Sink {
             next_id: 1,
-            base: value.url,
+            base: url,
             changed_base: false,
             names: HashMap::new(),
             api_page: Default::default(),
@@ -218,7 +201,6 @@ impl TryFrom<SmallTextPage> for SimpleAPIPage {
         Ok(parse_document(sink, Default::default())
             .one(value.body)
             .api_page)
-    }
 }
 
 #[cfg(test)]

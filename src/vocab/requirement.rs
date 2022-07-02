@@ -37,6 +37,10 @@ use crate::prelude::*;
 //    URI = Regex(r"[^ ]+")("url")
 //
 // ...so we can just steal some version of that.
+//
+// For resolving, we can treat it as a magic package that provides/depends on the
+// version it declares, so it can satisfy other dependencies that use the name or
+// versions.
 
 pub mod marker {
     use super::*;
@@ -255,6 +259,37 @@ impl TryFrom<&str> for UserRequirement {
 }
 
 try_from_str_boilerplate!(UserRequirement);
+
+#[derive(
+    Shrinkwrap, Debug, Clone, PartialEq, Eq, DeserializeFromStr, SerializeDisplay,
+)]
+pub struct PythonRequirement(Requirement);
+
+impl Display for PythonRequirement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl TryFrom<&str> for PythonRequirement {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let r = Requirement::parse(
+            value,
+            ParseExtra::NotAllowed,
+        )?;
+        if !r.extras.is_empty() {
+            bail!("can't have extras on python requirement {}", value);
+        }
+        if r.env_marker.is_some() {
+            bail!("can't have env marker restrictions on python requirement {}", value);
+        }
+        Ok(PythonRequirement(r))
+    }
+}
+
+try_from_str_boilerplate!(PythonRequirement);
 
 #[cfg(test)]
 mod test {

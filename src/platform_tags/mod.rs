@@ -18,14 +18,17 @@
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_os = "windows")]
-pub use windows::platform_tags;
+use windows::core_platform_tags;
 
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
-pub use linux::platform_tags;
+use linux::core_platform_tags;
 
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::platform_tags;
+use macos::core_platform_tags;
+
+mod expand;
+pub use expand::{expand_platform_tag, current_platform_tags};

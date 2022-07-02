@@ -26,6 +26,48 @@ pub struct Cache {
     base: PathBuf,
 }
 
+// things that want caching:
+// - index pages, URL contents, revalidate before using -- simple
+// - stable artifacts (official wheels, sdists)
+//   - might want to be robust against them *not* being stable, i.e. not crash and burn
+//     if have references to two different versions of the same file
+//   - can be found at different mirrors (e.g. if person A creates a pin file using
+//     pypi, and person B installs from it but with a pypi mirror instead, want that to
+//     work as long as the hashes match.)
+//   - maybe index by the hash value as reported by the index?
+//     - would lose cache hits if index migrates to a new hash function, but... that
+//       only happens once a decade or something, probably fine
+//     - some indexes might not have hashes, then what?
+//     - different indexes could in theory have different hash algorithms so we wouldn't
+//       be able to match up matching artifacts... but oh well, probably not a big deal?
+//       they also won't match the hashes in the pin file!
+// - metadata alone without corresponding artifact
+// - unstable artifacts? (e.g. https://github.com/.../main.zip)
+// - VCS urls: with exact pin or not
+// - ^ main thing is probably to be able to cache wheels built from these? or maybe
+//   don't cache at all, just build from scratch whenever setting up a new environment?
+
+// flow:
+// resolving/pinning:
+// - get list of available artifacts (with hashes and other metadata)
+// - for selected artifacts, get metadata (either from our own cache, or from index)
+// - possibly build some sdists to get their metadata, and store that in our cache too
+// - emit lockfile
+//
+// installing from lockfile:
+// - get list of things+hashes
+// - fetch the things that aren't in cache yet, check the hashes
+// - unpack them
+// - that's all?
+
+// possible better cache design:
+// - for each value, make a directory
+// - lock file as sibling of the directory
+// - when filling in a cache entry, take the lock, set up the cache entry, and then move
+//   it into place atomically
+//   - solves dogpile, allows safe GC
+// - (maybe also touch the lock file for LRU data?)
+
 #[derive(Debug, Copy, Clone)]
 pub enum Basket {
     // url -> (page contents as a string + cache revalidation info)

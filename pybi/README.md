@@ -170,6 +170,30 @@ at least the following files:
     want to know what version of the Python language that supports,
     then that's recorded in the `python_version` marker.
 
+    TODO: what to do about macOS universal2 pybis, where `platform_machine`
+    depends on which half of the fat binary you're using? Some options:
+    
+    - Don't have fat pybis; just have a separate pybi for x86-64 and arm64.
+      Works okay for automated tooling I guess? What can you do what a fat
+      binary that you can't with individual binaries - maybe a sufficiently
+      clever packager could create an entire universal2 environment, that's
+      portable to both x86-64 and arm64 systems? Not sure how viable it would be
+      to get all the individual wheels to cooperate...
+    
+    - Tell projects that are doing pinning to special-case universal2 pybis and
+      fill in the `platform_machine` themselves.
+
+    TODO: I think in posy I'm just going to refuse to support `platform_release`
+    and `platform_version`. And maybe we should have the conversation about
+    whether they should be deprecated officially, in general? They're the only
+    two markers that can't be reasonably treated as static, and I can't figure
+    out any way that anyone could actually use them for anything useful anyway.
+
+    (I guess deprecating `platform_machine` would also be a possibility to
+    consider? It's slightly problematic for `universal2` wheels, and it's not
+    clear how useful it is – does anyone actually make their requirements
+    conditional on the target architecture?)
+
   * [Provisional] `tags`: The wheel tags supported by this
     interpreter, in preference order, except that the special platform
     tag `PLATFORM` should replace any platform tags that depend on the

@@ -41,6 +41,13 @@ string_cache = "0.8.1"
 encoding_rs = "0.8.28"
 fn-error-context = "0.2.0"
 shrinkwraprs = "0.3.0"
+fs2 = "0.4.3"
+elsa = { version = "1.7.0", features = ["indexmap"] }
+indexmap = "1.9.1"
+http-cache-semantics = "1.0.1"
+http = "0.2.8"
+http-serde = "1.1.0"
+slice = "0.0.4"
 
 [dev-dependencies]
 fastrand = "1.4.1"

@@ -57,7 +57,8 @@ static GLIBC_DETECTORS: Lazy<Vec<(&str, &[u8])>> = Lazy::new(|| {
 static GLIBC_VERSION_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^([0-9]+)\.([0-9]+)").unwrap());
 
-fn glibc_tags(py_arch: &str, detector: &[u8]) -> Result<Vec<String>> {
+
+fn glibc_version(py_arch: &str, detector: &[u8]) -> Result<Option<(u32, u32)>> {
     // This is a stupid hack to run 'detector' as an executable, with the guarantees
     // that (1) we can't accidentally leak it (the OS will clean it up for us if we
     // crash unexpectedly), (2) we completely avoid all the nasty race conditions /
@@ -79,7 +80,7 @@ fn glibc_tags(py_arch: &str, detector: &[u8]) -> Result<Vec<String>> {
     if !output.status.success() {
         // XX log something, but this is not an error
         println!("non-zero return for {}: {}", py_arch, output.status);
-        Ok(vec![])
+        Ok(None)
     } else {
         let output_text = String::from_utf8_lossy(&output.stdout);
         match GLIBC_VERSION_RE.captures(&output_text) {
@@ -89,29 +90,7 @@ fn glibc_tags(py_arch: &str, detector: &[u8]) -> Result<Vec<String>> {
             Some(captures) => {
                 let major: u32 = captures.get(1).unwrap().as_str().parse()?;
                 let minor: u32 = captures.get(2).unwrap().as_str().parse()?;
-                // if there's ever a glibc 3, then we'll need to update this code (at
-                // least to hard-code the largest glibc2 version)
-                if major > 2 {
-                    bail!(
-                        "glibc 3? I don't understand glibc 3 (got version: {})",
-                        output_text.trim()
-                    )
-                };
-                // 2.5 was the first glibc to ever have manylinux support
-                Ok((5..=minor)
-                    .rev()
-                    .flat_map(|n| {
-                        let mut tags =
-                            vec![format!("manylinux_{}_{}_{}", major, n, py_arch)];
-                        match (major, n) {
-                            (2, 17) => tags.push(format!("manylinux2014_{}", py_arch)),
-                            (2, 12) => tags.push(format!("manylinux2010_{}", py_arch)),
-                            (2, 5) => tags.push(format!("manylinux1_{}", py_arch)),
-                            _ => ()
-                        }
-                        tags
-                    })
-                    .collect())
+                Ok(Some((major, minor)))
             }
         }
     }
@@ -131,7 +110,7 @@ static MUSL_ARCH_MAP: &[(&str, &str)] = &[
 static MUSL_VERSION_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"Version ([0-9]+)\.([0-9]+)").unwrap());
 
-fn musl_tags(loader: &PathBuf, py_arch: &str) -> Result<Vec<String>> {
+fn musl_version(loader: &PathBuf) -> Result<(u32, u32)> {
     match Command::new(&loader).output() {
         Err(e) => bail!("failed to execute: {}", e),
         Ok(output) => {
@@ -139,42 +118,42 @@ fn musl_tags(loader: &PathBuf, py_arch: &str) -> Result<Vec<String>> {
             // non-zero
             let output_text = String::from_utf8_lossy(&output.stderr);
             match MUSL_VERSION_RE.captures(&output_text) {
-                None => bail!("couldn't find version string",),
+                None => bail!("couldn't find version string in output"),
                 Some(captures) => {
                     let major: u32 = captures.get(1).unwrap().as_str().parse()?;
                     let minor: u32 = captures.get(2).unwrap().as_str().parse()?;
-                    Ok((0..=minor)
-                        .rev()
-                        .map(|n| format!("musllinux_{}_{}_{}", major, n, py_arch))
-                        .collect())
+                    Ok((major, minor))
                 }
             }
         }
     }
 }
 
-pub fn platform_tags() -> Result<Vec<String>> {
+pub fn core_platform_tags() -> Result<Vec<String>> {
     let mut all_tags: Vec<String> = Vec::new();
 
     for (py_arch, detector) in GLIBC_DETECTORS.iter() {
-        match glibc_tags(py_arch, detector) {
-            Ok(mut tags) => all_tags.append(&mut tags),
+        match glibc_version(py_arch, detector) {
             // XX use logging instead
             Err(e) => println!("error checking glibc version on {}: {}", py_arch, e),
+            Ok(None) => {},
+            Ok(Some((major, minor))) => all_tags.push(format!("manylinux_{}_{}_{}", major, minor, py_arch))
         }
     }
 
     // Put musllinux after manylinux, since at least for now, manylinux is a smoother
-    // path (more wheels available etc.)
+    // path (more wheels available etc.) Plus the only distros I know of that make it
+    // easy to install both are like, Debian, not Alpine, so glibc is the preferred
+    // default anyway.
     for (musl_arch, py_arch) in MUSL_ARCH_MAP {
         let loader: PathBuf = format!("/lib/ld-musl-{}.so.1", musl_arch).into();
         if loader.exists() {
-            match musl_tags(&loader, py_arch) {
-                Ok(mut tags) => all_tags.append(&mut tags),
+            match musl_version(&loader) {
+                Ok((major, minor)) => all_tags.push(format!("musllinux_{}_{}_{}", major, minor, py_arch)),
                 // XX use logging instead
                 Err(e) => println!(
                     "error fetching musl metadata from {}: {}",
-                    loader.to_string_lossy(),
+                    loader.display(),
                     e
                 ),
             }

@@ -53,7 +53,7 @@ fn system_type() -> Result<u16> {
     }
 }
 
-pub fn platform_tags() -> Result<Vec<String>> {
+pub fn core_platform_tags() -> Result<Vec<String>> {
     let mut tags: Vec<String> = vec![];
     if cfg!(target_arch = "x86_64")
         || is_wow64_guest_machine_supported(IMAGE_FILE_MACHINE_AMD64)?

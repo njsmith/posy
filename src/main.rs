@@ -1,6 +1,6 @@
 mod cache;
 mod net;
-mod package_index;
+mod package_db;
 mod prelude;
 mod resolve;
 mod util;
@@ -10,10 +10,9 @@ mod vocab;
 mod test_util;
 mod platform_tags;
 mod brief;
+mod lazy_remote_file;
 
 use anyhow::Result;
-use std::time::Duration;
-use ureq::AgentBuilder;
 
 use crate::prelude::*;
 
@@ -53,20 +52,16 @@ fn main() -> Result<()> {
     println!("user agent: {}", net::user_agent());
     println!("platform tags: {:?}", platform_tags::platform_tags());
 
-    let agent = AgentBuilder::new()
-        .user_agent(&net::user_agent())
-        .timeout_read(Duration::from_secs(15))
-        .timeout_write(Duration::from_secs(15))
-        .build();
+    let agent = net::new_agent();
 
     let cache: cache::Cache = Default::default();
 
     let net = net::Net { agent, cache: cache.clone() };
 
-    let index = package_index::PackageIndex {
+    let index = package_db::PackageIndex {
         cache: cache.clone(),
         net: net.clone(),
-        base_url: package_index::ROOT_URL.clone(),
+        base_url: package_db::ROOT_URL.clone(),
     };
 
     let root_reqs = opt
