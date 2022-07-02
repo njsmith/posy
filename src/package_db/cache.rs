@@ -95,16 +95,19 @@ impl ImmutableFileCache {
 }
 
 #[derive(Debug)]
-pub struct MutableFileCache {
+pub struct CacheDir {
     base: PathBuf,
 }
 
-// we should attach some kind of lifetimes to these
-// return objects that are (File + PhantomData<&'mut a>) where the lifetime is borrowed
-// from the cache handle, so rust will statically enforce that you can't read+write at
-// the same time or keep using the file after the lock is dropped.
+impl CacheDir {
+    pub fn get(&self, key: &[u8]) -> Result<CacheHandle> {
+        let path = self.base.join(bytes_to_path_suffix(key));
+        let lock = lock(&path)?;
+        Ok(CacheHandle { lock, path })
+    }
+}
 
-pub struct MutableFileCacheHandle {
+pub struct CacheHandle {
     lock: File,
     path: PathBuf,
 }
@@ -162,7 +165,7 @@ impl<'a> LockedWrite<'a> {
     }
 }
 
-impl MutableFileCacheHandle {
+impl CacheHandle {
     pub fn reader<'a>(&'a self) -> Option<impl 'a + Read + Seek> {
         Some(LockedRead {
             f: File::open(&self.path).ok()?,
@@ -173,17 +176,10 @@ impl MutableFileCacheHandle {
     pub fn begin<'a>(&'a self) -> Result<LockedWrite<'a>> {
         Ok(LockedWrite {
             path: &self.path,
-            f: tempfile::NamedTempFile::new_in(&self.path.parent()?)?,
+            // unwrap() safe b/c entry paths always have a parent
+            f: tempfile::NamedTempFile::new_in(&self.path.parent().unwrap())?,
             _lifetime: Default::default(),
         })
-    }
-}
-
-impl MutableFileCache {
-    pub fn get_handle(&self, key: &[u8]) -> Result<MutableFileCacheHandle> {
-        let path = self.base.join(bytes_to_path_suffix(key));
-        let lock = lock(&path)?;
-        Ok(MutableFileCacheHandle { lock, path })
     }
 }
 
@@ -192,7 +188,7 @@ impl MutableFileCache {
 /// metadata to help with evictions (e.g. last accessed time)?
 #[derive(Debug)]
 pub struct PackageCache {
-    pub index_pages: MutableFileCache,
+    pub index_pages: CacheDir,
     pub artifacts: ImmutableFileCache,
     pub metadata: ImmutableFileCache,
     // todo: cache mapping sdist hash -> directory containing build wheels
@@ -219,7 +215,7 @@ pub struct PackageCache {
 impl PackageCache {
     pub fn new(base: &Path) -> PackageCache {
         PackageCache {
-            index_pages: MutableFileCache { base: base.join("index-pages") },
+            index_pages: CacheDir { base: base.join("index-pages") },
             artifacts: ImmutableFileCache { base: base.join("artifacts") },
             metadata: ImmutableFileCache { base: base.join("metadata") },
         }

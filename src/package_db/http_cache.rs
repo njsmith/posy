@@ -6,11 +6,13 @@ use slice::IoSlice;
 use std::io::{Read, Seek, SeekFrom};
 use std::time::SystemTime;
 
-use super::cache::{MutableFileCache, MutableFileCacheHandle};
+use super::cache::{CacheDir, CacheHandle};
 
 pub trait ReadPlusSeek: Read + Seek {}
 impl<T: Read + Seek> ReadPlusSeek for T {}
 
+// attached to our HTTP responses, to make testing easier
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CacheStatus {
     Fresh,
     StaleButValidated,
@@ -19,33 +21,35 @@ pub enum CacheStatus {
     Uncacheable,
 }
 
-pub struct HttpResponse {
-    pub status: http::StatusCode,
-    pub headers: http::HeaderMap,
-    pub body: Box<dyn ReadPlusSeek>,
-    // just for testing/debugging:
-    pub cache_status: CacheStatus,
+fn make_response(
+    parts: http::response::Parts,
+    body: Box<dyn ReadPlusSeek>,
+    cache_status: CacheStatus,
+) -> http::Response<Box<dyn ReadPlusSeek>> {
+    let mut response = http::Response::from_parts(parts, body);
+    response.extensions_mut().insert(cache_status);
+    response
 }
 
-struct Net {
+pub struct Http {
     agent: ureq::Agent,
 }
 
 fn fill_cache<R>(
     policy: &CachePolicy,
     mut body: R,
-    handle: MutableFileCacheHandle,
+    handle: CacheHandle,
 ) -> Result<impl Read + Seek>
 where
     R: Read,
 {
-    let mut cache_entry = handle.begin()?;
-    serde_cbor::to_writer(&mut cache_entry, policy)?;
-    let body_start = cache_entry.stream_position()?;
-    std::io::copy(&mut body, &mut cache_entry)?;
-    let length = cache_entry.stream_position()? - body_start;
+    let mut cache_writer = handle.begin()?;
+    serde_cbor::to_writer(&mut cache_writer, policy)?;
+    let body_start = cache_writer.stream_position()?;
+    std::io::copy(&mut body, &mut cache_writer)?;
+    let length = cache_writer.stream_position()? - body_start;
     drop(body);
-    let cache_entry = cache_entry.commit()?.detach_unlocked();
+    let cache_entry = cache_writer.commit()?.detach_unlocked();
     Ok(IoSlice::new(cache_entry, body_start, length)?)
 }
 
@@ -61,13 +65,22 @@ where
     Ok((policy, body))
 }
 
-impl Net {
+fn key_for_request<T>(req: &http::Request<T>) -> Vec<u8> {
+    let mut key: Vec<u8> = Default::default();
+    let method = req.method().to_string();
+    key.extend(method.len().to_le_bytes());
+    key.extend(method.as_bytes().iter());
+    key.extend(req.uri().to_string().as_bytes().iter());
+    key
+}
+
+impl Http {
     fn do_request_ureq(
         &self,
         req: &http::Request<()>,
     ) -> Result<http::Response<impl Read>> {
         // use ureq to perform the request (this is the only part you need to swap out to
-        // use a different HTTP client
+        // use a different HTTP client)
         let mut ureq_req = self
             .agent
             .request_url(req.method().as_str(), &Url::parse(&req.uri().to_string())?);
@@ -85,15 +98,15 @@ impl Net {
         Ok(response.body(ureq_response.into_reader())?)
     }
 
-    fn request(
+    pub fn request(
         &self,
         req: http::Request<()>,
-        cache: &MutableFileCache,
-    ) -> Result<HttpResponse> {
+        cache: &CacheDir,
+    ) -> Result<http::Response<Box<dyn ReadPlusSeek>>> {
         // http::uri::Uri strips the fragment automatically, so we don't need to worry about
         // it leaking into our cache key.
-        let key = cache_key(&req.uri().to_string(), &req.method().to_string());
-        let mut handle = cache.get_handle(&key)?;
+        let key = key_for_request(&req);
+        let mut handle = cache.get(&key)?;
 
         // cache file format: ZipFile, uncompressed, with entries "policy" and "body"
         if let Some(mut f) = handle.reader() {
@@ -101,12 +114,7 @@ impl Net {
 
             match old_policy.before_request(&req, SystemTime::now()) {
                 BeforeRequest::Fresh(parts) => {
-                    return Ok(HttpResponse {
-                        status: parts.status,
-                        headers: parts.headers,
-                        body: Box::new(old_body),
-                        cache_status: CacheStatus::Fresh,
-                    });
+                    Ok(make_response(parts, Box::new(old_body), CacheStatus::Fresh))
                 }
                 BeforeRequest::Stale { request, matches } => {
                     req = http::Request::from_parts(request, ());
@@ -115,22 +123,20 @@ impl Net {
                     {
                         AfterResponse::NotModified(new_policy, new_parts) => {
                             let new_body = fill_cache(&new_policy, old_body, handle)?;
-                            Ok(HttpResponse {
-                                status: new_parts.status,
-                                headers: new_parts.headers,
-                                body: Box::new(new_body),
-                                cache_status: CacheStatus::StaleButValidated,
-                            })
+                            Ok(make_response(
+                                new_parts,
+                                Box::new(new_body),
+                                CacheStatus::StaleButValidated,
+                            ))
                         }
                         AfterResponse::Modified(new_policy, new_parts) => {
                             let new_body =
                                 fill_cache(&new_policy, response.into_body(), handle)?;
-                            Ok(HttpResponse {
-                                status: new_parts.status,
-                                headers: new_parts.headers,
-                                body: Box::new(new_body),
-                                cache_status: CacheStatus::StaleButValidated,
-                            })
+                            Ok(make_response(
+                                new_parts,
+                                Box::new(new_body),
+                                CacheStatus::StaleButValidated,
+                            ))
                         }
                     }
                 }
@@ -143,29 +149,16 @@ impl Net {
             if !new_policy.is_storable() {
                 let mut tmp = tempfile::tempfile()?;
                 std::io::copy(&mut body, &mut tmp);
-                Ok(HttpResponse {
-                    status: parts.status,
-                    headers: parts.headers,
-                    body: Box::new(tmp),
-                    cache_status: CacheStatus::Uncacheable,
-                })
+                Ok(make_response(
+                    parts,
+                    Box::new(tmp),
+                    CacheStatus::Uncacheable,
+                ))
             } else {
                 let body = fill_cache(&new_policy, body, handle)?;
-                Ok(HttpResponse {
-                    status: parts.status,
-                    headers: parts.headers,
-                    body: Box::new(body),
-                    cache_status: CacheStatus::Miss,
-                })
+                Ok(make_response(parts, Box::new(body), CacheStatus::Miss))
             }
         }
     }
 }
 
-fn cache_key(url: &str, method: &str) -> Vec<u8> {
-    let mut raw_key: Vec<u8> = Default::default();
-    raw_key.extend(method.len().to_le_bytes());
-    raw_key.extend(method.as_bytes().iter());
-    raw_key.extend(url.as_bytes().iter());
-    raw_key
-}

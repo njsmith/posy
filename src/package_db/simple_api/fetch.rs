@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use super::super::cache::MutableFileCache;
+use super::super::cache::CacheDir;
 use super::project_info::ProjectInfo;
 
 use ureq::Agent;
@@ -12,8 +12,8 @@ struct CacheEntry {
     body: String,
 }
 
-pub fn fetch_simple_api(agent: &Agent, url: &Url, cache: &MutableFileCache) -> Result<ProjectInfo> {
-    let handle = cache.get_handle(&url.to_string().as_bytes())?;
+pub fn fetch_simple_api(agent: &Agent, url: &Url, cache: &CacheDir) -> Result<ProjectInfo> {
+    let handle = cache.get(&url.to_string().as_bytes())?;
     let mut req = agent.request_url("GET", &url);
     let maybe_cache_entry: Option<CacheEntry> = handle.reader().and_then(
         // ignore errors from serde_cbor here, because it's just a cache
