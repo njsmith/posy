@@ -17,6 +17,7 @@ use std::borrow::Borrow;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::default::Default;
+use std::io::Read;
 
 use html5ever::tendril::*;
 use html5ever::tree_builder::{ElementFlags, NodeOrText, QuirksMode, TreeSink};
@@ -24,7 +25,7 @@ use html5ever::{expanded_name, local_name, namespace_url, ns, parse_document};
 use html5ever::{Attribute, ExpandedName, LocalNameStaticSet, QualName};
 use string_cache::Atom;
 
-use super::project_info::{ProjectInfo, Meta, ArtifactInfo, DistInfoMetadata, Yanked};
+use super::project_info::{ArtifactInfo, DistInfoMetadata, ProjectInfo, Yanked};
 
 const META_TAG: ExpandedName = expanded_name!(html "meta");
 const BASE_TAG: ExpandedName = expanded_name!(html "base");
@@ -76,26 +77,42 @@ fn parse_hash(s: &str) -> Option<ArtifactHash> {
 }
 
 impl Sink {
-    fn try_parse_link(&self, url_str: &str, attrs: &Vec<Attribute>) -> Option<ArtifactInfo> {
+    fn try_parse_link(
+        &self,
+        url_str: &str,
+        attrs: &Vec<Attribute>,
+    ) -> Option<ArtifactInfo> {
         let url = self.base.join(url_str).ok()?;
         let name: ArtifactName = url.path_segments()?.next_back()?.try_into().ok()?;
         // We found a valid link
         let hash = url.fragment().and_then(parse_hash);
         let requires_python =
-            get_attr(REQUIRES_PYTHON_ATTR.borrow(), &attrs)
-            .map(String::from);
-        let metadata_attr =
-            get_attr(DATA_DIST_INFO_METADATA.borrow(), &attrs);
+            get_attr(REQUIRES_PYTHON_ATTR.borrow(), &attrs).map(String::from);
+        let metadata_attr = get_attr(DATA_DIST_INFO_METADATA.borrow(), &attrs);
         let dist_info_metadata = match metadata_attr {
-            None => DistInfoMetadata { available: false, hash: None },
-            Some("true") => DistInfoMetadata { available: true, hash: None },
-            Some(value) =>
-                DistInfoMetadata { available: true, hash: parse_hash(value) },
+            None => DistInfoMetadata {
+                available: false,
+                hash: None,
+            },
+            Some("true") => DistInfoMetadata {
+                available: true,
+                hash: None,
+            },
+            Some(value) => DistInfoMetadata {
+                available: true,
+                hash: parse_hash(value),
+            },
         };
         let yanked_reason = get_attr(YANKED_ATTR.borrow(), &attrs);
         let yanked = match yanked_reason {
-            None => Yanked { yanked: false, reason: None },
-            Some(reason) => Yanked { yanked: true, reason: Some(reason.into()) },
+            None => Yanked {
+                yanked: false,
+                reason: None,
+            },
+            Some(reason) => Yanked {
+                yanked: true,
+                reason: Some(reason.into()),
+            },
         };
         Some(ArtifactInfo {
             name,
@@ -217,29 +234,38 @@ impl TreeSink for Sink {
     fn mark_script_already_started(&mut self, _node: &usize) {}
 }
 
-pub fn parse_html(url: &Url, content_type: &str, body: &str) -> Result<ProjectInfo> {
-        if content_type != "text/html" {
-            bail!(
-                "simple API page expected Content-Type: text/html, but got {}",
-                content_type,
-            )
-        }
+pub fn parse_html<T>(url: &Url, content_type: &str, body: T) -> Result<ProjectInfo>
+where
+    T: Read,
+{
+    if content_type != "text/html" {
+        bail!(
+            "simple API page expected Content-Type: text/html, but got {}",
+            content_type,
+        )
+    }
 
-        let sink = Sink {
-            next_id: 1,
-            base: url.clone(),
-            changed_base: false,
-            names: HashMap::new(),
-            project_info: Default::default(),
-        };
+    let sink = Sink {
+        next_id: 1,
+        base: url.clone(),
+        changed_base: false,
+        names: HashMap::new(),
+        project_info: Default::default(),
+    };
 
-        Ok(parse_document(sink, Default::default())
-            .one(body)
-            .project_info)
+    Ok(parse_document(sink, Default::default())
+        // For now, we just assume that all HTML is utf-8... this might bite us
+        // eventually, but hopefully it's true for the package index situation of
+        // API-responses-masquerading-as-HTML
+        .from_utf8()
+        .read_from(&mut body)?
+        .project_info)
 }
 
 #[cfg(test)]
 mod test {
+    use super::super::project_info::Meta;
+
     use super::*;
 
     #[test]

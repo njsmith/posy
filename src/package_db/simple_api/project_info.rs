@@ -33,7 +33,7 @@ impl From<Option<RawDistInfoMetadata>> for DistInfoMetadata {
         match maybe_raw {
             None => Default::default(),
             Some(raw) => match raw {
-                RawDistInfoMetadata::NoHashes(available) => Self { available },
+                RawDistInfoMetadata::NoHashes(available) => Self { available, ..Default::default() },
                 RawDistInfoMetadata::WithHashes(_) => Self { available: true },
             }
         }
@@ -59,7 +59,7 @@ impl From<RawYanked> for Yanked {
     fn from(raw: RawYanked) -> Self {
         match raw {
             RawYanked::NoReason(yanked) => Self { yanked, reason: None },
-            RawYanked::WithReason(reason) => Self { yanked: true, reason },
+            RawYanked::WithReason(reason) => Self { yanked: true, reason: Some(reason) },
         }
     }
 }

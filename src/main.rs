@@ -1,5 +1,4 @@
 mod cache;
-mod net;
 mod package_db;
 mod prelude;
 mod resolve;
@@ -10,7 +9,7 @@ mod vocab;
 mod test_util;
 mod platform_tags;
 mod brief;
-mod lazy_remote_file;
+mod seek_slice;
 
 use anyhow::Result;
 
@@ -50,7 +49,7 @@ fn main() -> Result<()> {
     let opt = Opt::from_args();
 
     println!("user agent: {}", net::user_agent());
-    println!("platform tags: {:?}", platform_tags::platform_tags());
+    println!("platform tags: {:?}", platform_tags::current_platform_tags());
 
     let agent = net::new_agent();
 

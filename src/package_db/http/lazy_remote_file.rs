@@ -3,14 +3,14 @@ use crate::prelude::*;
 use std::cmp;
 use std::collections::BTreeMap;
 use std::io::{self, Read, Seek, SeekFrom};
-use ureq::Agent;
+use super::http::{HttpInner, CacheMode};
 
 // semi-arbitrary, but ideally should be large enough to catch all the zip index +
 // dist-info data at the end of common wheel files
 const LAZY_FETCH_SIZE: u64 = 10_000;
 
 pub struct LazyRemoteFile {
-    agent: Agent,
+    http: Rc<HttpInner>,
     url: Url,
     loaded: BTreeMap<u64, Vec<u8>>,
     length: u64,
@@ -51,7 +51,7 @@ impl Seek for LazyRemoteFile {
             }
             None => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "invalid seek to a negative or overflowing positions",
+                "invalid seek to a negative or overflowing position",
             )),
         }
     }
@@ -69,42 +69,38 @@ enum RangeResponse {
     Complete(Box<dyn Read>),
 }
 
-fn fetch_range(agent: &Agent, url: &Url, range_header: &str) -> Result<RangeResponse> {
+fn fetch_range(http: &HttpInner, url: &Url, range_header: &str) -> Result<RangeResponse> {
     // The full syntax has a bunch of possibilities that this doesn't account for:
     //   https://datatracker.ietf.org/doc/html/rfc7233#section-4.2
     // but this is the only format that's actually *useful* to us.
-    static CONTENT_RANGE_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"^bytes ([0-9]+)-[0-9]+/([0-9]+)$").unwrap());
-    static CONTENT_RANGE_LEN_ONLY_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"^bytes [^/]*/([0-9]+)$").unwrap());
+    static CONTENT_RANGE_RE: Lazy<regex::bytes::Regex> =
+        Lazy::new(|| regex::bytes::Regex::new(r"^bytes ([0-9]+)-[0-9]+/([0-9]+)$").unwrap());
+    static CONTENT_RANGE_LEN_ONLY_RE: Lazy<regex::bytes::Regex> =
+        Lazy::new(|| regex::bytes::Regex::new(r"^bytes [^/]*/([0-9]+)$").unwrap());
 
-    println!("fetching {}", range_header);
+    let request = http::Request::builder().uri(url.as_str()).header("Range", range_header).body(())?;
+    let response = http.request(request, CacheMode::NoStore)?;
 
-    use ureq::OrAnyStatus;
-    let response = super::retry::call_with_retry(
-        agent.request_url("GET", &url).set("Range", range_header),
-    )
-    .or_any_status()?;
+    fn str_capture<'a>(c: &'a regex::bytes::Captures, g: usize) -> Result<&'a str> {
+        Ok(std::str::from_utf8(c.get(g).unwrap().as_bytes())?)
+    }
 
-    Ok(match response.status() {
+    Ok(match response.status().as_u16() {
         // 206 Partial Content
         206 => {
-            match response.header("Content-Range") {
+            match response.headers().get("Content-Range") {
                 None => bail!("range response is missing Content-Range"),
                 Some(content_range) => {
-                    println!("got {}", content_range);
-                    match CONTENT_RANGE_RE.captures(&content_range) {
+                    match CONTENT_RANGE_RE.captures(content_range.as_bytes()) {
                         None => bail!("failed to parse Content-Range"),
                         Some(captures) => {
                             // unwraps safe because groups always match a valid int
-                            let offset: u64 =
-                                captures.get(1).unwrap().as_str().parse()?;
-                            let total_len: u64 =
-                                captures.get(2).unwrap().as_str().parse()?;
+                            let offset: u64 = str_capture(&captures, 1)?.parse()?;
+                            let total_len: u64 = str_capture(&captures, 2)?.parse()?;
                             RangeResponse::Partial {
                                 offset,
                                 total_len,
-                                data: Box::new(response.into_reader()),
+                                data: Box::new(response.into_body()),
                             }
                         }
                     }
@@ -114,14 +110,13 @@ fn fetch_range(agent: &Agent, url: &Url, range_header: &str) -> Result<RangeResp
         // 416 Range Not Satisfiable
         // e.g. because we requested past the end or beginning (particularly likely on
         // our first fetch, where we don't know how large the file is)
-        416 => match response.header("Content-Range") {
+        416 => match response.headers().get("Content-Range") {
             None => bail!("416 response is missing Content-Range"),
             Some(content_range) => {
-                match CONTENT_RANGE_LEN_ONLY_RE.captures(&content_range) {
+                match CONTENT_RANGE_LEN_ONLY_RE.captures(content_range.as_bytes()) {
                     None => bail!("failed to parse 416 Content-Range"),
                     Some(captures) => {
-                        let total_len: u64 =
-                            captures.get(1).unwrap().as_str().parse()?;
+                        let total_len: u64 = str_capture(&captures, 1)?.parse()?;
                         RangeResponse::NotSatisfiable { total_len }
                     }
                 }
@@ -129,7 +124,7 @@ fn fetch_range(agent: &Agent, url: &Url, range_header: &str) -> Result<RangeResp
         },
         // 200 Ok -> server doesn't like Range: requests and is just sending the full
         // data
-        200 => RangeResponse::Complete(Box::new(response.into_reader())),
+        200 => RangeResponse::Complete(Box::new(response.into_body())),
         status => bail!("expected 200 or 206 HTTP response, not {}", status),
     })
 }
@@ -137,7 +132,7 @@ fn fetch_range(agent: &Agent, url: &Url, range_header: &str) -> Result<RangeResp
 impl LazyRemoteFile {
     fn load_range(&mut self, offset: u64, length: u64) -> Result<()> {
         match fetch_range(
-            &self.agent,
+            &self.http,
             &self.url,
             &format!("bytes={}-{}", offset, offset.saturating_add(length) - 1),
         )? {
@@ -236,15 +231,15 @@ impl Read for LazyRemoteFile {
 }
 
 impl LazyRemoteFile {
-    pub fn new(agent: &Agent, url: &Url) -> Result<LazyRemoteFile> {
+    pub fn new(http: Rc<HttpInner>, url: &Url) -> Result<LazyRemoteFile> {
         let mut remote = LazyRemoteFile {
-            agent: agent.clone(),
+            http,
             url: url.clone(),
             loaded: BTreeMap::new(),
             length: 0,
             seek_pos: 0,
         };
-        match fetch_range(&agent, &url, &format!("bytes=-{}", LAZY_FETCH_SIZE))? {
+        match fetch_range(&http, &url, &format!("bytes=-{}", LAZY_FETCH_SIZE))? {
             RangeResponse::NotSatisfiable { total_len } => {
                 remote.length = total_len;
             }
@@ -275,6 +270,8 @@ mod test {
     use std::fs::File;
     use std::io::prelude::*;
 
+    use crate::package_db::cache::CacheDir;
+
     use super::*;
 
     #[test]
@@ -289,9 +286,10 @@ mod test {
         }
         let url = server.url("blobby");
 
-        let agent = ureq::Agent::new();
+        let caches = tempfile::tempdir().unwrap();
+        let http = HttpInner::new(CacheDir::new(&caches.path().join("http")), CacheDir::new(&caches.path().join("hashed")));
 
-        let rr = fetch_range(&agent, &url, "bytes=900-999").unwrap();
+        let rr = fetch_range(&http, &url, "bytes=900-999").unwrap();
         if let RangeResponse::Partial {
             offset,
             total_len,
@@ -306,7 +304,7 @@ mod test {
             panic!();
         }
 
-        let rr = fetch_range(&agent, &url, "bytes=1010-1020").unwrap();
+        let rr = fetch_range(&http, &url, "bytes=1010-1020").unwrap();
         if let RangeResponse::Partial {
             offset,
             total_len,
@@ -323,7 +321,7 @@ mod test {
 
         // If the server doesn't understand our Range: header, falls back on sending the
         // whole file
-        let rr = fetch_range(&agent, &url, "octets=1010-1020").unwrap();
+        let rr = fetch_range(&http, &url, "octets=1010-1020").unwrap();
         if let RangeResponse::Complete(data) = rr {
             let buf = slurp(data).unwrap();
             assert_eq!(buf.len(), 3000);
@@ -332,7 +330,7 @@ mod test {
         }
 
         // Fetching an invalid range at least tells us what the valid range is
-        let rr = fetch_range(&agent, &url, "bytes=10000-20000").unwrap();
+        let rr = fetch_range(&http, &url, "bytes=10000-20000").unwrap();
         if let RangeResponse::NotSatisfiable { total_len } = rr {
             assert_eq!(total_len, 3000);
         } else {
@@ -340,7 +338,7 @@ mod test {
         }
 
         // Error propagation happens
-        let res = fetch_range(&agent, &server.url("missing"), "bytes=100-200");
+        let res = fetch_range(&http, &server.url("missing"), "bytes=100-200");
         assert!(res.is_err());
     }
 
@@ -355,7 +353,10 @@ mod test {
             f.write_all(&[1; 13000]).unwrap();
             f.write_all(&[2; 13000]).unwrap();
         }
-        let mut lazy = LazyRemoteFile::new(&agent, &server.url("blobby")).unwrap();
+        let caches = tempfile::tempdir().unwrap();
+        let http = HttpInner::new(CacheDir::new(&caches.path().join("http")), CacheDir::new(&caches.path().join("hashed")));
+
+        let mut lazy = LazyRemoteFile::new(Rc::new(http), &server.url("blobby")).unwrap();
 
         assert_eq!(lazy.seek(SeekFrom::End(0)).unwrap(), 3 * 13000);
         assert_eq!(lazy.seek(SeekFrom::Start(0)).unwrap(), 0);
@@ -386,7 +387,6 @@ mod test {
 
         let tempdir = tempfile::tempdir().unwrap();
         let server = crate::test_util::StaticHTTPServer::new(&tempdir.path());
-        let agent = ureq::Agent::new();
         {
             let mut f = File::create(tempdir.path().join("blobby")).unwrap();
             let rng = fastrand::Rng::with_seed(0);
@@ -395,6 +395,8 @@ mod test {
                 .collect();
             f.write_all(&data).unwrap();
         }
+        let caches = tempfile::tempdir().unwrap();
+        let http = Rc::new(HttpInner::new(CacheDir::new(&caches.path().join("http")), CacheDir::new(&caches.path().join("hashed"))));
 
         // Reads the given number of bytes, unless it hits EOF, in which case it reads
         // everything available
@@ -423,7 +425,7 @@ mod test {
         for seed in 0..5 {
             let rng = fastrand::Rng::with_seed(seed);
             let mut f = File::open(tempdir.path().join("blobby")).unwrap();
-            let mut lazy = LazyRemoteFile::new(&agent, &server.url("blobby")).unwrap();
+            let mut lazy = LazyRemoteFile::new(http.clone(), &server.url("blobby")).unwrap();
 
             for _ in 0..100 {
                 let seek = if rng.bool() {

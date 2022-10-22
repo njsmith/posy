@@ -1,17 +1,18 @@
 use crate::prelude::*;
 use elsa::FrozenMap;
 use indexmap::IndexMap;
-use std::io::{self, Read, Seek};
 use std::path::Path;
-use ureq::Agent;
 
+use super::cache::CacheDir;
+use super::http::{Http, CacheMode, NotCached};
 use super::simple_api::{fetch_simple_api, pack_by_version, ArtifactInfo};
 
 static NO_ARTIFACTS: [ArtifactInfo; 0] = [];
 
 pub struct PackageDB {
-    agent: Agent,
-    disk_cache: super::cache::PackageCache,
+    http: Http,
+    metadata_cache: CacheDir,
+    wheel_cache: CacheDir,
     index_urls: Vec<Url>,
 
     // memo table to make sure we're internally consistent within a single invocation,
@@ -20,10 +21,13 @@ pub struct PackageDB {
 }
 
 impl PackageDB {
-    pub fn new(agent: &Agent, index_urls: &[Url], cache_path: &Path) -> PackageDB {
+    pub fn new(index_urls: &[Url], cache_path: &Path) -> PackageDB {
+        let http_cache = CacheDir::new(&cache_path.join("http"));
+        let hash_cache = CacheDir::new(&cache_path.join("by-hash"));
         PackageDB {
-            disk_cache: super::cache::PackageCache::new(cache_path),
-            agent: agent.clone(),
+            http: Http::new(http_cache, hash_cache),
+            metadata_cache: CacheDir::new(&cache_path.join("metadata")),
+            wheel_cache: CacheDir::new(&cache_path.join("local-wheels")),
             index_urls: index_urls.into(),
             artifacts: Default::default(),
         }
@@ -53,9 +57,8 @@ impl PackageDB {
 
             for index_url in self.index_urls.iter() {
                 let pi = fetch_simple_api(
-                    &self.agent,
+                    &self.http,
                     &index_url.join(&format!("/{}/", p.normalized()))?,
-                    &self.disk_cache.index_pages,
                 )?;
                 pack_by_version(pi, &mut packed)?;
             }
@@ -67,15 +70,122 @@ impl PackageDB {
         }
     }
 
-    pub fn metadata(&self, artifacts: &[&ArtifactInfo]) -> Result<CoreMetadata> {
-        todo!()
+    fn metadata_from_cache(&self, ai: &ArtifactInfo) -> Option<Vec<u8>> {
+        let entry = self.metadata_cache.get_if_exists(&&ai.hash?)?;
+        let mut reader = entry.reader()?;
+        slurp(&mut reader).ok()
     }
 
-    pub fn get_artifact(
+    fn put_metadata_in_cache(&self, ai: &ArtifactInfo, blob: &[u8]) -> Result<()> {
+        if let Some(hash) = ai.hash {
+            let handle = self.metadata_cache.get(&hash)?;
+            handle.begin()?.write_all(&blob)?;
+        }
+        Ok(())
+    }
+
+    fn open_artifact<T>(&self, ai: &ArtifactInfo, body: Box<dyn ReadPlusSeek>) -> Result<T>
+    where
+        T: Artifact,
+        ArtifactName: ArtifactNameUnwrap<T::Name>,
+        T::Name: Clone,
+    {
+        let artifact_name = ArtifactNameUnwrap::<T::Name>::try_borrow(&ai.name)
+            .unwrap()
+            .clone();
+        T::new(artifact_name, body)
+    }
+
+    pub fn get_metadata<'a, T>(
         &self,
-        url: &Url,
-        hash: &ArtifactHash,
-    ) -> Result<impl Read + Seek> {
-        todo!()
+        artifacts: &[&'a ArtifactInfo],
+    ) -> Result<(&'a ArtifactInfo, T::Metadata)>
+    where
+        T: BinaryArtifact,
+        ArtifactName: ArtifactNameUnwrap<T::Name>,
+        T::Name: Clone,
+    {
+        let matching = || {
+            artifacts.iter().filter(|ai| {
+                ArtifactNameUnwrap::<T::Name>::try_borrow(&ai.name).is_some()
+            })
+        };
+
+        // have we cached any of these artifacts' metadata before?
+        for ai in matching() {
+            if let Some(cm) = self.metadata_from_cache(ai) {
+                return Ok((ai, T::parse_metadata(cm.as_slice())?));
+            }
+        }
+
+        // have we cached any of the artifacts themselves?
+        for ai in matching() {
+            let res = self._get_artifact::<T>(ai, CacheMode::OnlyIfCached);
+            match res {
+                Ok(artifact) => {
+                    let (blob, metadata) = artifact.metadata()?;
+                    self.put_metadata_in_cache(ai, &blob)?;
+                    return Ok((ai, metadata));
+                }
+                Err(err) => match err.downcast_ref::<NotCached>() {
+                    Some(_) => continue,
+                    None => return Err(err),
+                }
+            }
+        }
+
+        // XX TODO: sdist support: check for already-built wheels
+
+        // okay, we don't have it locally; gotta actually hit the network.
+
+        // XX TODO: PEP 658 support
+        // also, extra complication: when dist_info_metadata is available, we might also
+        // have a hash for the metadata. Should we check it, and how does that interact
+        // with caching? I guess that when TUF arrives we'll need to look carefully to
+        // make sure all that data we fetch is TUF-protected, and in the mean time we're
+        // relying on the index+https being trustworthy anyway -- both to give us the
+        // hashes, and also for the lazy_remote_file path that can't validate any
+        // hashes. (But then why are we validating hashes when we download artifacts? I
+        // guess it's really only important when *installing* where we want to confirm
+        // hashes haven't changed since someone else resolved, not *resolving*, where we
+        // collect the hashes in the first place, and this function is on the resolve
+        // path?)
+        //
+        // for ai in matching() {
+        //     if ai.dist_info_metadata.available {
+        //         todo!()
+        //     }
+        // }
+
+        // try pulling the metadata out of a remote wheel, and cache it for later
+        for ai in matching() {
+            let body = self.http.get_lazy(&ai.url)?;
+            let artifact = self.open_artifact::<T>(ai, body)?;
+            let (blob, metadata) = artifact.metadata()?;
+            self.put_metadata_in_cache(ai, &blob)?;
+            return Ok((ai, metadata));
+        }
+
+        // XX TODO: sdist support: fetch an sdist and build a wheel
+        bail!("couldn't find any metadata for {artifacts:?}");
+    }
+
+    fn _get_artifact<T>(&self, ai: &ArtifactInfo, cache_mode: CacheMode) -> Result<T>
+    where
+        T: Artifact,
+        ArtifactName: ArtifactNameUnwrap<T::Name>,
+        T::Name: Clone,
+    {
+        let body = self.http.get_hashed(&ai.url, ai.hash.map(|a| &a), cache_mode)?;
+        self.open_artifact::<T>(ai, body)
+    }
+
+    pub fn get_artifact<T>(&self, ai: &ArtifactInfo) -> Result<T>
+    where
+        T: Artifact,
+        ArtifactName: ArtifactNameUnwrap<T::Name>,
+        T::Name: Clone,
+    {
+        self._get_artifact(ai, CacheMode::Default)
     }
 }

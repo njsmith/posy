@@ -5,19 +5,22 @@ use std::io::SeekFrom;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
+use ring::digest;
 use fs2::FileExt;
 
-// Some filesystems don't cope well with a single directory containing lots of files. So
-// we disperse our files over multiple nested directories. This is the nesting depth, so
-// "3" means our paths will look like:
-//   ${BASE}/${CHAR}/${CHAR}/${CHAR}/${ENTRY}
-// And our fanout is 64, so this would split our files over 64**3 = 262144 directories.
-const DIR_NEST_DEPTH: usize = 3;
-
-// We rely heavily on NamedTempFile::persist being atomic, to prevent cache corruption.
+// A simple on-disk cache for static blobs of data.
 //
-// On Unix this is trivial. On Windows, tempfile v3.3.0 uses MoveFileExW. And according
-// to Doug Cook here:
+// Keys are arbitrary Vec<u8>, which get run through sha256 to generate something with a
+// nice length and distribution.
+//
+// For each key, we have a lockfile, + a file of data.
+//
+// Updating the data file is done by writing the new data into a temporary file and then
+// renaming it into place, so it ought to be atomic. For this rename, we use
+// NamedTempFile::persist.
+//
+// On Unix, this is trivially atomic. On Windows, tempfile v3.3.0 uses MoveFileExW. And
+// according to Doug Cook here:
 //
 //   https://social.msdn.microsoft.com/Forums/windowsdesktop/en-US/449bb49d-8acc-48dc-a46f-0760ceddbfc3/movefileexmovefilereplaceexisting-ntfs-same-volume-atomic
 //
@@ -26,19 +29,54 @@ const DIR_NEST_DEPTH: usize = 3;
 // can also try using the newer SetFileInformationByHandle's posix rename option:
 //
 //   https://stackoverflow.com/a/51737582/
-fn atomic_replace_with<F, T>(path: &Path, thunk: &F) -> Result<File>
-    // needs to return Result so this can detect failure and delete instead of
-    // persisting
-    where F: FnOnce(&mut dyn Write) -> Result<T>
-{
-    let dir = path.parent().unwrap();
-    let mut tmp = tempfile::NamedTempFile::new_in(&dir)?;
-    let value = thunk(&mut tmp)?;
-    let mut f = tmp.persist(&path)?;
-    f.rewind()?;
-    Ok(f)
-}
+//
+// The locking has two purposes:
+//
+// - It prevents "dogpiling", where multiple independent instances of this program waste
+//   energy on filling in the same cache entry at the same time.
+// - In the future, we hope it will allow us to safely do garbage collection on the
+//   cache, because it will let the GC process safely assume that no-one is using the
+//   entry it's about to delete.
+//
+// We do bend the rules on locking in one case: we allow read-only file descriptors
+// pointing into a cache file to escape without holding the lock. This is safe on the
+// assumption that:
+//
+// - Cache files are never modified, only deleted or replaced.
+// - Our OS allows open files to be deleted/replaced, and lets existing file descriptors
+//   continue to access the deleted file.
+//
+// Again, on Unix this is trivial. On Windows, this is the semantics starting in Windows
+// 10, assuming you open the file with FILE_SHARE_DELETE (which is the default for
+// Rust):
+//
+//   https://github.com/golang/go/issues/32088#issuecomment-502850674
+//
+// On Windows 7, it's probably not true? The old Windows behavior was that
+// FILE_SHARE_DELETE meant you were allowed to request that the file be deleted, but it
+// wouldn't actually happen until all handles were closed. This means currently, our
+// atomic updates are currently broken on Windows 7. If this becomes a problem, the
+// workaround is to rename the old file out of the way before renaming the new file into
+// place, and then deleting the old file under its new name.
 
+// thoughts on adding GC:
+// - when accessing a key should update the mtime on the lock file; that's an easy way
+//   to keep track of what's most recently used
+// - for cleaning things up... can scan everything and for old files, take the
+//   lock and then delete the payload? but then how do we clean up the lockfile and
+//   directories themselves? I guess we don't have to but accumulating an unbounded
+//   collection of empty inodes seems a bit rude.
+//   maybe better: have a global lockfile at the root of the cache, which we normally
+//   acquire in shared mode. use its mtime to track when the last time GC ran was.
+//   opportunistically try to acquire it in exclusive mode; if succeed can run GC.
+//   otherwise acquire in shared mode and let someone else worry about GC later.
+
+// Some filesystems don't cope well with a single directory containing lots of files. So
+// we disperse our files over multiple nested directories. This is the nesting depth, so
+// "3" means our paths will look like:
+//   ${BASE}/${CHAR}/${CHAR}/${CHAR}/${ENTRY}
+// And our fanout is 64, so this would split our files over 64**3 = 262144 directories.
+const DIR_NEST_DEPTH: usize = 3;
 
 fn bytes_to_path_suffix(bytes: &[u8]) -> PathBuf {
     let mut path = PathBuf::new();
@@ -50,48 +88,49 @@ fn bytes_to_path_suffix(bytes: &[u8]) -> PathBuf {
     path
 }
 
-fn path_for_hash(base: &Path, hash: &ArtifactHash) -> PathBuf {
-    let mut path = base.to_path_buf();
-    path.push(&hash.mode);
-    path.push(bytes_to_path_suffix(&hash.raw_data));
-    path
+trait CacheKey {
+    fn key(&self) -> PathBuf;
 }
 
-fn lock(path: &Path) -> Result<File> {
+impl CacheKey for &[u8] {
+    fn key(&self) -> PathBuf {
+        let scrambled_key = digest::digest(&digest::SHA256, self);
+        bytes_to_path_suffix(scrambled_key.as_ref())
+    }
+}
+
+impl CacheKey for &ArtifactHash {
+    fn key(&self) -> PathBuf {
+        let mut path = PathBuf::new();
+        path.push(&self.mode);
+        path.push(bytes_to_path_suffix(&self.raw_data));
+        path
+    }
+}
+
+enum LockMode {
+    Lock,
+    IfExists,
+}
+
+fn lock(path: &Path, mode: LockMode) -> Result<File> {
     let mut lock_path = path.to_path_buf();
     // unwrap rationale: this function should never be passed paths with trailing /
     let mut basename = lock_path.file_name().unwrap().to_os_string();
     basename.push(".lock");
     lock_path.set_file_name(basename);
-    fs::create_dir_all(lock_path.parent().unwrap())
-        .context("Failed to create cache directory")?;
-    let lock = fs::OpenOptions::new().append(true).create(true).open(lock_path)?;
+    let mut open_options = fs::OpenOptions::new().append(true);
+    match mode {
+        LockMode::Lock => {
+            fs::create_dir_all(lock_path.parent().unwrap())
+                .context("Failed to create cache directory")?;
+            open_options = open_options.create(true);
+        },
+        LockMode::IfExists => {},
+    };
+    let mut lock = open_options.open(&lock_path)?;
     lock.lock_exclusive()?;
     Ok(lock)
-}
-
-#[derive(Debug)]
-pub struct ImmutableFileCache {
-    base: PathBuf,
-}
-
-impl ImmutableFileCache {
-    // This only needs locking to avoid "dogpile" issues when multiple instances are
-    // trying to fetch the same artifact at the same time. Once the file is known to be
-    // on disk, it's safe to return an fd pointing to it even without holding the lock.
-    pub fn get_or_fetch<F>(&self, key: &ArtifactHash, fetch: &F) -> Result<File>
-        where F: FnOnce(&mut dyn Write) -> Result<()>
-    {
-        let path = path_for_hash(&self.base, key);
-        let lock = lock(&path)?;
-        match File::open(path) {
-            Ok(file) => Ok(file),
-            Err(_) => {
-                let f = atomic_replace_with(&path, fetch)?;
-                Ok(f)
-            }
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -100,10 +139,27 @@ pub struct CacheDir {
 }
 
 impl CacheDir {
-    pub fn get(&self, key: &[u8]) -> Result<CacheHandle> {
-        let path = self.base.join(bytes_to_path_suffix(key));
-        let lock = lock(&path)?;
+    pub fn new(base: &Path) -> CacheDir {
+        CacheDir {
+            base: base.into(),
+        }
+    }
+
+    pub fn get<T: CacheKey>(&self, key: T) -> Result<CacheHandle> {
+        let path = self.base.join(key.key());
+        let lock = lock(&path, LockMode::Lock)?;
         Ok(CacheHandle { lock, path })
+    }
+
+    // the reason this exists is to make it possible to probe for cache entries without
+    // creating tons of directories/lock files that will never be used.
+    pub fn get_if_exists<T: CacheKey>(&self, key: &T) -> Option<CacheHandle> {
+        let path = self.base.join(key.key());
+        if let Ok(lock) = lock(&path, LockMode::IfExists) {
+            Some(CacheHandle { lock, path })
+        } else {
+            None
+        }
     }
 }
 
@@ -159,14 +215,15 @@ impl<'a> Seek for LockedWrite<'a> {
 
 impl<'a> LockedWrite<'a> {
     pub fn commit(self) -> Result<LockedRead<'a>> {
-        let mut f= self.f.persist(&self.path)?;
+        self.f.as_file().sync_data();
+        let mut f = self.f.persist(&self.path)?;
         f.rewind()?;
         Ok(LockedRead { f, _lifetime: self._lifetime })
     }
 }
 
 impl CacheHandle {
-    pub fn reader<'a>(&'a self) -> Option<impl 'a + Read + Seek> {
+    pub fn reader<'a>(&'a self) -> Option<LockedRead<'a>> {
         Some(LockedRead {
             f: File::open(&self.path).ok()?,
             _lifetime: Default::default(),
@@ -180,44 +237,5 @@ impl CacheHandle {
             f: tempfile::NamedTempFile::new_in(&self.path.parent().unwrap())?,
             _lifetime: Default::default(),
         })
-    }
-}
-
-/// Currently has no eviction policy at all -- just grows without bound. That's... bad,
-/// maybe? Does pip's cache have any eviction policy? Do we need to store any extra
-/// metadata to help with evictions (e.g. last accessed time)?
-#[derive(Debug)]
-pub struct PackageCache {
-    pub index_pages: CacheDir,
-    pub artifacts: ImmutableFileCache,
-    pub metadata: ImmutableFileCache,
-    // todo: cache mapping sdist hash -> directory containing build wheels
-    //locally_built_wheels: ImmutableFilesInMutableDirectoryCache
-    // todo: and some sort of caching for direct url references? gotta think about how
-    // that would work. probably just a generic HTTP cache, fold in index_pages?
-    // ...should we use that for artifact downloads too?
-    // and same problem for direct VCS references, though that will probably have a
-    // bunch of domain-specific complexities. (maybe only cache wheel, under the VCS
-    // revision hash?)
-}
-
-// maybe switch the artifact-from-index cache to use plain http caching too? for pypi
-// certainly it works well. and I should probably make my pybi index give proper
-// cache-control too.
-// advantage is that it removes the whole issue with figuring out which hash we want
-// etc.
-// probably would want to store as a directory with:
-// - cache metadata
-// - body
-// - hash values that we've verified for the body?
-//   (or maybe sha256 is fast enough now we don't care about caching this)
-
-impl PackageCache {
-    pub fn new(base: &Path) -> PackageCache {
-        PackageCache {
-            index_pages: CacheDir { base: base.join("index-pages") },
-            artifacts: ImmutableFileCache { base: base.join("artifacts") },
-            metadata: ImmutableFileCache { base: base.join("metadata") },
-        }
     }
 }

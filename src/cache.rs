@@ -77,6 +77,7 @@ pub enum Basket {
     // url -> METADATA file
     WheelMetadata,
     // XX todo for locally-built wheels. What should this be indexed by? sdist url?
+    // maybe sdist content hash would be better.
     //LocallyBuilt,
     // XX todo
     //PybiMetadata,

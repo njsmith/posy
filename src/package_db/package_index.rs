@@ -119,8 +119,8 @@ impl PackageIndex {
 
         for name in &names {
             if name.ends_with(".dist-info/WHEEL") {
-                // will error out if the metadata is bad
                 WheelMetadata::parse(&get(&mut zip, &name)?)?;
+                // will error out if the metadata is bad
             }
         }
 

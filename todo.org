@@ -33,15 +33,21 @@ can make pretty toml errors (https://docs.rs/toml_edit/latest/toml_edit/struct.T
 but even better would be if can convince it to make pretty explanations of failed resolution! (well, might have to do this on our own)
 maybe also look at https://docs.rs/ariadne/0.1.5/ariadne/
 
-maybe we should use zip files as our cache objects
-they let you pack together multiple objects (like cache metadata + body), support random access to objects, and even random access within objects if you disable compression (ZipFile::data_start, ZipFile::size), and they're easy to introspect with random tools
+* artifact types
+
+ArtifactRef -> (package, version) or (url)
+  or... ReleaseRef?
+
+Artifact -> Wheel/Pybi/Sdist, each a wrapper around a Read+Seek (might be file, might be lazy remote file...)
+  methods to fetch metadtaa, unpack?
+
 
 * PEP 643 (reliable metadata in sdists)
 apparently this is a thing now! in an sdist, look in PKG-INFO in the root, and if Metadata-Version >= 2.2 and the fields we need are not listed in Dynamic: then we're good.
 
 ...and actually, I feel like a good resolution algorithm might be, trust PKG-INFO for all sdists, and then do the expensive prepare_metadata_for_build_wheel thing for all the unreliable sdists and replan if any of them turn out to have been wrong?
 
-(the idea is that in most cases, the PKG-INFO will be reliable, so we'll only
+(the idea is that in most cases, the PKG-INFO will be reliable, so 99% of the time we can avoid building wheels for packages unless we're actually going to install them)
 
 * check if we're using the same method of finding .dist-info as pip
 https://github.com/pypa/pip/blob/bf91a079791f2daf4339115fb39ce7d7e33a9312/src/pip/_internal/utils/wheel.py#L84-L114
@@ -54,3 +60,13 @@ This is at least accidentally quadratic, quite possibly worse. There's gotta be 
 One idea: with pubgrub custom Range trait support, have the range objects themselves aware of the complete version set and track which packages fit, propagating this incrementally through range operations?
 
 (Or just storing the candidate versions sorted could also help quite a lot, b/c could make counting ~O(number of spans in range * log(n)) and "find max in range" in even ~O(log(n))
+
+COMPLICATION: @ dependencies.
+I think we ... actually cannot support these within pubgrub's model?
+They make the intern-all-versions thing tricky of course, because they're new versions we can discover while we go
+but even without that, they're... new versions we can discover as we go, which means that a set we previously told pubgrub was empty could suddenly become !empty, which could break the inferences it made from that, etc.
+Fortunately, @ dependencies are supposed to be forbidden inside packages
+so... say that @ dependencies are only supported at the top-level? must be specifically mentioned in pyproject.toml?
+  prodigy-teams kind of case might want to also allow them in sibling projects within the same workspace
+and then we can process them up-front, and simply tell pubgrub that these are the *only* versions available of those packages, the end.
+(probably also want some kind of support for 'override' requirements there, which are regular dependencies that will usually be @ in practice, and that cause all other version constraints on that package to be *totally ignored*

@@ -18,7 +18,7 @@ impl TryFrom<&str> for SdistName {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         static SDIST_NAME_RE: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^([^-]*)-([^-]*)\.(zip|tar\.gz)").unwrap());
+            Lazy::new(|| Regex::new(r"^(.*)-([^-]*)\.(zip|tar\.gz)$").unwrap());
 
         match SDIST_NAME_RE.captures(&value) {
             None => bail!("invalid sdist name"),
@@ -57,6 +57,37 @@ impl Display for SdistName {
         )
     }
 }
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct DistInfoDirName {
+    pub distribution: PackageName,
+    pub version: Version,
+}
+
+impl TryFrom<&str> for DistInfoDirName {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+
+        static DIST_INFO_NAME_RE: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"^(.*)-([^-]*)\.(dist-info)$").unwrap());
+
+        match DIST_INFO_NAME_RE.captures(&value) {
+            None => bail!("invalid sdist name"),
+            Some(captures) => {
+                let distribution: PackageName =
+                    captures.get(1).unwrap().as_str().parse()?;
+                let version: Version = captures.get(2).unwrap().as_str().parse()?;
+                Ok(DistInfoDirName {
+                    distribution,
+                    version,
+                })
+            }
+        }
+    }
+}
+
+try_from_str_boilerplate!(DistInfoDirName);
 
 // https://packaging.python.org/specifications/binary-distribution-format/#file-name-convention
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -198,6 +229,8 @@ impl TryFrom<&str> for WheelName {
 
 try_from_str_boilerplate!(WheelName);
 
+
+
 impl TryFrom<&str> for PybiName {
     type Error = anyhow::Error;
 
@@ -269,6 +302,28 @@ impl ArtifactName {
         }
     }
 }
+
+pub trait ArtifactNameUnwrap<T: Clone> {
+    fn try_borrow(&self) -> Option<&T>;
+}
+
+macro_rules! impl_unwrap {
+    ($enum:ident, $type:ty) => {
+        impl ArtifactNameUnwrap<$type> for ArtifactName {
+            fn try_borrow(&self) -> Option<&$type> {
+                if let ArtifactName::$enum(inner) = self {
+                    Some(inner)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+impl_unwrap!(Sdist, SdistName);
+impl_unwrap!(Wheel, WheelName);
+impl_unwrap!(Pybi, PybiName);
 
 impl TryFrom<&str> for ArtifactName {
     type Error = anyhow::Error;

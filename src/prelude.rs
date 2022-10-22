@@ -3,6 +3,7 @@ pub use std::convert::{TryFrom, TryInto};
 pub use std::fmt::Display;
 pub use std::rc::Rc;
 pub use std::str::FromStr;
+pub use std::io::{Read, Seek, Write};
 
 pub use fn_error_context::context;
 pub use shrinkwraprs::Shrinkwrap;
@@ -24,3 +25,12 @@ pub static PROJECT_DIRS: Lazy<ProjectDirs> = Lazy::new(|| {
     // ...Can this actually return None?
     ProjectDirs::from("", "Trio Collective", env!("CARGO_PKG_NAME")).unwrap()
 });
+
+pub trait ReadPlusSeek: Read + Seek {}
+impl<T: Read + Seek> ReadPlusSeek for T {}
+
+pub fn slurp<T: Read>(f: &mut T) -> Result<Vec<u8>> {
+    let mut data = Vec::<u8>::new();
+    f.read_to_end(&mut data)?;
+    Ok(data)
+}

@@ -32,7 +32,7 @@ pub struct Brief {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PinnedArtifact {
-    pub url: URL,
+    pub url: Url,
     pub hashes: Vec<ArtifactHash>,
 }
 

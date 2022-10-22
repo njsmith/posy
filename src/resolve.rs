@@ -218,7 +218,7 @@ struct PubgrubState<'a> {
     // The String is some kind of provenance info for the metadata, so that if later on
     // when using the resolved pins we find an inconsistency, we can track down where
     // our assumptions came from.
-    metadata: RefCell<HashMap<(PackageName, Version), (Rc<CoreMetadata>, Rc<String>)>>,
+    metadata: RefCell<HashMap<(PackageName, Version), (Rc<WheelCoreMetadata>, Rc<String>)>>,
 }
 
 use std::collections::hash_map::Entry::*;
@@ -290,7 +290,7 @@ impl<'a> PubgrubState<'a> {
     fn metadata_from_artifacts(
         &self,
         artifacts: &Vec<Artifact>,
-    ) -> Result<(Rc<CoreMetadata>, Rc<String>)> {
+    ) -> Result<(Rc<WheelCoreMetadata>, Rc<String>)> {
         // first, try to find an un-yanked wheel
         for artifact in artifacts {
             if artifact.url.path().ends_with(".whl") && artifact.yanked.is_none() {
@@ -305,7 +305,7 @@ impl<'a> PubgrubState<'a> {
         &self,
         package: &PackageName,
         version: &Version,
-    ) -> Result<(Rc<CoreMetadata>, Rc<String>)> {
+    ) -> Result<(Rc<WheelCoreMetadata>, Rc<String>)> {
         let mut memo = self.metadata.borrow_mut();
         let key = (package.clone(), version.clone());
         Ok(match memo.entry(key) {
