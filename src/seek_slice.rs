@@ -20,29 +20,52 @@ impl<T: Seek> SeekSlice<T> {
     }
 }
 
+// should be a.checked_add_signed(b), but at time of writing, that won't be stable until
+// the next rust release (any day now!).
+fn checked_add_signed(a: u64, b: i64) -> Option<u64> {
+    if b >= 0 {
+        a.checked_add(b as u64)
+    } else {
+        // still wrong on i64::MIN, oh well
+        a.checked_sub(b.abs() as u64)
+    }
+}
+
 impl<T: Seek> Seek for SeekSlice<T> {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
-        let mut goal_idx = match pos {
-            SeekFrom::Start(amount) => self.start + amount,
-            SeekFrom::End(amount) => self.end + amount,
-            SeekFrom::Current(amount) => self.current + amount,
+        let mut maybe_goal_idx = match pos {
+            SeekFrom::Start(amount) => self.start.checked_add(amount),
+            SeekFrom::End(amount) => checked_add_signed(self.end, amount),
+            SeekFrom::Current(amount) => checked_add_signed(self.current, amount),
         };
-        if goal_idx < self.start || goal_idx >= self.end {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "invalid seek to a negative or overflowing position",
+        match maybe_goal_idx {
+            Some(goal_idx) => {
+                if goal_idx < self.start || goal_idx >= self.end {
+                    Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "invalid seek to a negative or overflowing position",
+                    ))
+                } else {
+                    self.current = self.inner.seek(SeekFrom::Start(goal_idx))?;
+                    Ok(self.current - self.end)
+                }
+            },
+            None => {
+                Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "integer overflow while seeking",
                 ))
+            }
+
         }
-        self.current = self.inner.seek(SeekFrom::Start(goal_idx))?;
-        Ok(self.current - self.end)
     }
 }
 
 impl<T: Read + Seek> Read for SeekSlice<T> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let max_read = self.end - self.current;
-        let amount = self.inner.read(&buf[..max_read])?;
-        self.current += amount;
+        let amount = self.inner.read(&mut buf[..max_read.try_into().unwrap_or(buf.len())])?;
+        self.current += amount as u64;
         Ok(amount)
     }
 }
@@ -56,27 +79,30 @@ mod test {
 
     #[test]
     fn test_seek_slice() {
-        let buf: [u8] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let buf: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
         let mut cursor = Cursor::new(&buf);
         let mut slice = SeekSlice::new(&mut cursor, 2, 8).unwrap();
         // starts at offset zero
         assert_eq!(slice.seek(SeekFrom::Current(0)).unwrap(), 0);
         // reading advances position as expected
-        assert_eq!(slice.bytes().next(), Some(2u8));
-        assert_eq!(slice.bytes().next(), Some(3u8));
+        fn next_byte<T: Read>(value: T) -> u8 {
+            value.bytes().next().unwrap().unwrap()
+        }
+        assert_eq!(next_byte(slice), 2u8);
+        assert_eq!(next_byte(slice), 3u8);
         assert_eq!(slice.seek(SeekFrom::Current(0)).unwrap(), 2);
-        assert_eq!(slice.bytes().next(), Some(4u8));
+        assert_eq!(next_byte(slice), 4u8);
 
         // out of range seeks caught and have no effect
         assert!(slice.seek(SeekFrom::Current(-10)).is_err());
         assert!(slice.seek(SeekFrom::Current(10)).is_err());
-        assert_eq!(slice.bytes().next(), Some(5u8));
+        assert_eq!(next_byte(slice), 5u8);
 
         assert_eq!(slice.seek(SeekFrom::Start(1)).unwrap(), 1);
-        assert_eq!(slice.bytes().next(), Some(1));
+        assert_eq!(next_byte(slice), 1u8);
 
         assert_eq!(slice.seek(SeekFrom::End(-1)).unwrap(), 5);
-        assert_eq!(slice.bytes().next(), Some(7));
-        assert_eq!(slice.bytes().next(), None);
+        assert_eq!(next_byte(slice), 7u8);
+        assert!(slice.bytes().next().is_none());
     }
 }

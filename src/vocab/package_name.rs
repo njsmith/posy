@@ -57,8 +57,6 @@ impl Serialize for PackageName {
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryInto;
-
     use super::*;
 
     #[test]
