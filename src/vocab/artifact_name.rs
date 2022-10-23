@@ -68,7 +68,6 @@ impl TryFrom<&str> for DistInfoDirName {
     type Error = anyhow::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-
         static DIST_INFO_NAME_RE: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"^(.*)-([^-]*)\.(dist-info)$").unwrap());
 
@@ -229,7 +228,6 @@ impl TryFrom<&str> for WheelName {
 
 try_from_str_boilerplate!(WheelName);
 
-
 impl TryFrom<&str> for PybiName {
     type Error = anyhow::Error;
 
@@ -317,7 +315,7 @@ macro_rules! impl_unwrap {
                 }
             }
         }
-    }
+    };
 }
 
 impl_unwrap!(Sdist, SdistName);

@@ -1,4 +1,4 @@
-use super::super::http::{Http, CacheMode};
+use super::super::http::{CacheMode, Http};
 use super::project_info::ProjectInfo;
 use crate::prelude::*;
 
@@ -24,7 +24,8 @@ pub fn fetch_simple_api(http: &Http, url: &Url) -> Result<ProjectInfo> {
         value.to_str()?
     } else {
         "text/html"
-    }.to_owned();
+    }
+    .to_owned();
 
     Ok(super::parse_html(
         &url,

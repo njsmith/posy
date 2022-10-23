@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 use std::path::Path;
 
 use super::cache::CacheDir;
-use super::http::{Http, CacheMode, NotCached};
+use super::http::{CacheMode, Http, NotCached};
 use super::simple_api::{fetch_simple_api, pack_by_version, ArtifactInfo};
 
 static NO_ARTIFACTS: [ArtifactInfo; 0] = [];
@@ -89,7 +89,11 @@ impl PackageDB {
         Ok(())
     }
 
-    fn open_artifact<T>(&self, ai: &ArtifactInfo, body: Box<dyn ReadPlusSeek>) -> Result<T>
+    fn open_artifact<T>(
+        &self,
+        ai: &ArtifactInfo,
+        body: Box<dyn ReadPlusSeek>,
+    ) -> Result<T>
     where
         T: Artifact,
         ArtifactName: ArtifactNameUnwrap<T::Name>,
@@ -135,7 +139,7 @@ impl PackageDB {
                 Err(err) => match err.downcast_ref::<NotCached>() {
                     Some(_) => continue,
                     None => return Err(err),
-                }
+                },
             }
         }
 
@@ -181,7 +185,9 @@ impl PackageDB {
         ArtifactName: ArtifactNameUnwrap<T::Name>,
         T::Name: Clone,
     {
-        let body = self.http.get_hashed(&ai.url, ai.hash.as_ref(), cache_mode)?;
+        let body = self
+            .http
+            .get_hashed(&ai.url, ai.hash.as_ref(), cache_mode)?;
         self.open_artifact::<T>(ai, body)
     }
 

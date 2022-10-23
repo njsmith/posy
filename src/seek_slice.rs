@@ -62,11 +62,10 @@ impl<T: Seek> Seek for SeekSlice<T> {
 
 impl<T: Read + Seek> Read for SeekSlice<T> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let max_read: usize = (self.end - self.current).try_into().unwrap_or(usize::MAX);
+        let max_read: usize =
+            (self.end - self.current).try_into().unwrap_or(usize::MAX);
         let read_size = std::cmp::min(max_read, buf.len());
-        let amount = self
-            .inner
-            .read(&mut buf[..read_size])?;
+        let amount = self.inner.read(&mut buf[..read_size])?;
         self.current += amount as u64;
         Ok(amount)
     }

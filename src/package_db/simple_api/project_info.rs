@@ -11,14 +11,12 @@ pub struct Meta {
     pub version: String,
 }
 
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 enum RawDistInfoMetadata {
     NoHashes(bool),
     WithHashes(HashMap<String, String>),
 }
-
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq, Serialize)]
 #[serde(from = "Option<RawDistInfoMetadata>")]
@@ -33,12 +31,18 @@ impl From<Option<RawDistInfoMetadata>> for DistInfoMetadata {
         match maybe_raw {
             None => Default::default(),
             Some(raw) => match raw {
-                RawDistInfoMetadata::NoHashes(available) => Self { available, hash: None },
+                RawDistInfoMetadata::NoHashes(available) => Self {
+                    available,
+                    hash: None,
+                },
                 RawDistInfoMetadata::WithHashes(_) => {
                     // XX FIXME metadata hash support w/ PEP 691
-                    Self { available: true, hash: None }
+                    Self {
+                        available: true,
+                        hash: None,
+                    }
                 }
-            }
+            },
         }
     }
 }
@@ -61,8 +65,14 @@ pub struct Yanked {
 impl From<RawYanked> for Yanked {
     fn from(raw: RawYanked) -> Self {
         match raw {
-            RawYanked::NoReason(yanked) => Self { yanked, reason: None },
-            RawYanked::WithReason(reason) => Self { yanked: true, reason: Some(reason) },
+            RawYanked::NoReason(yanked) => Self {
+                yanked,
+                reason: None,
+            },
+            RawYanked::WithReason(reason) => Self {
+                yanked: true,
+                reason: Some(reason),
+            },
         }
     }
 }
@@ -80,9 +90,9 @@ pub struct ArtifactInfo {
     // just gonna make that future-me's problem...
     pub hash: Option<ArtifactHash>,
     pub requires_python: Option<String>,
-//    #[serde(default)]
+    //    #[serde(default)]
     pub dist_info_metadata: DistInfoMetadata,
-//    #[serde(default)]
+    //    #[serde(default)]
     pub yanked: Yanked,
 }
 
@@ -92,7 +102,10 @@ pub struct ProjectInfo {
     pub artifacts: Vec<ArtifactInfo>,
 }
 
-pub fn pack_by_version(pi: ProjectInfo, map: &mut IndexMap<Version, Vec<ArtifactInfo>>) -> Result<()> {
+pub fn pack_by_version(
+    pi: ProjectInfo,
+    map: &mut IndexMap<Version, Vec<ArtifactInfo>>,
+) -> Result<()> {
     if !pi.meta.version.starts_with("1.") {
         bail!("unknown package index api version {}", pi.meta.version);
     }

@@ -1,7 +1,7 @@
-use crate::prelude::*;
-use zip::ZipArchive;
-use std::cell::RefCell;
 use super::rfc822ish::RFC822ish;
+use crate::prelude::*;
+use std::cell::RefCell;
+use zip::ZipArchive;
 
 // probably should:
 // move artifact_name and core_metadata in here (at least conceptually)
@@ -17,8 +17,6 @@ use super::rfc822ish::RFC822ish;
 //
 // ...oh yeah there are also direct URL references, which might point to source trees. I
 // guess that's a 4th artifact type?
-
-
 
 pub struct Sdist {
     // TODO
@@ -104,11 +102,15 @@ impl BinaryArtifact for Wheel {
 
         let dist_info;
         {
-            let mut dist_infos: Vec<&str> = z.file_names().filter(|n| n.ends_with(".dist-info")).collect();
+            let mut dist_infos: Vec<&str> = z
+                .file_names()
+                .filter(|n| n.ends_with(".dist-info"))
+                .collect();
             dist_info = match dist_infos.pop() {
                 Some(d) => d,
                 None => bail!("no .dist-info/ directory found in wheel"),
-            }.to_owned();
+            }
+            .to_owned();
             if !dist_infos.is_empty() {
                 bail!("found multiple .dist-info/ directories in wheel");
             }
@@ -124,9 +126,8 @@ impl BinaryArtifact for Wheel {
         let wheel_path = format!("{dist_info}/WHEEL");
         let wheel_metadata = slurp(&mut z.by_name(&wheel_path)?)?;
 
-        let mut parsed = parse_format_metadata_and_check_version(
-            &wheel_metadata, "Wheel-Version"
-        )?;
+        let mut parsed =
+            parse_format_metadata_and_check_version(&wheel_metadata, "Wheel-Version")?;
 
         let root_is_purelib = match &parsed.take_the("Root-Is-Purelib")?[..] {
             "true" => true,

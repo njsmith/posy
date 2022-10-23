@@ -85,5 +85,8 @@ pub fn expand_platform_tag(tag: &str) -> Vec<String> {
 }
 
 pub fn current_platform_tags() -> Result<Vec<String>> {
-    Ok(super::core_platform_tags()?.drain(..).flat_map(|t| expand_platform_tag(&t)).collect())
+    Ok(super::core_platform_tags()?
+        .drain(..)
+        .flat_map(|t| expand_platform_tag(&t))
+        .collect())
 }

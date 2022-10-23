@@ -66,7 +66,7 @@ fn running_under_rosetta_2() -> bool {
                 );
             }
         }
-         Ok(flag_bytes) => u32::from_ne_bytes(flag_bytes.try_into().unwrap()) == 1,
+        Ok(flag_bytes) => u32::from_ne_bytes(flag_bytes.try_into().unwrap()) == 1,
     }
 }
 
@@ -104,5 +104,7 @@ pub fn core_platform_tags() -> Result<Vec<String>> {
     if major >= 11 {
         minor = 0;
     }
-    Ok(arches.map(|arch| format!("macosx_{}_{}_{}", major, minor, arch)).collect())
+    Ok(arches
+        .map(|arch| format!("macosx_{}_{}_{}", major, minor, arch))
+        .collect())
 }

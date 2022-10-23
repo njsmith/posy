@@ -59,11 +59,7 @@ pub struct Blueprint {
 }
 
 impl Brief {
-    pub fn resolve(
-        &self,
-        db: &str,
-        platform_tags: Vec<String>,
-    ) -> Result<Blueprint> {
+    pub fn resolve(&self, db: &str, platform_tags: Vec<String>) -> Result<Blueprint> {
         self.resolve_with_preferences(db, platform_tags, &|package| None)
     }
 
@@ -77,8 +73,7 @@ impl Brief {
         db: &str,
         platform_tags: Vec<String>,
         preferred_version: &dyn FnMut(&PackageName) -> Option<Version>,
-    ) -> Result<Blueprint>
-    {
+    ) -> Result<Blueprint> {
         todo!()
     }
 }

@@ -57,7 +57,6 @@ static GLIBC_DETECTORS: Lazy<Vec<(&str, &[u8])>> = Lazy::new(|| {
 static GLIBC_VERSION_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^([0-9]+)\.([0-9]+)").unwrap());
 
-
 fn glibc_version(py_arch: &str, detector: &[u8]) -> Result<Option<(u32, u32)>> {
     // This is a stupid hack to run 'detector' as an executable, with the guarantees
     // that (1) we can't accidentally leak it (the OS will clean it up for us if we
@@ -136,8 +135,10 @@ pub fn core_platform_tags() -> Result<Vec<String>> {
         match glibc_version(py_arch, detector) {
             // XX use logging instead
             Err(e) => println!("error checking glibc version on {}: {}", py_arch, e),
-            Ok(None) => {},
-            Ok(Some((major, minor))) => all_tags.push(format!("manylinux_{}_{}_{}", major, minor, py_arch))
+            Ok(None) => {}
+            Ok(Some((major, minor))) => {
+                all_tags.push(format!("manylinux_{}_{}_{}", major, minor, py_arch))
+            }
         }
     }
 
@@ -149,7 +150,9 @@ pub fn core_platform_tags() -> Result<Vec<String>> {
         let loader: PathBuf = format!("/lib/ld-musl-{}.so.1", musl_arch).into();
         if loader.exists() {
             match musl_version(&loader) {
-                Ok((major, minor)) => all_tags.push(format!("musllinux_{}_{}_{}", major, minor, py_arch)),
+                Ok((major, minor)) => {
+                    all_tags.push(format!("musllinux_{}_{}_{}", major, minor, py_arch))
+                }
                 // XX use logging instead
                 Err(e) => println!(
                     "error fetching musl metadata from {}: {}",

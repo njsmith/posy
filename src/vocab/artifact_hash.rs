@@ -91,11 +91,13 @@ mod test {
         let good_hash = ArtifactHash::from_hex(
             "sha256",
             "9c7ed1509d1809656c86aa1201fde2650ec056ab79f6546ba8205f6e42cff949",
-        ).unwrap();
+        )
+        .unwrap();
         let bad_hash = ArtifactHash::from_hex(
             "sha256",
             "007ed1509d1809656c86aa1201fde2650ec056ab79f6546ba8205f6e42cff949",
-        ).unwrap();
+        )
+        .unwrap();
 
         let buf = Vec::<u8>::new();
         let mut good_checker = good_hash.checker(buf).unwrap();

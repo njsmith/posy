@@ -5,9 +5,9 @@ use http_cache_semantics::{AfterResponse, BeforeRequest, CachePolicy};
 use std::io::SeekFrom;
 use std::time::SystemTime;
 
-use super::LazyRemoteFile;
 use super::cache::{CacheDir, CacheHandle};
 use super::ureq_glue::{do_request_ureq, new_ureq_agent};
+use super::LazyRemoteFile;
 
 const MAX_REDIRECTS: u16 = 5;
 const REDIRECT_STATUSES: &[u16] = &[301, 302, 303, 307, 308];
@@ -256,7 +256,7 @@ impl HttpInner {
                             }
                         }
                     }
-                }
+                };
             }
         }
         // no cache entry; do the request and make one.
@@ -333,7 +333,8 @@ impl HttpInner {
                 } else {
                     // fetch and store into the artifact cache, bypassing the regular
                     // http cache
-                    let mut body = self.request(request, CacheMode::NoStore)?.into_body();
+                    let mut body =
+                        self.request(request, CacheMode::NoStore)?.into_body();
                     let mut outer_writer = hash.checker(handle.begin()?)?;
                     std::io::copy(&mut body, &mut outer_writer)?;
                     let inner_writer = outer_writer.finish()?;

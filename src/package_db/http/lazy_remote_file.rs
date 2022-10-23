@@ -1,9 +1,9 @@
 use crate::prelude::*;
 
+use super::http::{CacheMode, HttpInner};
 use std::cmp;
 use std::collections::BTreeMap;
 use std::io::{self, Read, Seek, SeekFrom};
-use super::http::{HttpInner, CacheMode};
 
 // semi-arbitrary, but ideally should be large enough to catch all the zip index +
 // dist-info data at the end of common wheel files
@@ -69,16 +69,24 @@ enum RangeResponse {
     Complete(Box<dyn Read>),
 }
 
-fn fetch_range(http: &HttpInner, url: &Url, range_header: &str) -> Result<RangeResponse> {
+fn fetch_range(
+    http: &HttpInner,
+    url: &Url,
+    range_header: &str,
+) -> Result<RangeResponse> {
     // The full syntax has a bunch of possibilities that this doesn't account for:
     //   https://datatracker.ietf.org/doc/html/rfc7233#section-4.2
     // but this is the only format that's actually *useful* to us.
-    static CONTENT_RANGE_RE: Lazy<regex::bytes::Regex> =
-        Lazy::new(|| regex::bytes::Regex::new(r"^bytes ([0-9]+)-[0-9]+/([0-9]+)$").unwrap());
+    static CONTENT_RANGE_RE: Lazy<regex::bytes::Regex> = Lazy::new(|| {
+        regex::bytes::Regex::new(r"^bytes ([0-9]+)-[0-9]+/([0-9]+)$").unwrap()
+    });
     static CONTENT_RANGE_LEN_ONLY_RE: Lazy<regex::bytes::Regex> =
         Lazy::new(|| regex::bytes::Regex::new(r"^bytes [^/]*/([0-9]+)$").unwrap());
 
-    let request = http::Request::builder().uri(url.as_str()).header("Range", range_header).body(())?;
+    let request = http::Request::builder()
+        .uri(url.as_str())
+        .header("Range", range_header)
+        .body(())?;
     let response = http.request(request, CacheMode::NoStore)?;
 
     fn str_capture<'a>(c: &'a regex::bytes::Captures, g: usize) -> Result<&'a str> {
@@ -287,7 +295,10 @@ mod test {
         let url = server.url("blobby");
 
         let caches = tempfile::tempdir().unwrap();
-        let http = HttpInner::new(CacheDir::new(&caches.path().join("http")), CacheDir::new(&caches.path().join("hashed")));
+        let http = HttpInner::new(
+            CacheDir::new(&caches.path().join("http")),
+            CacheDir::new(&caches.path().join("hashed")),
+        );
 
         let rr = fetch_range(&http, &url, "bytes=900-999").unwrap();
         if let RangeResponse::Partial {
@@ -353,9 +364,13 @@ mod test {
             f.write_all(&[2; 13000]).unwrap();
         }
         let caches = tempfile::tempdir().unwrap();
-        let http = HttpInner::new(CacheDir::new(&caches.path().join("http")), CacheDir::new(&caches.path().join("hashed")));
+        let http = HttpInner::new(
+            CacheDir::new(&caches.path().join("http")),
+            CacheDir::new(&caches.path().join("hashed")),
+        );
 
-        let mut lazy = LazyRemoteFile::new(Rc::new(http), &server.url("blobby")).unwrap();
+        let mut lazy =
+            LazyRemoteFile::new(Rc::new(http), &server.url("blobby")).unwrap();
 
         assert_eq!(lazy.seek(SeekFrom::End(0)).unwrap(), 3 * 13000);
         assert_eq!(lazy.seek(SeekFrom::Start(0)).unwrap(), 0);
@@ -395,7 +410,10 @@ mod test {
             f.write_all(&data).unwrap();
         }
         let caches = tempfile::tempdir().unwrap();
-        let http = Rc::new(HttpInner::new(CacheDir::new(&caches.path().join("http")), CacheDir::new(&caches.path().join("hashed"))));
+        let http = Rc::new(HttpInner::new(
+            CacheDir::new(&caches.path().join("http")),
+            CacheDir::new(&caches.path().join("hashed")),
+        ));
 
         // Reads the given number of bytes, unless it hits EOF, in which case it reads
         // everything available
@@ -424,7 +442,8 @@ mod test {
         for seed in 0..5 {
             let rng = fastrand::Rng::with_seed(seed);
             let mut f = File::open(tempdir.path().join("blobby")).unwrap();
-            let mut lazy = LazyRemoteFile::new(http.clone(), &server.url("blobby")).unwrap();
+            let mut lazy =
+                LazyRemoteFile::new(http.clone(), &server.url("blobby")).unwrap();
 
             for _ in 0..100 {
                 let seek = if rng.bool() {

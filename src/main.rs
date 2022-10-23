@@ -5,11 +5,11 @@ mod prelude;
 mod util;
 mod vocab;
 
+mod brief;
+mod platform_tags;
+mod seek_slice;
 #[cfg(test)]
 mod test_util;
-mod platform_tags;
-mod brief;
-mod seek_slice;
 
 use anyhow::Result;
 
@@ -49,10 +49,16 @@ fn main() -> Result<()> {
     let opt = Opt::from_args();
 
     //println!("user agent: {}", net::user_agent());
-    println!("platform tags: {:?}", platform_tags::current_platform_tags());
+    println!(
+        "platform tags: {:?}",
+        platform_tags::current_platform_tags()
+    );
 
     let db = package_db::PackageDB::new(
-        &vec![Url::parse("https://pybi.vorpus.org")?, Url::parse("https://pypi.org/simple")?],
+        &vec![
+            Url::parse("https://pybi.vorpus.org")?,
+            Url::parse("https://pypi.org/simple")?,
+        ],
         PROJECT_DIRS.cache_dir(),
     );
 

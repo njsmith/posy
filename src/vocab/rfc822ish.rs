@@ -211,9 +211,13 @@ mod test {
               UPPERCASE-FIELD: foo
               lowercase-field: bar
               MiXeD-cAsE: baz
-        "#}).unwrap();
+        "#})
+        .unwrap();
         assert_eq!(got.take_all("uppercase-field"), vec!["foo"]);
-        assert_eq!(got.maybe_take_the("LOWERCASE-field").unwrap().unwrap(), "bar");
+        assert_eq!(
+            got.maybe_take_the("LOWERCASE-field").unwrap().unwrap(),
+            "bar"
+        );
         assert_eq!(got.take_the("mixed-CASE").unwrap(), "baz");
     }
 }

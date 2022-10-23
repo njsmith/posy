@@ -1,8 +1,8 @@
 pub use std::collections::{HashMap, HashSet};
 pub use std::fmt::Display;
+pub use std::io::{Read, Seek, Write};
 pub use std::rc::Rc;
 pub use std::str::FromStr;
-pub use std::io::{Read, Seek, Write};
 
 pub use fn_error_context::context;
 pub use shrinkwraprs::Shrinkwrap;

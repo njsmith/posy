@@ -5,8 +5,8 @@ use std::io::SeekFrom;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-use ring::digest;
 use fs2::FileExt;
+use ring::digest;
 
 // A simple on-disk cache for static blobs of data.
 //
@@ -126,8 +126,8 @@ fn lock(path: &Path, mode: LockMode) -> Result<File> {
             fs::create_dir_all(lock_path.parent().unwrap())
                 .context("Failed to create cache directory")?;
             open_options.create(true);
-        },
-        LockMode::IfExists => {},
+        }
+        LockMode::IfExists => {}
     };
     let lock = open_options.open(&lock_path)?;
     lock.lock_exclusive()?;
@@ -141,9 +141,7 @@ pub struct CacheDir {
 
 impl CacheDir {
     pub fn new(base: &Path) -> CacheDir {
-        CacheDir {
-            base: base.into(),
-        }
+        CacheDir { base: base.into() }
     }
 
     pub fn get<T: CacheKey>(&self, key: T) -> Result<CacheHandle> {
@@ -219,7 +217,10 @@ impl<'a> LockedWrite<'a> {
         self.f.as_file().sync_data()?;
         let mut f = self.f.persist(&self.path)?;
         f.rewind()?;
-        Ok(LockedRead { f, _lifetime: self._lifetime })
+        Ok(LockedRead {
+            f,
+            _lifetime: self._lifetime,
+        })
     }
 }
 
