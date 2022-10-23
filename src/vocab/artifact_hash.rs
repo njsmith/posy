@@ -17,7 +17,7 @@ impl ArtifactHash {
     pub fn checker<'a, T: Write>(&'a self, inner: T) -> Result<HashChecker<'a, T>> {
         let algorithm = match self.mode.as_str() {
             "sha256" => &ring::digest::SHA256,
-            _ => bail!("unknown hash algorithm {self.mode}"),
+            _ => bail!("unknown hash algorithm {}", self.mode),
         };
         let state = ring::digest::Context::new(algorithm);
         Ok(HashChecker {

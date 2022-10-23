@@ -117,10 +117,10 @@ impl BinaryArtifact for Wheel {
         }
         let parsed_dist_info: DistInfoDirName = dist_info.as_str().try_into()?;
         if parsed_dist_info.distribution != self.name.distribution {
-            bail!("name mismatch between {dist_info} and {self.name}");
+            bail!("name mismatch between {} and {}", dist_info, self.name);
         }
         if parsed_dist_info.version != self.name.version {
-            bail!("version mismatch between {dist_info} and {self.name}");
+            bail!("version mismatch between {} and {}", dist_info, self.name);
         }
 
         let wheel_path = format!("{dist_info}/WHEEL");
@@ -147,10 +147,18 @@ impl BinaryArtifact for Wheel {
         let metadata: WheelCoreMetadata = metadata_blob.as_slice().try_into()?;
 
         if metadata.name != self.name.distribution {
-            bail!("name mismatch between {dist_info}/METADATA and filename ({metadata.name} != {self.name.distribution}");
+            bail!(
+                "name mismatch between {dist_info}/METADATA and filename ({} != {}",
+                metadata.name.as_given(),
+                self.name.distribution.as_given()
+            );
         }
         if metadata.version != self.name.version {
-            bail!("version mismatch between {dist_info}/METADATA and filename ({metadata.version} != {self.name.version}");
+            bail!(
+                "version mismatch between {dist_info}/METADATA and filename ({} != {})",
+                metadata.version,
+                self.name.version
+            );
         }
 
         Ok((metadata_blob, metadata))
@@ -171,10 +179,18 @@ impl BinaryArtifact for Pybi {
         let metadata_blob = slurp(&mut z.by_name("pybi/METADATA")?)?;
         let metadata: PybiCoreMetadata = metadata_blob.as_slice().try_into()?;
         if metadata.name != self.name.distribution {
-            bail!("name mismatch between pybi/METADATA and filename ({metadata.name} != {self.name.distribution}");
+            bail!(
+                "name mismatch between pybi/METADATA and filename ({} != {})",
+                metadata.name.as_given(),
+                self.name.distribution.as_given()
+            );
         }
         if metadata.version != self.name.version {
-            bail!("version mismatch between pybi/METADATA and filename ({metadata.version} != {self.name.version}");
+            bail!(
+                "version mismatch between pybi/METADATA and filename ({} != {})",
+                metadata.version,
+                self.name.version
+            );
         }
         Ok((metadata_blob, metadata))
     }

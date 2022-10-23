@@ -184,7 +184,7 @@ fn generic_parse<'a>(
     }
 
     if pieces.len() != 2 + tag_parts as usize {
-        anyhow::bail!("can't parse wheel name '{}'")
+        anyhow::bail!("can't parse binary name '{value}'");
     }
 
     let distribution: PackageName = pieces[0].try_into()?;
