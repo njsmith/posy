@@ -74,7 +74,7 @@ pub fn expand_platform_tag(tag: &str) -> Vec<String> {
                 .flat_map(|(major, minor)| {
                     arches
                         .iter()
-                        .map(|arch| format!("macos_{}_{}_{}", major, minor, arch))
+                        .map(move |arch| format!("macos_{}_{}_{}", major, minor, arch))
                 })
                 .collect();
         }

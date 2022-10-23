@@ -23,7 +23,7 @@ impl Display for Specifier {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, SerializeDisplay, DeserializeFromStr)]
 pub struct Specifiers(pub Vec<Specifier>);
 
 impl Specifiers {

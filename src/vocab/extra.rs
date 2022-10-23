@@ -17,7 +17,7 @@
 
 use crate::prelude::*;
 
-#[derive(Debug, Clone, Deserialize, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Hash, PartialEq, Eq)]
 pub struct Extra(PackageName);
 
 impl Extra {

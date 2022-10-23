@@ -275,15 +275,15 @@ impl TryFrom<&str> for PythonRequirement {
     type Error = anyhow::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let r = Requirement::parse(
-            value,
-            ParseExtra::NotAllowed,
-        )?;
+        let r = Requirement::parse(value, ParseExtra::NotAllowed)?;
         if !r.extras.is_empty() {
             bail!("can't have extras on python requirement {}", value);
         }
         if r.env_marker.is_some() {
-            bail!("can't have env marker restrictions on python requirement {}", value);
+            bail!(
+                "can't have env marker restrictions on python requirement {}",
+                value
+            );
         }
         Ok(PythonRequirement(r))
     }
@@ -301,7 +301,10 @@ mod test {
             "twisted[tls] >= 20, != 20.1.*; python_version >= '3' and extra == 'hi'"
                 .try_into()
                 .unwrap();
-        insta::assert_debug_snapshot!(r);
+        insta::assert_ron_snapshot!(
+            r,
+            @r###""twisted[tls] >= 20, != 20.1.*; (python_version >= \"3\" and extra == \"hi\")""###
+        );
     }
 
     #[test]
@@ -310,7 +313,10 @@ mod test {
         let r: UserRequirement = "twisted[tls] >= 20, != 20.1.*; python_version >= '3'"
             .try_into()
             .unwrap();
-        insta::assert_debug_snapshot!(r);
+        insta::assert_ron_snapshot!(
+            r,
+            @r###""twisted[tls] >= 20, != 20.1.*; python_version >= \"3\"""###
+        );
     }
 
     #[test]

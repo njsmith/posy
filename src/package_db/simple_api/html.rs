@@ -234,7 +234,7 @@ impl TreeSink for Sink {
     fn mark_script_already_started(&mut self, _node: &usize) {}
 }
 
-pub fn parse_html<T>(url: &Url, content_type: &str, body: T) -> Result<ProjectInfo>
+pub fn parse_html<T>(url: &Url, content_type: &str, mut body: T) -> Result<ProjectInfo>
 where
     T: Read,
 {
@@ -264,8 +264,6 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::super::project_info::Meta;
-
     use super::*;
 
     #[test]
@@ -273,7 +271,7 @@ mod test {
         let parsed = parse_html(
             &Url::parse("https://example.com/old-base/").unwrap(),
             "text/html",
-            r#"<html>
+            br#"<html>
                 <head>
                   <meta name="pypi:repository-version" content="1.0">
                   <base href="https://example.com/new-base/">
@@ -284,60 +282,59 @@ mod test {
                   <a href="link3-3.0.tar.gz" data-requires-python=">= 3.17">link3</a>
                 </body>
               </html>
-            "#,
+            "# as &[u8],
         ).unwrap();
 
-        assert_eq!(
-            parsed,
-            ProjectInfo {
-                meta: Meta {
-                    version: "1.0".to_owned(),
-                },
-                artifacts: vec![
-                    ArtifactInfo {
-                        name: "link1-1.0.tar.gz".try_into().unwrap(),
-                        url: Url::parse("https://example.com/new-base/link1#sha256=0000000000000000000000000000000000000000000000000000000000000000").unwrap(),
-                        hash: Some(ArtifactHash { mode: "sha256".into(), raw_data: [0u8; 32].into() }),
-                        requires_python: None,
-                        dist_info_metadata: DistInfoMetadata {
-                            available: false,
-                            hash: None,
-                        },
-                        yanked: Yanked {
-                            yanked: false,
-                            reason: None,
-                        }
-                    },
-                    ArtifactInfo {
-                        name: "link2-2.0.zip".try_into().unwrap(),
-                        url: Url::parse("https://example.com/elsewhere/link2").unwrap(),
-                        hash: None,
-                        requires_python: None,
-                        dist_info_metadata: DistInfoMetadata {
-                            available: false,
-                            hash: None,
-                        },
-                        yanked: Yanked {
-                            yanked: true,
-                            reason: Some("some reason".into()),
-                        },
-                    },
-                    ArtifactInfo {
-                        name: "link3-3.0.tar.gz".try_into().unwrap(),
-                        url: Url::parse("https://example.com/new-base/link3").unwrap(),
-                        hash: None,
-                        requires_python: None,
-                        dist_info_metadata: DistInfoMetadata {
-                            available: false,
-                            hash: None,
-                        },
-                        yanked: Yanked {
-                            yanked: false,
-                            reason: None,
-                        },
-                    },
-                ]
-            }
+        insta::assert_ron_snapshot!(parsed, @r###"
+        ProjectInfo(
+          meta: Meta(
+            version: "1.0",
+          ),
+          artifacts: [
+            ArtifactInfo(
+              name: "link1-1.0.tar.gz",
+              url: "https://example.com/new-base/link1-1.0.tar.gz#sha256=0000000000000000000000000000000000000000000000000000000000000000",
+              hash: Some("sha256=0000000000000000000000000000000000000000000000000000000000000000"),
+              requires_python: None,
+              dist_info_metadata: DistInfoMetadata(
+                available: false,
+                hash: None,
+              ),
+              yanked: Yanked(
+                yanked: false,
+                reason: None,
+              ),
+            ),
+            ArtifactInfo(
+              name: "link2-2.0.zip",
+              url: "https://example.com/elsewhere/link2-2.0.zip",
+              hash: None,
+              requires_python: None,
+              dist_info_metadata: DistInfoMetadata(
+                available: false,
+                hash: None,
+              ),
+              yanked: Yanked(
+                yanked: true,
+                reason: Some("some reason"),
+              ),
+            ),
+            ArtifactInfo(
+              name: "link3-3.0.tar.gz",
+              url: "https://example.com/new-base/link3-3.0.tar.gz",
+              hash: None,
+              requires_python: Some(">= 3.17"),
+              dist_info_metadata: DistInfoMetadata(
+                available: false,
+                hash: None,
+              ),
+              yanked: Yanked(
+                yanked: false,
+                reason: None,
+              ),
+            ),
+          ],
         )
+        "###);
     }
 }

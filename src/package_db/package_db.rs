@@ -71,14 +71,19 @@ impl PackageDB {
     }
 
     fn metadata_from_cache(&self, ai: &ArtifactInfo) -> Option<Vec<u8>> {
-        let entry = self.metadata_cache.get_if_exists(&&ai.hash?)?;
-        let mut reader = entry.reader()?;
-        slurp(&mut reader).ok()
+        match &ai.hash {
+            Some(hash) => {
+                let entry = self.metadata_cache.get_if_exists(&hash)?;
+                let mut reader = entry.reader()?;
+                slurp(&mut reader).ok()
+            }
+            None => None,
+        }
     }
 
     fn put_metadata_in_cache(&self, ai: &ArtifactInfo, blob: &[u8]) -> Result<()> {
-        if let Some(hash) = ai.hash {
-            let handle = self.metadata_cache.get(&hash)?;
+        if let Some(hash) = &ai.hash {
+            let handle = self.metadata_cache.get(hash)?;
             handle.begin()?.write_all(&blob)?;
         }
         Ok(())
@@ -176,7 +181,7 @@ impl PackageDB {
         ArtifactName: ArtifactNameUnwrap<T::Name>,
         T::Name: Clone,
     {
-        let body = self.http.get_hashed(&ai.url, ai.hash.map(|a| &a), cache_mode)?;
+        let body = self.http.get_hashed(&ai.url, ai.hash.as_ref(), cache_mode)?;
         self.open_artifact::<T>(ai, body)
     }
 

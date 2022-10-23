@@ -9,13 +9,15 @@ pub struct SeekSlice<T: Seek> {
 }
 
 impl<T: Seek> SeekSlice<T> {
-    pub fn new(inner: T, start: u64, end: u64) -> std::io::Result<SeekSlice<T>> {
+    pub fn new(mut inner: T, start: u64, end: u64) -> std::io::Result<SeekSlice<T>> {
         assert!(end >= start);
+        // initialize current position to something sensible
+        let current = inner.seek(SeekFrom::Start(start))?;
         Ok(SeekSlice {
             inner,
             start,
             end,
-            current: inner.seek(SeekFrom::Start(start))?,
+            current,
         })
     }
 }
@@ -33,7 +35,7 @@ fn checked_add_signed(a: u64, b: i64) -> Option<u64> {
 
 impl<T: Seek> Seek for SeekSlice<T> {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
-        let mut maybe_goal_idx = match pos {
+        let maybe_goal_idx = match pos {
             SeekFrom::Start(amount) => self.start.checked_add(amount),
             SeekFrom::End(amount) => checked_add_signed(self.end, amount),
             SeekFrom::Current(amount) => checked_add_signed(self.current, amount),
@@ -47,24 +49,24 @@ impl<T: Seek> Seek for SeekSlice<T> {
                     ))
                 } else {
                     self.current = self.inner.seek(SeekFrom::Start(goal_idx))?;
-                    Ok(self.current - self.end)
+                    Ok(self.current.checked_sub(self.start).unwrap())
                 }
-            },
-            None => {
-                Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "integer overflow while seeking",
-                ))
             }
-
+            None => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "integer overflow while seeking",
+            )),
         }
     }
 }
 
 impl<T: Read + Seek> Read for SeekSlice<T> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let max_read = self.end - self.current;
-        let amount = self.inner.read(&mut buf[..max_read.try_into().unwrap_or(buf.len())])?;
+        let max_read: usize = (self.end - self.current).try_into().unwrap_or(usize::MAX);
+        let read_size = std::cmp::min(max_read, buf.len());
+        let amount = self
+            .inner
+            .read(&mut buf[..read_size])?;
         self.current += amount as u64;
         Ok(amount)
     }
@@ -88,21 +90,21 @@ mod test {
         fn next_byte<T: Read>(value: T) -> u8 {
             value.bytes().next().unwrap().unwrap()
         }
-        assert_eq!(next_byte(slice), 2u8);
-        assert_eq!(next_byte(slice), 3u8);
+        assert_eq!(next_byte(&mut slice), 2u8);
+        assert_eq!(next_byte(&mut slice), 3u8);
         assert_eq!(slice.seek(SeekFrom::Current(0)).unwrap(), 2);
-        assert_eq!(next_byte(slice), 4u8);
+        assert_eq!(next_byte(&mut slice), 4u8);
 
         // out of range seeks caught and have no effect
         assert!(slice.seek(SeekFrom::Current(-10)).is_err());
         assert!(slice.seek(SeekFrom::Current(10)).is_err());
-        assert_eq!(next_byte(slice), 5u8);
+        assert_eq!(next_byte(&mut slice), 5u8);
 
         assert_eq!(slice.seek(SeekFrom::Start(1)).unwrap(), 1);
-        assert_eq!(next_byte(slice), 1u8);
+        assert_eq!(next_byte(&mut slice), 3u8);
 
         assert_eq!(slice.seek(SeekFrom::End(-1)).unwrap(), 5);
-        assert_eq!(next_byte(slice), 7u8);
+        assert_eq!(next_byte(&mut slice), 7u8);
         assert!(slice.bytes().next().is_none());
     }
 }

@@ -19,16 +19,16 @@ pub fn fetch_simple_api(http: &Http, url: &Url) -> Result<ProjectInfo> {
         .body(())?;
 
     let response = http.request(request, CacheMode::Default)?;
-    let url = response.extensions().get::<Url>().unwrap();
+    let url = response.extensions().get::<Url>().unwrap().to_owned();
     let content_type = if let Some(value) = response.headers().get("Content-Type") {
         value.to_str()?
     } else {
         "text/html"
-    };
+    }.to_owned();
 
     Ok(super::parse_html(
         &url,
-        content_type,
+        &content_type,
         response.into_body(),
     )?)
 }

@@ -239,7 +239,7 @@ impl LazyRemoteFile {
             length: 0,
             seek_pos: 0,
         };
-        match fetch_range(&http, &url, &format!("bytes=-{}", LAZY_FETCH_SIZE))? {
+        match fetch_range(&remote.http, &url, &format!("bytes=-{}", LAZY_FETCH_SIZE))? {
             RangeResponse::NotSatisfiable { total_len } => {
                 remote.length = total_len;
             }
@@ -346,7 +346,6 @@ mod test {
     fn test_lazy_remote_file_explicit() {
         let tempdir = tempfile::tempdir().unwrap();
         let server = crate::test_util::StaticHTTPServer::new(&tempdir.path());
-        let agent = ureq::Agent::new();
         {
             let mut f = File::create(tempdir.path().join("blobby")).unwrap();
             f.write_all(&[0; 13000]).unwrap();

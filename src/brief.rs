@@ -30,13 +30,13 @@ pub struct Brief {
 // meh for now we'll just leave it hardcoded, and adjust if needed. This also makes
 // Debug/Serialize way easier.
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone)]
 pub struct PinnedArtifact {
     pub url: Url,
     pub hashes: Vec<ArtifactHash>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone)]
 pub struct PinnedPackage {
     pub name: PackageName,
     pub sources: Vec<PinnedArtifact>,
@@ -51,7 +51,7 @@ pub struct PinnedPackage {
     // have mismatched requirements. (just Python-Requires and Requires-Dist?)
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone)]
 pub struct Blueprint {
     pub python: PinnedPackage,
     pub packages: Vec<PinnedPackage>,

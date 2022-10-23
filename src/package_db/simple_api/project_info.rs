@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 // body for a single project, whether using HTML (PEP 503) or JSON (PEP 691). But it's
 // modelled after PEP 691 API, and the serde stuff is all to prepare for that.
 
-#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct Meta {
     pub version: String,
 }
@@ -20,7 +20,7 @@ enum RawDistInfoMetadata {
 }
 
 
-#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq, Serialize)]
 #[serde(from = "Option<RawDistInfoMetadata>")]
 pub struct DistInfoMetadata {
     pub available: bool,
@@ -33,8 +33,11 @@ impl From<Option<RawDistInfoMetadata>> for DistInfoMetadata {
         match maybe_raw {
             None => Default::default(),
             Some(raw) => match raw {
-                RawDistInfoMetadata::NoHashes(available) => Self { available, ..Default::default() },
-                RawDistInfoMetadata::WithHashes(_) => Self { available: true },
+                RawDistInfoMetadata::NoHashes(available) => Self { available, hash: None },
+                RawDistInfoMetadata::WithHashes(_) => {
+                    // XX FIXME metadata hash support w/ PEP 691
+                    Self { available: true, hash: None }
+                }
             }
         }
     }
@@ -48,7 +51,7 @@ enum RawYanked {
     WithReason(String),
 }
 
-#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq, Serialize)]
 #[serde(from = "RawYanked")]
 pub struct Yanked {
     pub yanked: bool,
@@ -64,7 +67,7 @@ impl From<RawYanked> for Yanked {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 //#[serde(rename_all = "kebab-case")]
 pub struct ArtifactInfo {
     pub name: ArtifactName,
@@ -83,7 +86,7 @@ pub struct ArtifactInfo {
     pub yanked: Yanked,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct ProjectInfo {
     pub meta: Meta,
     pub artifacts: Vec<ArtifactInfo>,

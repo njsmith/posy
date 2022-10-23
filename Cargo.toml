@@ -52,6 +52,6 @@ slice = "0.0.4"
 
 [dev-dependencies]
 fastrand = "1.4.1"
-insta = "1.7.1"
+insta = { version = "1.21.0", features = ["ron", "redactions"] }
 tokio = { version = "1.7.0", features = ["rt-multi-thread", "sync"] }
 warp = "0.3.1"

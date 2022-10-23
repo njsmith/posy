@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, SerializeDisplay)]
 pub struct ArtifactHash {
     pub mode: String,
     pub raw_data: Vec<u8>,
@@ -58,6 +58,7 @@ impl<'a, T: Write> HashChecker<'a, T> {
 impl<'a, T: Write> Write for HashChecker<'a, T> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let written = self.inner.write(&buf)?;
+        println!("update {:?}", &buf[..written]);
         self.state.update(&buf[..written]);
         Ok(written)
     }
@@ -86,26 +87,25 @@ mod test {
 
     #[test]
     fn test_hash_checker() {
-        let gold_data = b"123456890";
+        let gold_data = b"a drop of golden sun";
         let good_hash = ArtifactHash::from_hex(
             "sha256",
-            "c775e7b757ede630cd0aa1113bd102661ab38829ca52a6422ab782862f268646",
+            "9c7ed1509d1809656c86aa1201fde2650ec056ab79f6546ba8205f6e42cff949",
         ).unwrap();
         let bad_hash = ArtifactHash::from_hex(
             "sha256",
-            "775e7b757ede630cd0aa1113bd102661ab38829ca52a6422ab782862f268646c",
+            "007ed1509d1809656c86aa1201fde2650ec056ab79f6546ba8205f6e42cff949",
         ).unwrap();
-        let mut buf = [0u8; 20];
 
-        let mut good_checker = HashChecker::new(&good_hash, buf.as_mut()).unwrap();
+        let buf = Vec::<u8>::new();
+        let mut good_checker = good_hash.checker(buf).unwrap();
         assert!(good_checker.write_all(gold_data).is_ok());
         assert!(good_checker.flush().is_ok());
-        let mut unwrapped = good_checker.finish().unwrap();
-        assert_eq!(&buf[0..10], gold_data);
-        assert_eq!(&buf[10..20], &[0u8; 10]);
+        let unwrapped = good_checker.finish().unwrap();
+        assert_eq!(unwrapped.as_slice(), gold_data);
 
-        let mut buf = [0u8; 20];
-        let mut bad_checker = HashChecker::new(&bad_hash, buf.as_mut()).unwrap();
+        let buf = Vec::<u8>::new();
+        let mut bad_checker = bad_hash.checker(buf).unwrap();
         assert!(bad_checker.write_all(gold_data).is_ok());
         assert!(bad_checker.flush().is_ok());
         assert!(bad_checker.finish().is_err());

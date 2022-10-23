@@ -51,8 +51,8 @@ pub enum ReadPlusMaybeSeek {
 impl Read for ReadPlusMaybeSeek {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
-            ReadPlusMaybeSeek::CanSeek(inner) => inner.read(&mut buf),
-            ReadPlusMaybeSeek::CannotSeek(inner) => inner.read(&mut buf),
+            ReadPlusMaybeSeek::CanSeek(inner) => inner.read(buf),
+            ReadPlusMaybeSeek::CannotSeek(inner) => inner.read(buf),
         }
     }
 }
@@ -61,7 +61,7 @@ impl ReadPlusMaybeSeek {
     fn force_seek(self) -> Result<Box<dyn ReadPlusSeek>> {
         Ok(match self {
             ReadPlusMaybeSeek::CanSeek(inner) => inner,
-            ReadPlusMaybeSeek::CannotSeek(inner) => {
+            ReadPlusMaybeSeek::CannotSeek(mut inner) => {
                 let mut tmp = tempfile::tempfile()?;
                 std::io::copy(&mut inner, &mut tmp)?;
                 Box::new(tmp)
@@ -93,7 +93,7 @@ impl Http {
 
     pub fn request(
         &self,
-        mut request: http::Request<()>,
+        request: http::Request<()>,
         cache_mode: CacheMode,
     ) -> Result<http::Response<ReadPlusMaybeSeek>> {
         self.0.request(request, cache_mode)
@@ -173,12 +173,12 @@ where
 
 fn key_for_request<T>(req: &http::Request<T>) -> Vec<u8> {
     let mut key: Vec<u8> = Default::default();
-    let method = req.method().to_string();
+    let method = req.method().to_string().into_bytes();
     key.extend(method.len().to_le_bytes());
-    key.extend(method.as_bytes().iter());
-    let uri = req.uri().to_string().as_bytes();
+    key.extend(method);
+    let uri = req.uri().to_string().into_bytes();
     key.extend(uri.len().to_le_bytes());
-    // HASH here -- null or unique_key, I guess?
+    key.extend(uri);
     key
 }
 
@@ -199,84 +199,86 @@ impl HttpInner {
         // http::uri::Uri strips the fragment automatically, so we don't need to worry
         // about it leaking into our cache key.
         let key = key_for_request(&request);
-        let mut maybe_handle = if cache_mode == CacheMode::NoStore {
+        let maybe_handle = if cache_mode == CacheMode::NoStore {
             None
         } else {
             Some(self.http_cache.get(key.as_slice())?)
         };
 
-        if let Some(mut f) = maybe_handle.and_then(|h| h.reader()) {
-            let (old_policy, old_body) = read_cache(f)?;
-
-            match old_policy.before_request(request, SystemTime::now()) {
-                BeforeRequest::Fresh(parts) => Ok(make_response(
-                    parts,
-                    ReadPlusMaybeSeek::CanSeek(Box::new(old_body)),
-                    CacheStatus::Fresh,
-                )),
-                BeforeRequest::Stale {
-                    request: new_parts,
-                    matches,
-                } => {
-                    if cache_mode == CacheMode::OnlyIfCached {
-                        return Err(NotCached {}.into());
-                    }
-                    request = &http::Request::from_parts(new_parts, ());
-                    let mut response = do_request_ureq(&self.agent, &request)?;
-                    match old_policy.after_response(
-                        request,
-                        &response,
-                        SystemTime::now(),
-                    ) {
-                        AfterResponse::NotModified(new_policy, new_parts) => {
-                            let new_body = fill_cache(
-                                &new_policy,
-                                old_body,
-                                maybe_handle.unwrap(),
-                            )?;
-                            Ok(make_response(
-                                new_parts,
-                                ReadPlusMaybeSeek::CanSeek(Box::new(new_body)),
-                                CacheStatus::StaleButValidated,
-                            ))
+        if let Some(handle) = &maybe_handle {
+            if let Some(f) = handle.reader() {
+                // detach_unlocked releases the reader's hold on the cache entry lock,
+                // but the cache handle itself still holds the lock until we release it
+                let (old_policy, old_body) = read_cache(f.detach_unlocked())?;
+                return match old_policy.before_request(request, SystemTime::now()) {
+                    BeforeRequest::Fresh(parts) => Ok(make_response(
+                        parts,
+                        ReadPlusMaybeSeek::CanSeek(Box::new(old_body)),
+                        CacheStatus::Fresh,
+                    )),
+                    BeforeRequest::Stale {
+                        request: new_parts,
+                        matches: _,
+                    } => {
+                        if cache_mode == CacheMode::OnlyIfCached {
+                            return Err(NotCached {}.into());
                         }
-                        AfterResponse::Modified(new_policy, new_parts) => {
-                            let new_body = fill_cache(
-                                &new_policy,
-                                response.into_body(),
-                                maybe_handle.unwrap(),
-                            )?;
-                            Ok(make_response(
-                                new_parts,
-                                ReadPlusMaybeSeek::CanSeek(Box::new(new_body)),
-                                CacheStatus::StaleButValidated,
-                            ))
+                        let request = http::Request::from_parts(new_parts, ());
+                        let response = do_request_ureq(&self.agent, &request)?;
+                        match old_policy.after_response(
+                            &request,
+                            &response,
+                            SystemTime::now(),
+                        ) {
+                            AfterResponse::NotModified(new_policy, new_parts) => {
+                                let new_body = fill_cache(
+                                    &new_policy,
+                                    old_body,
+                                    maybe_handle.unwrap(),
+                                )?;
+                                Ok(make_response(
+                                    new_parts,
+                                    ReadPlusMaybeSeek::CanSeek(Box::new(new_body)),
+                                    CacheStatus::StaleButValidated,
+                                ))
+                            }
+                            AfterResponse::Modified(new_policy, new_parts) => {
+                                let new_body = fill_cache(
+                                    &new_policy,
+                                    response.into_body(),
+                                    maybe_handle.unwrap(),
+                                )?;
+                                Ok(make_response(
+                                    new_parts,
+                                    ReadPlusMaybeSeek::CanSeek(Box::new(new_body)),
+                                    CacheStatus::StaleAndChanged,
+                                ))
+                            }
                         }
                     }
                 }
             }
+        }
+        // no cache entry; do the request and make one.
+        if cache_mode == CacheMode::OnlyIfCached {
+            return Err(NotCached {}.into());
+        }
+        let response = do_request_ureq(&self.agent, &request)?;
+        let new_policy = CachePolicy::new(request, &response);
+        let (parts, body) = response.into_parts();
+        if !new_policy.is_storable() || maybe_handle.is_none() {
+            Ok(make_response(
+                parts,
+                ReadPlusMaybeSeek::CannotSeek(Box::new(body)),
+                CacheStatus::Uncacheable,
+            ))
         } else {
-            // no cache entry; do the request and make one.
-            if cache_mode == CacheMode::OnlyIfCached {
-                return Err(NotCached {}.into());
-            }
-            let mut response = do_request_ureq(&self.agent, &request)?;
-            let new_policy = CachePolicy::new(request, &response);
-            let (parts, body) = response.into_parts();
-            if !new_policy.is_storable() || maybe_handle.is_none() {
-                Ok(make_response(
-                    parts,
-                    ReadPlusMaybeSeek::CannotSeek(Box::new(body)),
-                    CacheStatus::Uncacheable,
-                ))
-            } else {
-                let new_body = fill_cache(&new_policy, body, maybe_handle.unwrap())?;
-                Ok(make_response(
-                    parts,
-                    ReadPlusMaybeSeek::CanSeek(Box::new(new_body)),
-                    CacheStatus::Miss,
-                ))
-            }
+            let new_body = fill_cache(&new_policy, body, maybe_handle.unwrap())?;
+            Ok(make_response(
+                parts,
+                ReadPlusMaybeSeek::CanSeek(Box::new(new_body)),
+                CacheStatus::Miss,
+            ))
         }
     }
 
@@ -290,10 +292,9 @@ impl HttpInner {
         } else {
             0
         };
-        let mut response;
         for attempt in 0..=max_redirects {
             let url = Url::parse(&request.uri().to_string())?;
-            response = self.one_request(&request, cache_mode)?;
+            let mut response = self.one_request(&request, cache_mode)?;
             if REDIRECT_STATUSES.contains(&response.status().as_u16()) {
                 if attempt < max_redirects {
                     if let Some(target) = response.headers().get("Location") {
@@ -309,9 +310,9 @@ impl HttpInner {
             // attach the actual URL to the response, so our caller knows where it came
             // from (e.g. to resolve relative links)
             response.extensions_mut().insert(url);
-            break;
+            return Ok(response);
         }
-        Ok(response)
+        unreachable!()
     }
 
     pub fn get_hashed(

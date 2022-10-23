@@ -59,14 +59,6 @@ the `{name}-{version}` part is fine because only one pybi can be
 installed into a given directory.) The `pybi-info/` directory contains
 at least the following files:
 
-* `.../METADATA`: In the same format as described in the current core
-  metadata spec, except that the following keys are forbidden because
-  they don't make sense:
-  
-  * `Requires-Dist`
-  * `Provides-Extra`
-  * `Requires-Python`
-
 * `.../PYBI`: metadata about the archive itself, in the same RFC822-ish
   format as `METADATA` and `WHEEL` files:
   
@@ -79,84 +71,65 @@ at least the following files:
 
 * `.../RECORD`: same as in wheels, except see the note about symlinks, below.
 
-* `.../pybi.json`: A JSON file. Example:
+* `.../METADATA`: In the same format as described in the current core
+  metadata spec, except that the following keys are forbidden because
+  they don't make sense:
+  
+  * `Requires-Dist`
+  * `Provides-Extra`
+  * `Requires-Python`
 
-  ```json
-  {
-      "markers_env": {
-          "implementation_name": "cpython",
-          "implementation_version": "3.9.5",
-          "os_name": "posix",
-          "platform_machine": "x86_64",
-          "platform_python_implementation": "CPython",
-          "platform_system": "Linux",
-          "python_full_version": "3.9.5",
-          "python_version": "3.9",
-          "sys_platform": "linux"
-      },
-      "tags": [
-          "cp39-cp39-PLATFORM",
-          "cp39-abi3-PLATFORM",
-          "cp39-none-PLATFORM",
-          "cp38-abi3-PLATFORM",
-          "cp37-abi3-PLATFORM",
-          "cp36-abi3-PLATFORM",
-          "cp35-abi3-PLATFORM",
-          "cp34-abi3-PLATFORM",
-          "cp33-abi3-PLATFORM",
-          "cp32-abi3-PLATFORM",
-          "py39-none-PLATFORM",
-          "py3-none-PLATFORM",
-          "py38-none-PLATFORM",
-          "py37-none-PLATFORM",
-          "py36-none-PLATFORM",
-          "py35-none-PLATFORM",
-          "py34-none-PLATFORM",
-          "py33-none-PLATFORM",
-          "py32-none-PLATFORM",
-          "py31-none-PLATFORM",
-          "py30-none-PLATFORM",
-          "py39-none-any",
-          "py3-none-any",
-          "py38-none-any",
-          "py37-none-any",
-          "py36-none-any",
-          "py35-none-any",
-          "py34-none-any",
-          "py33-none-any",
-          "py32-none-any",
-          "py31-none-any",
-          "py30-none-any"
-      ],
-      "paths": {
-          "data": ".",
-          "include": "include/python3.9",
-          "platinclude": "include/python3.9",
-          "platlib": "lib/python3.9/site-packages",
-          "platstdlib": "lib/python3.9",
-          "purelib": "lib/python3.9/site-packages",
-          "scripts": "bin",
-          "stdlib": "lib/python3.9"
-      },
-  }
-  ```
+  And also there are some new, required keys described below.
+  
+### Pybi-specific core metadata
 
-  [TODO: JSON is certainly nicer to work with than the METADATA
-  format, and historically it's just as easy to get any file in a
-  dist-info directory. But, now with [PEP
-  658](https://www.python.org/dev/peps/pep-0658/) and TUF coming,
-  METADATA has the substantial advantage that it will be cheap to
-  fetch + verify, without downloading the whole package. So maybe we
-  should rework this to put the pybi.json metadata into METADATA
-  instead? (If want to be lazy could even do `Pybi-Info: $JSON`. Or
-  a bit more aesthetically, `Pybi-Markers-Env: $JSON`, `Pybi-Paths:
-  $JSON`.)]
+Example of new `METADATA` fields:
 
-  More formally, it must be an object with the following keys:
+```
+Pybi-Environment-Markers: {"implementation_name": "cpython", "implementation_version": "3.10.8", "os_name": "posix", "platform_machine": "x86_64", "platform_system": "Linux", "python_full_version": "3.10.8", "platform_python_implementation": "CPython", "python_version": "3.10", "sys_platform": "linux"}
+Pybi-Paths: {"stdlib": "lib/python3.10", "platstdlib": "lib/python3.10", "purelib": "lib/python3.10/site-packages", "platlib": "lib/python3.10/site-packages", "include": "include/python3.10", "platinclude": "include/python3.10", "scripts": "bin", "data": "."}
+Pybi-Wheel-Tag: cp310-cp310-PLATFORM
+Pybi-Wheel-Tag: cp310-abi3-PLATFORM
+Pybi-Wheel-Tag: cp310-none-PLATFORM
+Pybi-Wheel-Tag: cp39-abi3-PLATFORM
+Pybi-Wheel-Tag: cp38-abi3-PLATFORM
+Pybi-Wheel-Tag: cp37-abi3-PLATFORM
+Pybi-Wheel-Tag: cp36-abi3-PLATFORM
+Pybi-Wheel-Tag: cp35-abi3-PLATFORM
+Pybi-Wheel-Tag: cp34-abi3-PLATFORM
+Pybi-Wheel-Tag: cp33-abi3-PLATFORM
+Pybi-Wheel-Tag: cp32-abi3-PLATFORM
+Pybi-Wheel-Tag: py310-none-PLATFORM
+Pybi-Wheel-Tag: py3-none-PLATFORM
+Pybi-Wheel-Tag: py39-none-PLATFORM
+Pybi-Wheel-Tag: py38-none-PLATFORM
+Pybi-Wheel-Tag: py37-none-PLATFORM
+Pybi-Wheel-Tag: py36-none-PLATFORM
+Pybi-Wheel-Tag: py35-none-PLATFORM
+Pybi-Wheel-Tag: py34-none-PLATFORM
+Pybi-Wheel-Tag: py33-none-PLATFORM
+Pybi-Wheel-Tag: py32-none-PLATFORM
+Pybi-Wheel-Tag: py31-none-PLATFORM
+Pybi-Wheel-Tag: py30-none-PLATFORM
+Pybi-Wheel-Tag: py310-none-any
+Pybi-Wheel-Tag: py3-none-any
+Pybi-Wheel-Tag: py39-none-any
+Pybi-Wheel-Tag: py38-none-any
+Pybi-Wheel-Tag: py37-none-any
+Pybi-Wheel-Tag: py36-none-any
+Pybi-Wheel-Tag: py35-none-any
+Pybi-Wheel-Tag: py34-none-any
+Pybi-Wheel-Tag: py33-none-any
+Pybi-Wheel-Tag: py32-none-any
+Pybi-Wheel-Tag: py31-none-any
+Pybi-Wheel-Tag: py30-none-any
+```
 
-  * `markers_env`: The value of all PEP 508 marker values that are
-    static across installs of this Pybi. (So e.g., it should have
-    `python_version`, but not `platform_version`, which on my system
+In more detail:
+
+* `Pybi-Environment-Markers`: The value of all PEP 508 environment marker values
+    that are static across installs of this Pybi, as a JSON dict. (So e.g., it
+    should have `python_version`, but not `platform_version`, which on my system
     looks like `#60-Ubuntu SMP Thu May 6 07:46:32 UTC 2021`).
     
     Rationale: In many cases, this should allow a resolver running on
@@ -180,8 +153,8 @@ at least the following files:
       portable to both x86-64 and arm64 systems? Not sure how viable it would be
       to get all the individual wheels to cooperate...
     
-    - Tell projects that are doing pinning to special-case universal2 pybis and
-      fill in the `platform_machine` themselves.
+    - Tell projects that are building tools to do pinning to special-case
+      universal2 pybis and fill in the `platform_machine` themselves.
 
     TODO: I think in posy I'm just going to refuse to support `platform_release`
     and `platform_version`. And maybe we should have the conversation about
@@ -192,11 +165,31 @@ at least the following files:
     (I guess deprecating `platform_machine` would also be a possibility to
     consider? It's slightly problematic for `universal2` wheels, and it's not
     clear how useful it is – does anyone actually make their requirements
-    conditional on the target architecture?)
+    conditional on the target architecture?) (edit: since writing the previous
+    paragraph I spent a bunch of time fixing requirements at work to use
+    `platform_machine`, because it turns out `psycopg2-binary` is broken on
+    linux/arm64, but not linux/x86-64. So... never mind, `platform_machine` is
+    useful :-). But an installer that can pick which pybi and wheels to install
+    can also figure out `platform_machine`.)
 
-  * [Provisional] `tags`: The wheel tags supported by this
-    interpreter, in preference order, except that the special platform
-    tag `PLATFORM` should replace any platform tags that depend on the
+  * `Pybi-Paths`: The install paths needed to install wheels (same keys as
+    `sysconfig.get_paths()`), as relative paths starting at the root of the zip
+    file, as a JSON dict.
+
+    It must be possible to invoke the Python interpreter by running
+    `{paths["scripts"]}/python`. If there are alternative interpreter
+    entry points (e.g. `pythonw` for Windows GUI apps), then they
+    should also be in that directory under their conventional names,
+    with no version number attached.
+
+    Rationale: `Pybi-Paths` and `Pybi-Wheel-Tag`s (see below) are together enough to
+    let an installer choose wheels and install them into an unpacked pybi
+    environment, without invoking Python. Besides, we need to write down the
+    interpreter location somewhere, so it's two birds with one stone.
+
+  * `Pybi-Wheel-Tag`: The wheel tags supported by this interpreter, in preference
+    order (most-preferred first, least-preferred last), except that the special
+    platform tag `PLATFORM` should replace any platform tags that depend on the
     final installation system.
 
     Discussion: It would be nice™ if installers could compute a pybi's
@@ -261,29 +254,16 @@ at least the following files:
       incantation that tells macOS to run a binary in x86-64 mode. So
       how the installer plans to invoke the pybi matters too!
 
-    So... it's not 100% clear if the `tags` field is useful, since
-    taking advantage of it seems to require hard-coded logic in the
-    pybi installer. But the cost of included it seems pretty low
-    (worst case, installers just ignore it), so I guess we'll include
-    it now with a [Provisional] marking?
+    So actually using `Pybi-Wheel-Tag` values is less trivial than it might
+    seem, and they're probably only useful with fairly sophisticated tooling.
+    But, smart pybi installers will already have to understand a lot of these
+    platform compatibility issues in order to select a working pybi, and for the
+    cross-platform pinning/environment building case, users can potentially
+    provide whatever information is needed to disambiguate exactly what platform
+    they're targeting. So, it's pretty useful.
 
-  * `paths`: The install paths needed to install wheels (same keys as
-    `sysconfig.get_paths()`), as relative paths starting at the root
-    of the zip file.
-
-    It must be possible to invoke the Python interpreter by running
-    `{paths["scripts"]}/python`. If there are alternative interpreter
-    entry points (e.g. `pythonw` for Windows GUI apps), then they
-    should also be in that directory under their conventional names,
-    with no version number attached.
-
-    Rationale: `tags` (if usable) and `paths` together are enough to
-    let an installer choose wheels and install them into an unpacked
-    pybi environment, without invoking Python. Besides, we need to
-    write down the interpreter location somewhere, so it's two birds
-    with one stone.
-
-  You can probably generate a valid `pybi.json` file by doing:
+  You can probably generate these values by running this script on the built
+  interpreter:
 
   ```python
   import packaging.markers
@@ -328,6 +308,9 @@ at least the following files:
   json.dump({"markers_env": markers_env, "tags": str_tags, "paths": paths}, sys.stdout)
   ```
   
+This emits a JSON dict on stdout with separate entries for each set of
+pybi-specific tags. 
+
 
 ## Symlinks
 

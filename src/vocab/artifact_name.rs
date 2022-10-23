@@ -230,7 +230,6 @@ impl TryFrom<&str> for WheelName {
 try_from_str_boilerplate!(WheelName);
 
 
-
 impl TryFrom<&str> for PybiName {
     type Error = anyhow::Error;
 
@@ -278,7 +277,7 @@ impl Display for PybiName {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, SerializeDisplay)]
 pub enum ArtifactName {
     Sdist(SdistName),
     Wheel(WheelName),

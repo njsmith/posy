@@ -1,7 +1,7 @@
 mod cache;
 mod package_db;
 mod prelude;
-mod resolve;
+//mod resolve;
 mod util;
 mod vocab;
 
@@ -48,34 +48,27 @@ const ENV: Lazy<HashMap<String, String>> = Lazy::new(|| {
 fn main() -> Result<()> {
     let opt = Opt::from_args();
 
-    println!("user agent: {}", net::user_agent());
+    //println!("user agent: {}", net::user_agent());
     println!("platform tags: {:?}", platform_tags::current_platform_tags());
 
-    let agent = net::new_agent();
+    let db = package_db::PackageDB::new(
+        &vec![Url::parse("https://pybi.vorpus.org")?, Url::parse("https://pypi.org/simple")?],
+        PROJECT_DIRS.cache_dir(),
+    );
 
-    let cache: cache::Cache = Default::default();
+    // let root_reqs = opt
+    //     .inputs
+    //     .into_iter()
+    //     .map(|s| s.try_into())
+    //     .collect::<Result<Vec<UserRequirement>>>()?;
 
-    let net = net::Net { agent, cache: cache.clone() };
-
-    let index = package_db::PackageIndex {
-        cache: cache.clone(),
-        net: net.clone(),
-        base_url: package_db::ROOT_URL.clone(),
-    };
-
-    let root_reqs = opt
-        .inputs
-        .into_iter()
-        .map(|s| s.try_into())
-        .collect::<Result<Vec<UserRequirement>>>()?;
-
-    let pins =
-        resolve::resolve(&root_reqs, &*ENV, &index, &HashMap::new(), &|_| false)?;
-    for pin in pins {
-        println!("{} v{}", pin.name.as_given(), pin.version);
-        println!("   requirements from {}", pin.expected_requirements_source);
-        //println!("   requirements: {:?}", pin.expected_requirements);
-    }
+    // let pins =
+    //     resolve::resolve(&root_reqs, &*ENV, &index, &HashMap::new(), &|_| false)?;
+    // for pin in pins {
+    //     println!("{} v{}", pin.name.as_given(), pin.version);
+    //     println!("   requirements from {}", pin.expected_requirements_source);
+    //     //println!("   requirements: {:?}", pin.expected_requirements);
+    // }
 
     Ok(())
 }

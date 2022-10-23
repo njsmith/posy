@@ -5,6 +5,7 @@ use super::rfc822ish::RFC822ish;
 /// There are more fields we could add here, but this should be good enough to
 /// get started.
 #[derive(Debug, Clone)]
+#[cfg_attr(test, derive(Serialize))]
 pub struct WheelCoreMetadata {
     pub metadata_version: Version,
     pub name: PackageName,
@@ -15,6 +16,7 @@ pub struct WheelCoreMetadata {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(test, derive(Serialize))]
 pub struct PybiCoreMetadata {
     pub metadata_version: Version,
     pub name: PackageName,
@@ -53,18 +55,19 @@ fn parse_common(input: &[u8]) -> Result<(Version, PackageName, Version, RFC822is
         anyhow::bail!("unsupported Metadata-Version {}", metadata_version);
     }
 
-    Ok((metadata_version,
+    Ok((
+        metadata_version,
         parsed.take_the("Name")?.parse()?,
         parsed.take_the("Version")?.try_into()?,
         parsed,
-        ))
+    ))
 }
 
 impl TryFrom<&[u8]> for WheelCoreMetadata {
     type Error = anyhow::Error;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let (metadata_version, name, version, parsed) = parse_common(value)?;
+        let (metadata_version, name, version, mut parsed) = parse_common(value)?;
 
         let mut requires_dist = Vec::new();
         for req_str in parsed.take_all("Requires-Dist").drain(..) {
@@ -96,15 +99,17 @@ impl TryFrom<&[u8]> for PybiCoreMetadata {
     type Error = anyhow::Error;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let (metadata_version, name, version, parsed) = parse_common(value)?;
+        let (metadata_version, name, version, mut parsed) = parse_common(value)?;
 
         Ok(PybiCoreMetadata {
             metadata_version,
             name,
             version,
-            markers_env: serde_json::from_str(&parsed.take_the("Markers-Env")?)?,
-            tags: parsed.take_all("tag"),
-            paths: serde_json::from_str(&parsed.take_the("Paths")?)?,
+            markers_env: serde_json::from_str(
+                &parsed.take_the("Pybi-Environment-Markers")?,
+            )?,
+            tags: parsed.take_all("Pybi-Tag"),
+            paths: serde_json::from_str(&parsed.take_the("Pybi-Paths")?)?,
         })
     }
 }
@@ -133,7 +138,20 @@ mod test {
 
         let metadata: WheelCoreMetadata = metadata_text.try_into().unwrap();
 
-        insta::assert_debug_snapshot!(metadata);
+        insta::assert_ron_snapshot!(metadata, @r###"
+        WheelCoreMetadata(
+          metadata_version: "2.1",
+          name: "trio",
+          version: "0.16.0",
+          requires_dist: [
+            "attrs >= 19.2.0",
+            "sortedcontainers",
+            "contextvars[foo] >= 2.1; python_version < \"3.7\"",
+          ],
+          requires_python: ">= 3.6",
+          extras: [],
+        )
+        "###);
     }
 
     #[test]
@@ -142,10 +160,10 @@ mod test {
             Metadata-Version: 2.1
             Name: CPython
             Version: 3.11.2
-            Markers-Env: {"implementation_name": "cpython", "os_name": "posix"}
-            Tag: cp311-cp311-linux_x86_64
-            Tag: py3-none-any
-            Paths: {"data": ".", "include": "include/python3.11"}
+            Pybi-Environment-Markers: {"implementation_name": "cpython", "os_name": "posix"}
+            pybi-tag: cp311-cp311-linux_x86_64
+            Pybi-tag: py3-none-any
+            Pybi-Paths: {"data": ".", "include": "include/python3.11"}
 
             This is CPython, the standard interpreter for the Python language...
         "#}
@@ -153,6 +171,30 @@ mod test {
 
         let metadata: PybiCoreMetadata = metadata_text.try_into().unwrap();
 
-        insta::assert_debug_snapshot!(metadata);
+        insta::assert_ron_snapshot!(metadata,
+            {
+                ".paths" => insta::sorted_redaction(),
+                ".markers_env" => insta::sorted_redaction(),
+            },
+                                    @r###"
+        PybiCoreMetadata(
+          metadata_version: "2.1",
+          name: "CPython",
+          version: "3.11.2",
+          markers_env: {
+            "implementation_name": "cpython",
+            "os_name": "posix",
+          },
+          tags: [
+            "cp311-cp311-linux_x86_64",
+            "py3-none-any",
+          ],
+          paths: {
+            "data": ".",
+            "include": "include/python3.11",
+          },
+        )
+        "###
+        );
     }
 }

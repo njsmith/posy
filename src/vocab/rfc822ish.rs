@@ -55,7 +55,7 @@ peg::parser! {
 
         rule field() -> (String, String)
             = n:field_name() field_separator() v:field_value()
-                { (n.to_owned(), v.to_owned()) }
+                { (n.to_ascii_lowercase(), v.to_owned()) }
 
         rule fields() -> Vec<(String, String)>
             = field() ** line_ending()
@@ -89,7 +89,7 @@ impl RFC822ish {
     }
 
     pub fn take_all(&mut self, key: &str) -> Vec<String> {
-        match self.fields.remove(key) {
+        match self.fields.remove(&key.to_ascii_lowercase()) {
             Some(vec) => vec,
             None => Vec::new(),
         }
@@ -138,7 +138,7 @@ mod test {
                 "#},
                 expected: indoc! {r#"
                    {
-                     "fields": { "A": ["b"], "C": ["d\n   continued"]},
+                     "fields": { "a": ["b"], "c": ["d\n   continued"]},
                      "body": "this is the\nbody!\n"
                    }
                 "#},
@@ -203,5 +203,17 @@ mod test {
             println!("{:?} -> {:?}", test_case, got);
             assert!(got.is_err());
         }
+    }
+
+    #[test]
+    fn test_case_insensitivity() {
+        let mut got = RFC822ish::parse(indoc! {r#"
+              UPPERCASE-FIELD: foo
+              lowercase-field: bar
+              MiXeD-cAsE: baz
+        "#}).unwrap();
+        assert_eq!(got.take_all("uppercase-field"), vec!["foo"]);
+        assert_eq!(got.maybe_take_the("LOWERCASE-field").unwrap().unwrap(), "bar");
+        assert_eq!(got.take_the("mixed-CASE").unwrap(), "baz");
     }
 }

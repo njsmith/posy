@@ -88,7 +88,7 @@ fn bytes_to_path_suffix(bytes: &[u8]) -> PathBuf {
     path
 }
 
-trait CacheKey {
+pub trait CacheKey {
     fn key(&self) -> PathBuf;
 }
 
@@ -119,16 +119,17 @@ fn lock(path: &Path, mode: LockMode) -> Result<File> {
     let mut basename = lock_path.file_name().unwrap().to_os_string();
     basename.push(".lock");
     lock_path.set_file_name(basename);
-    let mut open_options = fs::OpenOptions::new().append(true);
+    let mut open_options = fs::OpenOptions::new();
+    open_options.append(true);
     match mode {
         LockMode::Lock => {
             fs::create_dir_all(lock_path.parent().unwrap())
                 .context("Failed to create cache directory")?;
-            open_options = open_options.create(true);
+            open_options.create(true);
         },
         LockMode::IfExists => {},
     };
-    let mut lock = open_options.open(&lock_path)?;
+    let lock = open_options.open(&lock_path)?;
     lock.lock_exclusive()?;
     Ok(lock)
 }
@@ -168,14 +169,14 @@ pub struct CacheHandle {
     path: PathBuf,
 }
 
-struct LockedRead<'a> {
+pub struct LockedRead<'a> {
     f: File,
     _lifetime: PhantomData<&'a ()>,
 }
 
 impl<'a> Read for LockedRead<'a> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.f.read(&mut buf)
+        self.f.read(buf)
     }
 }
 
@@ -191,7 +192,7 @@ impl<'a> LockedRead<'a> {
     }
 }
 
-struct LockedWrite<'a> {
+pub struct LockedWrite<'a> {
     path: &'a Path,
     f: tempfile::NamedTempFile,
     _lifetime: PhantomData<&'a ()>,
@@ -199,7 +200,7 @@ struct LockedWrite<'a> {
 
 impl<'a> Write for LockedWrite<'a> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.f.write(&mut buf)
+        self.f.write(buf)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
@@ -215,7 +216,7 @@ impl<'a> Seek for LockedWrite<'a> {
 
 impl<'a> LockedWrite<'a> {
     pub fn commit(self) -> Result<LockedRead<'a>> {
-        self.f.as_file().sync_data();
+        self.f.as_file().sync_data()?;
         let mut f = self.f.persist(&self.path)?;
         f.rewind()?;
         Ok(LockedRead { f, _lifetime: self._lifetime })
