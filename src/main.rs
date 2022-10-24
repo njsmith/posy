@@ -13,7 +13,7 @@ mod test_util;
 
 use anyhow::Result;
 
-use crate::prelude::*;
+use crate::{prelude::*, brief::Brief, platform_tags::Platform};
 
 use structopt::StructOpt;
 
@@ -49,10 +49,10 @@ fn main() -> Result<()> {
     let opt = Opt::from_args();
 
     //println!("user agent: {}", net::user_agent());
-    println!(
-        "platform tags: {:?}",
-        platform_tags::current_platform_tags()
-    );
+    // println!(
+    //     "platform tags: {:?}",
+    //     platform_tags::current_platform_tags()
+    // );
 
     let db = package_db::PackageDB::new(
         &vec![
@@ -61,6 +61,13 @@ fn main() -> Result<()> {
         ],
         PROJECT_DIRS.cache_dir(),
     );
+    let brief = Brief {
+        python: "cpython_unofficial >= 3".try_into().unwrap(),
+        requires: vec!["trio".try_into().unwrap()],
+    };
+    let platform = Platform::from_core_tag("manylinux_2_17_x86_64");
+
+    brief.resolve(&db, &platform)?;
 
     // let root_reqs = opt
     //     .inputs

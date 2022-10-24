@@ -4,7 +4,7 @@ use pubgrub::report::DerivationTree;
 use pubgrub::report::Reporter;
 use pubgrub::solver::{Dependencies, DependencyConstraints};
 
-use crate::package_index::{Artifact, PackageIndex};
+use crate::package_db::{PackageDB, ArtifactInfo};
 use std::{borrow::Borrow, cell::RefCell, rc::Rc};
 
 pub fn resolve(

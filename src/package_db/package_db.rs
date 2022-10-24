@@ -46,6 +46,7 @@ impl PackageDB {
     }
 
     // always sorted from most recent to least recent
+    #[context("Looking up available files for {}", p.as_given())]
     pub fn available_artifacts(
         &self,
         p: &PackageName,
@@ -56,11 +57,13 @@ impl PackageDB {
             let mut packed: IndexMap<Version, Vec<ArtifactInfo>> = Default::default();
 
             for index_url in self.index_urls.iter() {
-                let pi = fetch_simple_api(
+                let maybe_pi = fetch_simple_api(
                     &self.http,
                     &index_url.join(&format!("/{}/", p.normalized()))?,
                 )?;
-                pack_by_version(pi, &mut packed)?;
+                if let Some(pi) = maybe_pi {
+                    pack_by_version(pi, &mut packed)?;
+                }
             }
 
             // sort into descending order by version

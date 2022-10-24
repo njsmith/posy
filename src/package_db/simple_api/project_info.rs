@@ -6,9 +6,18 @@ use indexmap::IndexMap;
 // body for a single project, whether using HTML (PEP 503) or JSON (PEP 691). But it's
 // modelled after PEP 691 API, and the serde stuff is all to prepare for that.
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Meta {
     pub version: String,
+}
+
+// Clients interacting with the simple API SHOULD introspect each response for the
+// repository version, and if that data does not exist MUST assume that it is version
+// 1.0.
+impl Default for Meta {
+    fn default() -> Self {
+        Self { version: "1.0".into() }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -238,12 +238,17 @@ pub fn parse_html<T>(url: &Url, content_type: &str, mut body: T) -> Result<Proje
 where
     T: Read,
 {
-    if content_type != "text/html" {
-        bail!(
+    let content_type: mime::Mime = content_type.parse()?;
+    match (
+        content_type.type_().as_str(),
+        content_type.subtype().as_str(),
+    ) {
+        ("text", "html") => {}
+        _ => bail!(
             "simple API page expected Content-Type: text/html, but got {}",
             content_type,
-        )
-    }
+        ),
+    };
 
     let sink = Sink {
         next_id: 1,

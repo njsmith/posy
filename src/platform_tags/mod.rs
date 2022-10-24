@@ -31,4 +31,4 @@ mod macos;
 use macos::core_platform_tags;
 
 mod expand;
-pub use expand::{current_platform_tags, expand_platform_tag};
+pub use expand::{current_platform_tags, expand_platform_tag, Platform};

@@ -84,11 +84,7 @@ pub struct Http(Rc<HttpInner>);
 
 impl Http {
     pub fn new(http_cache: CacheDir, hash_cache: CacheDir) -> Http {
-        Http(Rc::new(HttpInner {
-            agent: new_ureq_agent(),
-            http_cache,
-            hash_cache,
-        }))
+        Http(Rc::new(HttpInner::new(http_cache, hash_cache)))
     }
 
     pub fn request(
@@ -150,7 +146,7 @@ where
     R: Read,
 {
     let mut cache_writer = handle.begin()?;
-    serde_cbor::to_writer(&mut cache_writer, policy)?;
+    ciborium::ser::into_writer(policy, &mut cache_writer)?;
     let body_start = cache_writer.stream_position()?;
     std::io::copy(&mut body, &mut cache_writer)?;
     let body_end = cache_writer.stream_position()?;
@@ -163,7 +159,7 @@ fn read_cache<R>(mut f: R) -> Result<(CachePolicy, impl Read + Seek)>
 where
     R: Read + Seek,
 {
-    let policy: CachePolicy = serde_cbor::from_reader(&mut f)?;
+    let policy: CachePolicy = ciborium::de::from_reader(&mut f)?;
     let start = f.stream_position()?;
     let end = f.seek(SeekFrom::End(0))?;
     let mut body = SeekSlice::new(f, start, end)?;

@@ -90,6 +90,11 @@ fn parse_format_metadata_and_check_version(
     Ok(parsed)
 }
 
+#[context("extracting {name}")]
+fn slurp_from_zip<'a, T: Read + Seek>(z: &'a mut ZipArchive<T>, name: &str) -> Result<Vec<u8>> {
+    Ok(slurp(&mut z.by_name(name)?)?)
+}
+
 impl BinaryArtifact for Wheel {
     type Metadata = WheelCoreMetadata;
 
@@ -97,6 +102,7 @@ impl BinaryArtifact for Wheel {
         value.try_into()
     }
 
+    #[context("Reading metadata from {}", self.name)]
     fn metadata(&self) -> Result<(Vec<u8>, Self::Metadata)> {
         let mut z = self.z.borrow_mut();
 
@@ -124,7 +130,7 @@ impl BinaryArtifact for Wheel {
         }
 
         let wheel_path = format!("{dist_info}/WHEEL");
-        let wheel_metadata = slurp(&mut z.by_name(&wheel_path)?)?;
+        let wheel_metadata = slurp_from_zip(&mut z, &wheel_path)?;
 
         let mut parsed =
             parse_format_metadata_and_check_version(&wheel_metadata, "Wheel-Version")?;
@@ -142,7 +148,7 @@ impl BinaryArtifact for Wheel {
         drop(root_is_purelib);
 
         let metadata_path = format!("{dist_info}/METADATA");
-        let metadata_blob = slurp(&mut z.by_name(&metadata_path)?)?;
+        let metadata_blob = slurp_from_zip(&mut z, &metadata_path)?;
 
         let metadata: WheelCoreMetadata = metadata_blob.as_slice().try_into()?;
 
@@ -174,9 +180,9 @@ impl BinaryArtifact for Pybi {
 
     fn metadata(&self) -> Result<(Vec<u8>, Self::Metadata)> {
         let mut z = self.z.borrow_mut();
-        let format_metadata_blob = slurp(&mut z.by_name("pybi/PYBI")?)?;
+        let format_metadata_blob = slurp_from_zip(&mut z, "pybi-info/PYBI")?;
         parse_format_metadata_and_check_version(&format_metadata_blob, "Pybi-Version")?;
-        let metadata_blob = slurp(&mut z.by_name("pybi/METADATA")?)?;
+        let metadata_blob = slurp_from_zip(&mut z, "pybi-info/METADATA")?;
         let metadata: PybiCoreMetadata = metadata_blob.as_slice().try_into()?;
         if metadata.name != self.name.distribution {
             bail!(
