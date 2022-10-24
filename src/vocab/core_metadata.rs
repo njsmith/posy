@@ -21,7 +21,7 @@ pub struct PybiCoreMetadata {
     pub metadata_version: Version,
     pub name: PackageName,
     pub version: Version,
-    pub markers_env: HashMap<String, String>,
+    pub environment_marker_variables: HashMap<String, String>,
     pub tags: Vec<String>,
     pub paths: HashMap<String, String>,
 }
@@ -105,8 +105,8 @@ impl TryFrom<&[u8]> for PybiCoreMetadata {
             metadata_version,
             name,
             version,
-            markers_env: serde_json::from_str(
-                &parsed.take_the("Pybi-Environment-Markers")?,
+            environment_marker_variables: serde_json::from_str(
+                &parsed.take_the("Pybi-Environment-Marker-Variables")?,
             )?,
             tags: parsed.take_all("Pybi-Tag"),
             paths: serde_json::from_str(&parsed.take_the("Pybi-Paths")?)?,

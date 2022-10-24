@@ -87,8 +87,10 @@ impl PackageDB {
     fn put_metadata_in_cache(&self, ai: &ArtifactInfo, blob: &[u8]) -> Result<()> {
         if let Some(hash) = &ai.hash {
             let handle = self.metadata_cache.get(hash)?;
-            handle.begin()?.write_all(&blob)?;
-        }
+            let mut writer = handle.begin()?;
+            writer.write_all(&blob)?;
+            writer.commit()?;
+    }
         Ok(())
     }
 

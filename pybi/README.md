@@ -86,7 +86,7 @@ at least the following files:
 Example of new `METADATA` fields:
 
 ```
-Pybi-Environment-Markers: {"implementation_name": "cpython", "implementation_version": "3.10.8", "os_name": "posix", "platform_machine": "x86_64", "platform_system": "Linux", "python_full_version": "3.10.8", "platform_python_implementation": "CPython", "python_version": "3.10", "sys_platform": "linux"}
+Pybi-Environment-Marker-Variables: {"implementation_name": "cpython", "implementation_version": "3.10.8", "os_name": "posix", "platform_machine": "x86_64", "platform_system": "Linux", "python_full_version": "3.10.8", "platform_python_implementation": "CPython", "python_version": "3.10", "sys_platform": "linux"}
 Pybi-Paths: {"stdlib": "lib/python3.10", "platstdlib": "lib/python3.10", "purelib": "lib/python3.10/site-packages", "platlib": "lib/python3.10/site-packages", "include": "include/python3.10", "platinclude": "include/python3.10", "scripts": "bin", "data": "."}
 Pybi-Wheel-Tag: cp310-cp310-PLATFORM
 Pybi-Wheel-Tag: cp310-abi3-PLATFORM
@@ -127,186 +127,186 @@ Pybi-Wheel-Tag: py30-none-any
 
 In more detail:
 
-* `Pybi-Environment-Markers`: The value of all PEP 508 environment marker values
-    that are static across installs of this Pybi, as a JSON dict. (So e.g., it
-    should have `python_version`, but not `platform_version`, which on my system
-    looks like `#60-Ubuntu SMP Thu May 6 07:46:32 UTC 2021`).
+* `Pybi-Environment-Marker-Variables`: The value of all PEP 508 environment
+  marker variables that are static across installs of this Pybi, as a JSON dict.
+  (So e.g., it should have `python_version`, but not `platform_version`, which
+  on my system looks like `#60-Ubuntu SMP Thu May 6 07:46:32 UTC 2021`).
     
-    Rationale: In many cases, this should allow a resolver running on
-    Linux to compute package pins for a Python environment on Windows,
-    or vice-versa, so long as the resolver has access to the target
-    platform's .pybi file. (Note that Requires-Python constraints can
-    be checked by using the `python_full_version` value.)
+  Rationale: In many cases, this should allow a resolver running on
+  Linux to compute package pins for a Python environment on Windows,
+  or vice-versa, so long as the resolver has access to the target
+  platform's .pybi file. (Note that Requires-Python constraints can
+  be checked by using the `python_full_version` value.)
 
-    The markers are also just generally useful information to have
-    accessible. For example, if you have a `pypy3-7.3.2` pybi, and you
-    want to know what version of the Python language that supports,
-    then that's recorded in the `python_version` marker.
+  The markers are also just generally useful information to have
+  accessible. For example, if you have a `pypy3-7.3.2` pybi, and you
+  want to know what version of the Python language that supports,
+  then that's recorded in the `python_version` marker.
 
-    TODO: what to do about macOS universal2 pybis, where `platform_machine`
-    depends on which half of the fat binary you're using? Some options:
-    
-    - Don't have fat pybis; just have a separate pybi for x86-64 and arm64.
-      Works okay for automated tooling I guess? What can you do what a fat
-      binary that you can't with individual binaries - maybe a sufficiently
-      clever packager could create an entire universal2 environment, that's
-      portable to both x86-64 and arm64 systems? Not sure how viable it would be
-      to get all the individual wheels to cooperate...
-    
-    - Tell projects that are building tools to do pinning to special-case
-      universal2 pybis and fill in the `platform_machine` themselves.
+  TODO: what to do about macOS universal2 pybis, where `platform_machine`
+  depends on which half of the fat binary you're using? Some options:
 
-    TODO: I think in posy I'm just going to refuse to support `platform_release`
-    and `platform_version`. And maybe we should have the conversation about
-    whether they should be deprecated officially, in general? They're the only
-    two markers that can't be reasonably treated as static, and I can't figure
-    out any way that anyone could actually use them for anything useful anyway.
+  - Don't have fat pybis; just have a separate pybi for x86-64 and arm64.
+    Works okay for automated tooling I guess? What can you do what a fat
+    binary that you can't with individual binaries - maybe a sufficiently
+    clever packager could create an entire universal2 environment, that's
+    portable to both x86-64 and arm64 systems? Not sure how viable it would be
+    to get all the individual wheels to cooperate...
 
-    (I guess deprecating `platform_machine` would also be a possibility to
-    consider? It's slightly problematic for `universal2` wheels, and it's not
-    clear how useful it is – does anyone actually make their requirements
-    conditional on the target architecture?) (edit: since writing the previous
-    paragraph I spent a bunch of time fixing requirements at work to use
-    `platform_machine`, because it turns out `psycopg2-binary` is broken on
-    linux/arm64, but not linux/x86-64. So... never mind, `platform_machine` is
-    useful :-). But an installer that can pick which pybi and wheels to install
-    can also figure out `platform_machine`.)
+  - Tell projects that are building tools to do pinning to special-case
+    universal2 pybis and fill in the `platform_machine` themselves.
 
-  * `Pybi-Paths`: The install paths needed to install wheels (same keys as
-    `sysconfig.get_paths()`), as relative paths starting at the root of the zip
-    file, as a JSON dict.
+  TODO: I think in posy I'm just going to refuse to support `platform_release`
+  and `platform_version`. And maybe we should have the conversation about
+  whether they should be deprecated officially, in general? They're the only
+  two markers that can't be reasonably treated as static, and I can't figure
+  out any way that anyone could actually use them for anything useful anyway.
 
-    It must be possible to invoke the Python interpreter by running
-    `{paths["scripts"]}/python`. If there are alternative interpreter
-    entry points (e.g. `pythonw` for Windows GUI apps), then they
-    should also be in that directory under their conventional names,
-    with no version number attached.
+  (I guess deprecating `platform_machine` would also be a possibility to
+  consider? It's slightly problematic for `universal2` wheels, and it's not
+  clear how useful it is – does anyone actually make their requirements
+  conditional on the target architecture?) (edit: since writing the previous
+  paragraph I spent a bunch of time fixing requirements at work to use
+  `platform_machine`, because it turns out `psycopg2-binary` is broken on
+  linux/arm64, but not linux/x86-64. So... never mind, `platform_machine` is
+  useful :-). But an installer that can pick which pybi and wheels to install
+  can also figure out `platform_machine`.)
 
-    Rationale: `Pybi-Paths` and `Pybi-Wheel-Tag`s (see below) are together enough to
-    let an installer choose wheels and install them into an unpacked pybi
-    environment, without invoking Python. Besides, we need to write down the
-    interpreter location somewhere, so it's two birds with one stone.
+* `Pybi-Paths`: The install paths needed to install wheels (same keys as
+  `sysconfig.get_paths()`), as relative paths starting at the root of the zip
+  file, as a JSON dict.
 
-  * `Pybi-Wheel-Tag`: The wheel tags supported by this interpreter, in preference
-    order (most-preferred first, least-preferred last), except that the special
-    platform tag `PLATFORM` should replace any platform tags that depend on the
-    final installation system.
+  It must be possible to invoke the Python interpreter by running
+  `{paths["scripts"]}/python`. If there are alternative interpreter
+  entry points (e.g. `pythonw` for Windows GUI apps), then they
+  should also be in that directory under their conventional names,
+  with no version number attached.
 
-    Discussion: It would be nice™ if installers could compute a pybi's
-    corresponding wheel tags ahead of time, so that they could install
-    wheels into the unpacked pybi without needing to actually invoke
-    the python interpreter to query its tags – both for efficiency and
-    to allow for more exotic use cases like setting up a Windows
-    environment from a Linux host.
+  Rationale: `Pybi-Paths` and `Pybi-Wheel-Tag`s (see below) are together enough to
+  let an installer choose wheels and install them into an unpacked pybi
+  environment, without invoking Python. Besides, we need to write down the
+  interpreter location somewhere, so it's two birds with one stone.
 
-    But unfortunately, it's impossible to compute the full set of
-    platform tags supported by a Python installation ahead of time,
-    because they can depend on the final system:
-    
-    - A pybi tagged `manylinux_2_12_x86_64` can always use wheels
-      tagged as `manylinux_2_12_x86_64`. It also *might* be able to
-      use wheels tagged `manylinux_2_17_x86_64`, but only if the final
-      installation system has glibc 2.17+.
-      
-    - A pybi tagged `macosx_11_0_universal2` (= x86-64 + arm64 support
-      in the same binary) might be able to use wheels tagged as
-      `macosx_11_0_arm64`, but only if it's installed on an "Apple
-      Silicon" machine.
+* `Pybi-Wheel-Tag`: The wheel tags supported by this interpreter, in preference
+  order (most-preferred first, least-preferred last), except that the special
+  platform tag `PLATFORM` should replace any platform tags that depend on the
+  final installation system.
 
-    In these two cases, an installation tool can still work out the
-    appropriate set of wheel tags by computing the local platform
-    tags, taking the wheel tag templates from `pybi.json`, and
-    swapping in the actual supported platforms in place of the magic
-    `PLATFORM` string. Since pybi installers already need to compute
-    platform tags to pick a pybi in the first place, this is pretty
-    simple.
+  Discussion: It would be nice™ if installers could compute a pybi's
+  corresponding wheel tags ahead of time, so that they could install
+  wheels into the unpacked pybi without needing to actually invoke
+  the python interpreter to query its tags – both for efficiency and
+  to allow for more exotic use cases like setting up a Windows
+  environment from a Linux host.
 
-    However, there are other cases that are even more complicated:
+  But unfortunately, it's impossible to compute the full set of
+  platform tags supported by a Python installation ahead of time,
+  because they can depend on the final system:
 
-    - You can (usually) run both 32- and 64-bit apps on 64-bit
-      Windows. So a pybi installer might compute the set of allowable
-      pybi tags as [`win32`, `win_amd64`]. But you can't then just
-      take that set and swap it into the pybi's wheel tag template or
-      you get nonsense:
-      
-      ```
-        [
-          "cp39-cp39-win32",
-          "cp39-cp39-win_amd64",
-          "cp39-abi3-win32",
-          "cp39-abi3-win_amd64",
-          ...
-        ]
-      ```
+  - A pybi tagged `manylinux_2_12_x86_64` can always use wheels
+    tagged as `manylinux_2_12_x86_64`. It also *might* be able to
+    use wheels tagged `manylinux_2_17_x86_64`, but only if the final
+    installation system has glibc 2.17+.
 
-      To handle this, the installer needs to somehow understand that a
-      `manylinux_2_12_x86_64` pybi can use a `manylinux_2_17_x86_64`
-      wheel, even though those tags are different, but a `win32` pybi
-      *can't* use a `win_amd64` wheel, because those tags are
-      different.
+  - A pybi tagged `macosx_11_0_universal2` (= x86-64 + arm64 support
+    in the same binary) might be able to use wheels tagged as
+    `macosx_11_0_arm64`, but only if it's installed on an "Apple
+    Silicon" machine.
 
-      And similar issues arise for other 64-bit OSes.
+  In these two cases, an installation tool can still work out the
+  appropriate set of wheel tags by computing the local platform
+  tags, taking the wheel tag templates from `pybi.json`, and
+  swapping in the actual supported platforms in place of the magic
+  `PLATFORM` string. Since pybi installers already need to compute
+  platform tags to pick a pybi in the first place, this is pretty
+  simple.
 
-    - A pybi tagged `macosx_11_0_universal2` might be able to use
-      wheels tagged as `macosx_11_0_x86_64`, but only if it's
-      installed on an x86-64 machine *or* it's installed on an ARM
-      machine *and* the interpreter is invoked with the magic
-      incantation that tells macOS to run a binary in x86-64 mode. So
-      how the installer plans to invoke the pybi matters too!
+  However, there are other cases that are even more complicated:
 
-    So actually using `Pybi-Wheel-Tag` values is less trivial than it might
-    seem, and they're probably only useful with fairly sophisticated tooling.
-    But, smart pybi installers will already have to understand a lot of these
-    platform compatibility issues in order to select a working pybi, and for the
-    cross-platform pinning/environment building case, users can potentially
-    provide whatever information is needed to disambiguate exactly what platform
-    they're targeting. So, it's pretty useful.
+  - You can (usually) run both 32- and 64-bit apps on 64-bit
+    Windows. So a pybi installer might compute the set of allowable
+    pybi tags as [`win32`, `win_amd64`]. But you can't then just
+    take that set and swap it into the pybi's wheel tag template or
+    you get nonsense:
 
-  You can probably generate these values by running this script on the built
-  interpreter:
+    ```
+      [
+        "cp39-cp39-win32",
+        "cp39-cp39-win_amd64",
+        "cp39-abi3-win32",
+        "cp39-abi3-win_amd64",
+        ...
+      ]
+    ```
 
-  ```python
-  import packaging.markers
-  import packaging.tags
-  import sysconfig
-  import os.path
-  import json
-  import sys
+    To handle this, the installer needs to somehow understand that a
+    `manylinux_2_12_x86_64` pybi can use a `manylinux_2_17_x86_64`
+    wheel, even though those tags are different, but a `win32` pybi
+    *can't* use a `win_amd64` wheel, because those tags are
+    different.
 
-  markers_env = packaging.markers.default_environment()
-  # Delete any keys that depend on the final installation
-  del markers_env["platform_release"]
-  del markers_env["platform_version"]
-  # Darwin binaries are often multi-arch, so play it safe and
-  # delete the architecture marker. (Better would be to only
-  # do this if the pybi actually is multi-arch.)
-  if markers_env["sys_platform"] == "darwin":
-      del markers_env["platform_machine"]
+    And similar issues arise for other 64-bit OSes.
 
-  # Copied and tweaked version of packaging.tags.sys_tags
-  tags = []
-  interp_name = packaging.tags.interpreter_name()
-  if interp_name == "cp":
-      tags += list(packaging.tags.cpython_tags(platforms=["xyzzy"]))
-  else:
-      tags += list(packaging.tags.generic_tags(platforms=["xyzzy"]))
+  - A pybi tagged `macosx_11_0_universal2` might be able to use
+    wheels tagged as `macosx_11_0_x86_64`, but only if it's
+    installed on an x86-64 machine *or* it's installed on an ARM
+    machine *and* the interpreter is invoked with the magic
+    incantation that tells macOS to run a binary in x86-64 mode. So
+    how the installer plans to invoke the pybi matters too!
 
-  tags += list(packaging.tags.compatible_tags(platforms=["xyzzy"]))
+  So actually using `Pybi-Wheel-Tag` values is less trivial than it might
+  seem, and they're probably only useful with fairly sophisticated tooling.
+  But, smart pybi installers will already have to understand a lot of these
+  platform compatibility issues in order to select a working pybi, and for the
+  cross-platform pinning/environment building case, users can potentially
+  provide whatever information is needed to disambiguate exactly what platform
+  they're targeting. So, it's pretty useful.
 
-  # Gross hack: packaging.tags normalizes platforms by lowercasing them,
-  # so we generate the tags with a unique string and then replace it
-  # with our special uppercase placeholder.
-  str_tags = [str(t).replace("xyzzy", "PLATFORM") for t in tags]
+You can probably generate these values by running this script on the built
+interpreter:
 
-  (base_path,) = sysconfig.get_config_vars("installed_base")
-  # For some reason, macOS framework builds report their
-  # installed_base as a directory deep inside the framework.
-  while "Python.framework" in base_path:
-      base_path = os.path.dirname(base_path)
-  paths = {key: os.path.relpath(path, base_path) for (key, path) in sysconfig.get_paths().items()}
+```python
+import packaging.markers
+import packaging.tags
+import sysconfig
+import os.path
+import json
+import sys
 
-  json.dump({"markers_env": markers_env, "tags": str_tags, "paths": paths}, sys.stdout)
-  ```
+marker_vars = packaging.markers.default_environment()
+# Delete any keys that depend on the final installation
+del marker_vars["platform_release"]
+del marker_vars["platform_version"]
+# Darwin binaries are often multi-arch, so play it safe and
+# delete the architecture marker. (Better would be to only
+# do this if the pybi actually is multi-arch.)
+if marker_vars["sys_platform"] == "darwin":
+    del marker_vars["platform_machine"]
+
+# Copied and tweaked version of packaging.tags.sys_tags
+tags = []
+interp_name = packaging.tags.interpreter_name()
+if interp_name == "cp":
+    tags += list(packaging.tags.cpython_tags(platforms=["xyzzy"]))
+else:
+    tags += list(packaging.tags.generic_tags(platforms=["xyzzy"]))
+
+tags += list(packaging.tags.compatible_tags(platforms=["xyzzy"]))
+
+# Gross hack: packaging.tags normalizes platforms by lowercasing them,
+# so we generate the tags with a unique string and then replace it
+# with our special uppercase placeholder.
+str_tags = [str(t).replace("xyzzy", "PLATFORM") for t in tags]
+
+(base_path,) = sysconfig.get_config_vars("installed_base")
+# For some reason, macOS framework builds report their
+# installed_base as a directory deep inside the framework.
+while "Python.framework" in base_path:
+    base_path = os.path.dirname(base_path)
+paths = {key: os.path.relpath(path, base_path) for (key, path) in sysconfig.get_paths().items()}
+
+json.dump({"marker_vars": marker_vars, "tags": str_tags, "paths": paths}, sys.stdout)
+```
   
 This emits a JSON dict on stdout with separate entries for each set of
 pybi-specific tags. 
