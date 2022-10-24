@@ -91,11 +91,11 @@ peg::parser! {
         rule marker_var(parse_extra: ParseExtra) -> marker::Value
             = _ v:(env_var(parse_extra) / python_str()) { v }
 
-        rule marker_expr(parse_extra: ParseExtra) -> marker::Expr
+        rule marker_expr(parse_extra: ParseExtra) -> marker::EnvMarkerExpr
             = _ "(" m:marker(parse_extra) _ ")" { m }
               / lhs:marker_var(parse_extra) op:marker_op() rhs:marker_var(parse_extra)
               {
-                  use marker::Expr::Operator;
+                  use marker::EnvMarkerExpr::Operator;
                   use CompareOp::*;
                   use marker::Op::*;
                   match &op[..] {
@@ -112,20 +112,20 @@ peg::parser! {
                   }
               }
 
-        rule marker_and(parse_extra: ParseExtra) -> marker::Expr
+        rule marker_and(parse_extra: ParseExtra) -> marker::EnvMarkerExpr
             = lhs:marker_expr(parse_extra) _ "and" _ rhs:marker_expr(parse_extra)
-                 { marker::Expr::And(Box::new(lhs), Box::new(rhs)) }
+                 { marker::EnvMarkerExpr::And(Box::new(lhs), Box::new(rhs)) }
               / marker_expr(parse_extra)
 
-        rule marker_or(parse_extra: ParseExtra) -> marker::Expr
+        rule marker_or(parse_extra: ParseExtra) -> marker::EnvMarkerExpr
             = lhs:marker_and(parse_extra) _ "or" _ rhs:marker_and(parse_extra)
-                 { marker::Expr::Or(Box::new(lhs), Box::new(rhs)) }
+                 { marker::EnvMarkerExpr::Or(Box::new(lhs), Box::new(rhs)) }
               / marker_and(parse_extra)
 
-        rule marker(parse_extra: ParseExtra) -> marker::Expr
+        rule marker(parse_extra: ParseExtra) -> marker::EnvMarkerExpr
             = marker_or(parse_extra)
 
-        rule quoted_marker(parse_extra: ParseExtra) -> marker::Expr
+        rule quoted_marker(parse_extra: ParseExtra) -> marker::EnvMarkerExpr
             = ";" _ m:marker(parse_extra) { m }
 
         rule identifier() -> &'input str

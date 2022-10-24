@@ -59,9 +59,9 @@ pub mod marker {
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
-    pub enum Expr {
-        And(Box<Expr>, Box<Expr>),
-        Or(Box<Expr>, Box<Expr>),
+    pub enum EnvMarkerExpr {
+        And(Box<EnvMarkerExpr>, Box<EnvMarkerExpr>),
+        Or(Box<EnvMarkerExpr>, Box<EnvMarkerExpr>),
         Operator { op: Op, lhs: Value, rhs: Value },
     }
 
@@ -98,12 +98,12 @@ pub mod marker {
         }
     }
 
-    impl Expr {
+    impl EnvMarkerExpr {
         pub fn eval(&self, env: &dyn Env) -> Result<bool> {
             Ok(match self {
-                Expr::And(lhs, rhs) => lhs.eval(env)? && rhs.eval(env)?,
-                Expr::Or(lhs, rhs) => lhs.eval(env)? || rhs.eval(env)?,
-                Expr::Operator { op, lhs, rhs } => {
+                EnvMarkerExpr::And(lhs, rhs) => lhs.eval(env)? && rhs.eval(env)?,
+                EnvMarkerExpr::Or(lhs, rhs) => lhs.eval(env)? || rhs.eval(env)?,
+                EnvMarkerExpr::Operator { op, lhs, rhs } => {
                     let lhs_val = lhs.eval(env)?;
                     let rhs_val = rhs.eval(env)?;
                     match op {
@@ -140,13 +140,13 @@ pub mod marker {
         }
     }
 
-    impl Display for Expr {
+    impl Display for EnvMarkerExpr {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
                 // XX maybe it would be nice to reduce redundant parentheses here?
-                Expr::And(lhs, rhs) => write!(f, "({} and {})", lhs, rhs)?,
-                Expr::Or(lhs, rhs) => write!(f, "({} or {})", lhs, rhs)?,
-                Expr::Operator { op, lhs, rhs } => write!(
+                EnvMarkerExpr::And(lhs, rhs) => write!(f, "({} and {})", lhs, rhs)?,
+                EnvMarkerExpr::Or(lhs, rhs) => write!(f, "({} or {})", lhs, rhs)?,
+                EnvMarkerExpr::Operator { op, lhs, rhs } => write!(
                     f,
                     "{} {} {}",
                     lhs,
@@ -174,7 +174,7 @@ pub struct Requirement {
     pub name: PackageName,
     pub extras: Vec<Extra>,
     pub specifiers: Specifiers,
-    pub env_marker: Option<marker::Expr>,
+    pub env_marker: Option<marker::EnvMarkerExpr>,
 }
 
 impl Requirement {
