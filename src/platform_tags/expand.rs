@@ -2,24 +2,44 @@ use std::borrow::Cow;
 
 use crate::prelude::*;
 
-static LINUX_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^(many|musl)linux_([0-9]+)_([0-9]+)_([a-zA-Z0-9_]*)$").unwrap());
-
-static MACOSX_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^macosx_([0-9]+)_([0-9]+)_([a-zA-Z0-9_]*)$").unwrap());
+static LINUX_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(many|musl)linux_([0-9]+)_([0-9]+)_([a-zA-Z0-9_]*)$").unwrap()
+});
 
 static LEGACY_MANYLINUX_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^manylinux(2014|2010|1)_([a-zA-Z0-9_]*)").unwrap());
+
+static MACOSX_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^macosx_([0-9]+)_([0-9]+)_([a-zA-Z0-9_]*)$").unwrap());
 
 #[derive(Debug, Clone)]
 pub struct Platform {
     // smaller number = more preferred
     tag_map: HashMap<String, i32>,
+    // earlier = more preferred
+    tags: Vec<String>,
+    counter: i32,
 }
 
 impl Platform {
     pub fn from_core_tag(tag: &str) -> Platform {
         Platform::from_core_tags(&[tag])
+    }
+
+    fn empty() -> Platform {
+        Platform {
+            tag_map: Default::default(),
+            tags: Default::default(),
+            counter: 0,
+        }
+    }
+
+    fn push(&mut self, tag: String) {
+        if !self.tag_map.contains_key(&tag) {
+            self.tag_map.insert(tag.clone(), self.counter);
+            self.tags.push(tag);
+            self.counter -= 1;
+        }
     }
 
     // assumes core tags are sorted from most-preferred to least-preferred
@@ -28,15 +48,13 @@ impl Platform {
         T: IntoIterator<Item = S>,
         S: AsRef<str> + 'a,
     {
-        let mut tag_map = HashMap::<String, i32>::new();
-        let mut counter = 0;
+        let mut p = Platform::empty();
         for tag in tags.into_iter() {
             for expansion in expand_platform_tag(tag.as_ref()) {
-                tag_map.entry(expansion).or_insert(counter);
-                counter -= 1;
+                p.push(expansion)
             }
         }
-        Platform { tag_map }
+        p
     }
 
     pub fn current_platform() -> Result<Platform> {
@@ -46,6 +64,101 @@ impl Platform {
     pub fn compatibility(&self, tag: &str) -> Option<i32> {
         self.tag_map.get(tag).map(|score| *score)
     }
+
+    // create a new Platform that includes a subset of tags from the current platform,
+    // and which are all in the same compat group, and also all in the given pybi's
+    // compat group.
+    //
+    // strategy: make a set of preliminary groups based on the pybi. then look at our
+    // tags from best -> worst, and use those to restrict the set of groups until
+    // there's just one left. (b/c of iteration order, it will be the most-preferred
+    // group for our Platform.) that's our group; restrict ourselves to the subset of
+    // tags that match that group and return it as a new Platform.
+    pub fn restrict(&self, pybi_arch_tags: &Vec<String>) -> Result<Platform> {
+        let mut groups = HashSet::<String>::new();
+        for tag in pybi_arch_tags.iter() {
+            groups.extend(compat_groups(tag)?);
+        }
+        assert!(!groups.is_empty());
+        for tag in &self.tags {
+            if groups.len() == 1 {
+                break;
+            }
+            let tag_groups: HashSet<String> = compat_groups(tag)?.into_iter().collect();
+            groups.retain(|group| tag_groups.contains(group));
+        }
+        assert!(groups.len() == 1);
+        let the_group = groups.into_iter().next().unwrap();
+        let mut p = Platform::empty();
+        for tag in &self.tags {
+            if compat_groups(tag)?.contains(&the_group) {
+                p.push(tag.to_owned());
+            }
+        }
+        Ok(p)
+    }
+
+    pub fn infer_platform_machine(&self) -> Result<&'static str> {
+        let mut possible = HashSet::<&'static str>::new();
+        for tag in &self.tags {
+            for compat_group in compat_groups(&tag).unwrap_or(vec![]) {
+                match compat_group.as_str() {
+                    "macos-x86_64" => {
+                        possible.insert("x86_64");
+                    },
+                    "macos-arm64" => {
+                        possible.insert("arm64");
+                    },
+                    _ => (),
+                }
+            }
+        }
+        if possible.len() > 1 {
+            bail!("macOS platform selected, but can't tell if you want arm64 or x86-64");
+        }
+        if possible.len() < 1 {
+            bail!("can't infer platform_machine for this platform/pybi");
+        }
+        Ok(possible.iter().next().unwrap())
+    }
+}
+
+// the goal here is to figure out which platform tags can possibly co-exist within a
+// single process. E.g. all manylinux_*_x86_64 tags can potentially co-exist, but
+// manylinux+musllinux can't co-exist, and neither can x86_64 + arm64. To model this, we
+// say a "compat group" is an ad hoc string like "manylinux-x86_64", that only includes
+// the parts that necessarily determine compatibility.
+//
+// It's a Vec because some tags, like macosx_*_universal2, are ambiguous: it could fit
+// in a process with macosx-x86_64, or macosx-arm64.
+fn compat_groups(tag: &str) -> Result<Vec<String>> {
+    // Windows tags are all unique
+    if tag.starts_with("win") {
+        return Ok(vec![tag.into()]);
+    }
+    if let Some(captures) = MACOSX_RE.captures(tag) {
+        let arch = captures.get(3).unwrap().as_str();
+        let compat_arches = match arch {
+            "x86_64" | "intel" | "fat64" | "fat3" | "universal" => vec!["x86_64"],
+            "arm64" => vec!["arm64"],
+            "universal2" => vec!["x86_64", "arm64"],
+            _ => bail!("Unrecognized macOS architecture {arch}"),
+        };
+        return Ok(compat_arches
+            .into_iter()
+            .map(|a| format!("macos-{a}"))
+            .collect());
+    }
+    if let Some(captures) = LINUX_RE.captures(tag) {
+        let variant = captures.get(1).unwrap().as_str();
+        let arch = captures.get(4).unwrap().as_str();
+        return Ok(vec![format!("{variant}linux-{arch}")]);
+    }
+    if let Some(captures) = LEGACY_MANYLINUX_RE.captures(tag) {
+        let arch = captures.get(2).unwrap().as_str();
+        return Ok(vec![format!("manylinux-{arch}")]);
+    }
+    bail!("unsupported platform tag {tag}");
 }
 
 // Given a platform tag like "manylinux_2_17_x86_64" or "win32", returns a vector of
@@ -57,14 +170,14 @@ pub fn expand_platform_tag(tag: &str) -> Vec<String> {
     let mut tag = Cow::Borrowed(tag);
     if let Some(captures) = LEGACY_MANYLINUX_RE.captures(tag.as_ref()) {
         let which = captures.get(1).unwrap().as_str();
-        let platform = captures.get(2).unwrap().as_str();
+        let arch = captures.get(2).unwrap().as_str();
         let new_prefix = match which {
             "2014" => "manylinux_2_17",
             "2010" => "manylinux_2_12",
             "1" => "manylinux_2_5",
             _ => unreachable!(), // enforced by the regex pattern
         };
-        tag = Cow::Owned(format!("{}_{}", new_prefix, platform));
+        tag = Cow::Owned(format!("{}_{}", new_prefix, arch));
     }
 
     if let Some(captures) = LINUX_RE.captures(tag.as_ref()) {
@@ -126,7 +239,7 @@ pub fn expand_platform_tag(tag: &str) -> Vec<String> {
                 .flat_map(|(major, minor)| {
                     arches
                         .iter()
-                        .map(move |arch| format!("macos_{}_{}_{}", major, minor, arch))
+                        .map(move |arch| format!("macosx_{}_{}_{}", major, minor, arch))
                 })
                 .collect();
         }
@@ -165,9 +278,30 @@ mod test {
             Platform::from_core_tags(["manylinux2014_x86_64", "musllinux_1_3_x86_64"]);
         println!("{:#?}", multi_platform);
         assert!(
-            multi_platform.compatibility("manylinux_2_17_x86_64").unwrap()
-                > multi_platform.compatibility("musllinux_1_2_x86_64").unwrap()
+            multi_platform
+                .compatibility("manylinux_2_17_x86_64")
+                .unwrap()
+                > multi_platform
+                    .compatibility("musllinux_1_2_x86_64")
+                    .unwrap()
         );
+    }
+
+    #[test]
+    fn test_platform_restrict() {
+        let platform =
+            Platform::from_core_tags(vec!["macosx_11_0_arm64", "macosx_11_0_x86_64"]);
+
+        // given a pybi that can handle both, on a platform that can handle both, pick
+        // the preferred platform and restrict to it.
+        let arm_only = platform.restrict(&vec!["macosx_10_15_universal2".to_owned()]).unwrap();
+        assert!(arm_only.compatibility("macosx_11_0_arm64").is_some());
+        assert!(arm_only.compatibility("macosx_11_0_x86_64").is_none());
+
+        // but if the pybi only supports one, go with that
+        let x86_64_only = platform.restrict(&vec!["macosx_10_15_x86_64".to_owned()]).unwrap();
+        assert!(x86_64_only.compatibility("macosx_11_0_arm64").is_none());
+        assert!(x86_64_only.compatibility("macosx_11_0_x86_64").is_some());
     }
 
     #[test]
@@ -185,94 +319,94 @@ mod test {
 
         insta::assert_ron_snapshot!(expand_platform_tag("macosx_10_10_x86_64"), @r###"
         [
-          "macos_10_10_x86_64",
-          "macos_10_10_universal2",
-          "macos_10_10_intel",
-          "macos_10_10_fat64",
-          "macos_10_10_fat3",
-          "macos_10_10_universal",
-          "macos_10_9_x86_64",
-          "macos_10_9_universal2",
-          "macos_10_9_intel",
-          "macos_10_9_fat64",
-          "macos_10_9_fat3",
-          "macos_10_9_universal",
-          "macos_10_8_x86_64",
-          "macos_10_8_universal2",
-          "macos_10_8_intel",
-          "macos_10_8_fat64",
-          "macos_10_8_fat3",
-          "macos_10_8_universal",
-          "macos_10_7_x86_64",
-          "macos_10_7_universal2",
-          "macos_10_7_intel",
-          "macos_10_7_fat64",
-          "macos_10_7_fat3",
-          "macos_10_7_universal",
-          "macos_10_6_x86_64",
-          "macos_10_6_universal2",
-          "macos_10_6_intel",
-          "macos_10_6_fat64",
-          "macos_10_6_fat3",
-          "macos_10_6_universal",
-          "macos_10_5_x86_64",
-          "macos_10_5_universal2",
-          "macos_10_5_intel",
-          "macos_10_5_fat64",
-          "macos_10_5_fat3",
-          "macos_10_5_universal",
-          "macos_10_4_x86_64",
-          "macos_10_4_universal2",
-          "macos_10_4_intel",
-          "macos_10_4_fat64",
-          "macos_10_4_fat3",
-          "macos_10_4_universal",
-          "macos_10_3_x86_64",
-          "macos_10_3_universal2",
-          "macos_10_3_intel",
-          "macos_10_3_fat64",
-          "macos_10_3_fat3",
-          "macos_10_3_universal",
-          "macos_10_2_x86_64",
-          "macos_10_2_universal2",
-          "macos_10_2_intel",
-          "macos_10_2_fat64",
-          "macos_10_2_fat3",
-          "macos_10_2_universal",
-          "macos_10_1_x86_64",
-          "macos_10_1_universal2",
-          "macos_10_1_intel",
-          "macos_10_1_fat64",
-          "macos_10_1_fat3",
-          "macos_10_1_universal",
-          "macos_10_0_x86_64",
-          "macos_10_0_universal2",
-          "macos_10_0_intel",
-          "macos_10_0_fat64",
-          "macos_10_0_fat3",
-          "macos_10_0_universal",
+          "macosx_10_10_x86_64",
+          "macosx_10_10_universal2",
+          "macosx_10_10_intel",
+          "macosx_10_10_fat64",
+          "macosx_10_10_fat3",
+          "macosx_10_10_universal",
+          "macosx_10_9_x86_64",
+          "macosx_10_9_universal2",
+          "macosx_10_9_intel",
+          "macosx_10_9_fat64",
+          "macosx_10_9_fat3",
+          "macosx_10_9_universal",
+          "macosx_10_8_x86_64",
+          "macosx_10_8_universal2",
+          "macosx_10_8_intel",
+          "macosx_10_8_fat64",
+          "macosx_10_8_fat3",
+          "macosx_10_8_universal",
+          "macosx_10_7_x86_64",
+          "macosx_10_7_universal2",
+          "macosx_10_7_intel",
+          "macosx_10_7_fat64",
+          "macosx_10_7_fat3",
+          "macosx_10_7_universal",
+          "macosx_10_6_x86_64",
+          "macosx_10_6_universal2",
+          "macosx_10_6_intel",
+          "macosx_10_6_fat64",
+          "macosx_10_6_fat3",
+          "macosx_10_6_universal",
+          "macosx_10_5_x86_64",
+          "macosx_10_5_universal2",
+          "macosx_10_5_intel",
+          "macosx_10_5_fat64",
+          "macosx_10_5_fat3",
+          "macosx_10_5_universal",
+          "macosx_10_4_x86_64",
+          "macosx_10_4_universal2",
+          "macosx_10_4_intel",
+          "macosx_10_4_fat64",
+          "macosx_10_4_fat3",
+          "macosx_10_4_universal",
+          "macosx_10_3_x86_64",
+          "macosx_10_3_universal2",
+          "macosx_10_3_intel",
+          "macosx_10_3_fat64",
+          "macosx_10_3_fat3",
+          "macosx_10_3_universal",
+          "macosx_10_2_x86_64",
+          "macosx_10_2_universal2",
+          "macosx_10_2_intel",
+          "macosx_10_2_fat64",
+          "macosx_10_2_fat3",
+          "macosx_10_2_universal",
+          "macosx_10_1_x86_64",
+          "macosx_10_1_universal2",
+          "macosx_10_1_intel",
+          "macosx_10_1_fat64",
+          "macosx_10_1_fat3",
+          "macosx_10_1_universal",
+          "macosx_10_0_x86_64",
+          "macosx_10_0_universal2",
+          "macosx_10_0_intel",
+          "macosx_10_0_fat64",
+          "macosx_10_0_fat3",
+          "macosx_10_0_universal",
         ]
         "###);
         insta::assert_ron_snapshot!(expand_platform_tag("macosx_12_0_universal2"), @r###"
         [
-          "macos_12_0_universal2",
-          "macos_11_0_universal2",
-          "macos_10_15_universal2",
-          "macos_10_14_universal2",
-          "macos_10_13_universal2",
-          "macos_10_12_universal2",
-          "macos_10_11_universal2",
-          "macos_10_10_universal2",
-          "macos_10_9_universal2",
-          "macos_10_8_universal2",
-          "macos_10_7_universal2",
-          "macos_10_6_universal2",
-          "macos_10_5_universal2",
-          "macos_10_4_universal2",
-          "macos_10_3_universal2",
-          "macos_10_2_universal2",
-          "macos_10_1_universal2",
-          "macos_10_0_universal2",
+          "macosx_12_0_universal2",
+          "macosx_11_0_universal2",
+          "macosx_10_15_universal2",
+          "macosx_10_14_universal2",
+          "macosx_10_13_universal2",
+          "macosx_10_12_universal2",
+          "macosx_10_11_universal2",
+          "macosx_10_10_universal2",
+          "macosx_10_9_universal2",
+          "macosx_10_8_universal2",
+          "macosx_10_7_universal2",
+          "macosx_10_6_universal2",
+          "macosx_10_5_universal2",
+          "macosx_10_4_universal2",
+          "macosx_10_3_universal2",
+          "macosx_10_2_universal2",
+          "macosx_10_1_universal2",
+          "macosx_10_0_universal2",
         ]
         "###);
 

@@ -10,14 +10,14 @@ use std::{borrow::Borrow, cell::RefCell, rc::Rc};
 pub fn resolve(
     requirements: &Vec<UserRequirement>,
     env: &HashMap<String, String>,
-    index: &PackageIndex,
+    db: &PackageDB,
     preferred_versions: &HashMap<PackageName, Version>,
     consider_prereleases: &dyn Fn(&PackageName) -> bool,
 ) -> Result<Vec<PinnedPackage>> {
     let state = PubgrubState {
         root_reqs: requirements,
         env,
-        index,
+        db,
         preferred_versions,
         consider_prereleases,
         releases: HashMap::new().into(),
@@ -204,7 +204,7 @@ impl Display for ResPkg {
 
 struct PubgrubState<'a> {
     // These are inputs to the resolve process
-    index: &'a PackageIndex,
+    db: &'a PackageDB,
     root_reqs: &'a Vec<UserRequirement>,
     env: &'a HashMap<String, String>,
     preferred_versions: &'a HashMap<PackageName, Version>,

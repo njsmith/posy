@@ -298,6 +298,12 @@ impl ArtifactName {
             ArtifactName::Pybi(inner) => &inner.version,
         }
     }
+
+    pub fn inner_as<T: Clone>(&self) -> Option<&T>
+        where ArtifactName: ArtifactNameUnwrap<T>
+    {
+        ArtifactNameUnwrap::<T>::try_borrow(self)
+    }
 }
 
 pub trait ArtifactNameUnwrap<T: Clone> {

@@ -108,7 +108,7 @@ impl TryFrom<&[u8]> for PybiCoreMetadata {
             environment_marker_variables: serde_json::from_str(
                 &parsed.take_the("Pybi-Environment-Marker-Variables")?,
             )?,
-            tags: parsed.take_all("Pybi-Tag"),
+            tags: parsed.take_all("Pybi-Wheel-Tag"),
             paths: serde_json::from_str(&parsed.take_the("Pybi-Paths")?)?,
         })
     }
@@ -160,9 +160,9 @@ mod test {
             Metadata-Version: 2.1
             Name: CPython
             Version: 3.11.2
-            Pybi-Environment-Markers: {"implementation_name": "cpython", "os_name": "posix"}
-            pybi-tag: cp311-cp311-linux_x86_64
-            Pybi-tag: py3-none-any
+            Pybi-Environment-Marker-Variables: {"implementation_name": "cpython", "os_name": "posix"}
+            pybi-wheel-tag: cp311-cp311-linux_x86_64
+            Pybi-Wheel-Tag: py3-none-any
             Pybi-Paths: {"data": ".", "include": "include/python3.11"}
 
             This is CPython, the standard interpreter for the Python language...
@@ -181,7 +181,7 @@ mod test {
           metadata_version: "2.1",
           name: "CPython",
           version: "3.11.2",
-          markers_env: {
+          environment_marker_variables: {
             "implementation_name": "cpython",
             "os_name": "posix",
           },

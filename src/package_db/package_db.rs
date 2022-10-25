@@ -90,7 +90,7 @@ impl PackageDB {
             let mut writer = handle.begin()?;
             writer.write_all(&blob)?;
             writer.commit()?;
-    }
+        }
         Ok(())
     }
 
@@ -104,10 +104,12 @@ impl PackageDB {
         ArtifactName: ArtifactNameUnwrap<T::Name>,
         T::Name: Clone,
     {
-        let artifact_name = ArtifactNameUnwrap::<T::Name>::try_borrow(&ai.name)
-            .unwrap()
+        let artifact_name = ai.name.inner_as::<T::Name>()
+            .ok_or_else(|| {
+                anyhow!("{} is not a {}", ai.name, std::any::type_name::<T>())
+            })?
             .clone();
-        T::new(artifact_name, body)
+        Ok(T::new(artifact_name, body)?)
     }
 
     pub fn get_metadata<'a, T>(
@@ -121,7 +123,7 @@ impl PackageDB {
     {
         let matching = || {
             artifacts.iter().filter(|ai| {
-                ArtifactNameUnwrap::<T::Name>::try_borrow(&ai.name).is_some()
+                ai.name.inner_as::<T::Name>().is_some()
             })
         };
 

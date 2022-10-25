@@ -39,14 +39,8 @@ pub struct PinnedArtifact {
 #[derive(Debug, Clone)]
 pub struct PinnedPackage {
     pub name: PackageName,
-    pub sources: Vec<PinnedArtifact>,
-    // This is a hint that's only used for resolving a new Blueprint that's "similar to"
-    // an old one. (E.g., when upgrading a single package, or trying to use some saved
-    // pins on a new platform.)
-    //
-    // None means there is no version hint, which should only happen if the package was
-    // resolved to an @ requirement.
-    pub version: Option<Version>,
+    pub version: Version,
+    pub hashes: Vec<ArtifactHash>,
     // TODO: expected metadata + its provenance, to catch cases where wheels
     // have mismatched requirements. (just Python-Requires and Requires-Dist?)
 }
@@ -57,6 +51,7 @@ pub struct Blueprint {
     pub packages: Vec<PinnedPackage>,
     // XX TODO
     //pub used_markers: HashMap<marker::Expr, bool>,
+    // XX TODO: metadata + provenance relied on
 }
 
 fn pick_best_pybi<'a>(
@@ -91,10 +86,9 @@ fn resolve_pybi<'a>(
 ) -> Result<&'a ArtifactInfo> {
     let available = db.available_artifacts(&req.name)?;
     for (version, artifact_infos) in available.iter() {
-        println!("{version}\n{artifact_infos:#?}");
         if req.specifiers.satisfied_by(&version)? {
             if let Some(ai) = pick_best_pybi(&artifact_infos, platform) {
-                return Ok(ai)
+                return Ok(ai);
             }
         }
     }
@@ -102,22 +96,43 @@ fn resolve_pybi<'a>(
 }
 
 impl Brief {
-    pub fn resolve(
-        &self,
-        db: &PackageDB,
-        platform: &Platform,
-    ) -> Result<Blueprint> {
+    pub fn resolve(&self, db: &PackageDB, platform: &Platform) -> Result<Blueprint> {
         let pybi_ai = resolve_pybi(&db, &self.python, &platform)?;
         // XX TODO: figure out how platform changes after pybi is selected (e.g. on a
         // system that has both manylinux+musllinux compatibility, we can pick a pybi
         // for either but once we do we have fewer choices for wheels).
-        let pybi_metadata = db.get_metadata::<Pybi>(&[pybi_ai])?;
-
-        println!("{:#?}", pybi_metadata);
         // maybe we need some way to trim down a platform list to "can all coexist in
         // the same process"? discard everything that's inconsistent with a
         // higher-ranked tag?
-        // (and same machinery should be able to figure out platform_arch for markers)
+        // (and same machinery should be able to figure out platform_machine for
+        // markers, maybe?)
+        // ...for the resolution phase tho, we don't need to know about wheel tags at
+        // all. We assume all wheels for a given package+version have the same metadata.
+        // We just need to know the environment marker values (so only the universal2
+        // case is actually problematic). And for the pybi part of the pin, I guess we
+        // pick an arbitrary pybi that satisfies the version+platform constraints, and
+        // write down that version + the environment markers we needed for the pins?
+        // (Fortunately in practice the marker variables are very unlikely to change
+        // given a specific CPython release + OS + ISA.)
+        let (_, pybi_metadata) = db
+            .get_metadata::<Pybi>(&[pybi_ai])
+            .with_context(|| format!("fetching metadata for {}", pybi_ai.url))?;
+        let pybi_name = pybi_ai.name.inner_as::<PybiName>().unwrap();
+
+        let mut env_marker_vars = pybi_metadata.environment_marker_variables.clone();
+        if !env_marker_vars.contains_key("platform_machine") {
+            let restricted_platform = platform.restrict(&pybi_name.arch_tags)?;
+            env_marker_vars.insert(
+                "platform_machine".to_string(),
+                restricted_platform.infer_platform_machine()?.to_string(),
+            );
+        }
+
+        println!("{:#?}", pybi_metadata);
+        println!("{:#?}", env_marker_vars);
+
+        // pull out environment marker variables
+
         todo!()
     }
 
