@@ -52,8 +52,20 @@ apparently this is a thing now! in an sdist, look in PKG-INFO in the root, and i
 * check if we're using the same method of finding .dist-info as pip
 https://github.com/pypa/pip/blob/bf91a079791f2daf4339115fb39ce7d7e33a9312/src/pip/_internal/utils/wheel.py#L84-L114
 
+* better version ranges
+I'm thinking: for each package, split available versions into three "tiers":
+tier 1 (preferred): any "hinted" versions (like previously pinned version)
+tier 2 (neutral): the regular non-yanked non-prerelease versions in order
+tier 3 (dispreferred): all prereleases (some question about whether to consider yanked here too; or that could be tier 4)
+
+within each tier, intern to get a vector of ints
+version set is represented as 3 sets of ranges, one for each tier
+
+when picking the next (package, version) to try, we always prefer candidates from a higher tier, so e.g. we never try any version from tier 3 until *all* packages have exhausted all their tier 1 and tier 2 options
 
 * make resolution less wildly inefficient when choosing next candidate
+[NOTE: there's a PR for this: https://github.com/pubgrub-rs/pubgrub/pull/104]
+
 right now, every time pubgrub wants to consider a candidate, it gives us a set of ranges for all the packages under consideration, and then for every one, we do an O(n) loop through every package version, filtering out which ones fit into the range.
 This is at least accidentally quadratic, quite possibly worse. There's gotta be a better data structure here.
 
