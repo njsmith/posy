@@ -18,7 +18,7 @@ use crate::{
 pub struct Brief {
     pub python: PythonRequirement,
     // don't need python_constraints because we always install exactly one python
-    pub requires: Vec<UserRequirement>,
+    pub requirements: Vec<UserRequirement>,
     // XX TODO
     //pub constraints: Vec<UserRequirement>,
     // for now let's make this totally explicit: we allow prereleases iff the package is
@@ -49,8 +49,6 @@ pub struct PinnedPackage {
 pub struct Blueprint {
     pub python: PinnedPackage,
     pub packages: Vec<PinnedPackage>,
-    // XX TODO
-    //pub used_markers: HashMap<marker::Expr, bool>,
     // XX TODO: metadata + provenance relied on
 }
 
@@ -115,7 +113,7 @@ impl Brief {
         // (Fortunately in practice the marker variables are very unlikely to change
         // given a specific CPython release + OS + ISA.)
         let (_, pybi_metadata) = db
-            .get_metadata::<Pybi>(&[pybi_ai])
+            .get_metadata::<Pybi, _>(&[pybi_ai])
             .with_context(|| format!("fetching metadata for {}", pybi_ai.url))?;
         let pybi_name = pybi_ai.name.inner_as::<PybiName>().unwrap();
 
@@ -131,7 +129,9 @@ impl Brief {
         println!("{:#?}", pybi_metadata);
         println!("{:#?}", env_marker_vars);
 
-        // pull out environment marker variables
+        let wheels = crate::resolve::resolve_wheels(db, &self.requirements, &env_marker_vars)?;
+
+        println!("{:#?}", wheels);
 
         todo!()
     }

@@ -1,28 +1,107 @@
 use crate::prelude::*;
+use elsa::FrozenMap;
 use pubgrub::range::Range;
 use pubgrub::report::DerivationTree;
 use pubgrub::report::Reporter;
 use pubgrub::solver::{Dependencies, DependencyConstraints};
 
-use crate::package_db::{PackageDB, ArtifactInfo};
-use std::{borrow::Borrow, cell::RefCell, rc::Rc};
+use crate::package_db::PackageDB;
+use std::borrow::Borrow;
 
-pub fn resolve(
+#[derive(Debug, Clone)]
+pub struct ExpectedMetadata {
+    pub provenance: Url,
+    pub requires_dist: Vec<PackageRequirement>,
+    pub requires_python: Specifiers,
+    pub extras: HashSet<Extra>,
+}
+
+struct PubgrubState<'a> {
+    // These are inputs to the resolve process
+    db: &'a PackageDB,
+    root_reqs: &'a Vec<UserRequirement>,
+    env: &'a HashMap<String, String>,
+
+    python_full_version: Version,
+    // record of the metadata we used, so we can record it and validate it later when
+    // using the pins
+    expected_metadata: FrozenMap<(PackageName, Version), Box<ExpectedMetadata>>,
+    // These are sorted with most-preferred first.
+    versions: FrozenMap<PackageName, Vec<&'a Version>>,
+}
+
+fn get_or_fill<'a, 'b, K, V, F>(
+    map: &'a FrozenMap<K, V>,
+    key: &'b K,
+    f: F,
+) -> Result<&'a V::Target>
+where
+    K: Eq + std::hash::Hash + Clone,
+    F: FnOnce() -> Result<V>,
+    V: stable_deref_trait::StableDeref,
+{
+    if let Some(v) = map.get(key) {
+        Ok(v)
+    } else {
+        Ok(map.insert(key.to_owned(), f()?))
+    }
+}
+
+impl<'a> PubgrubState<'a> {
+    fn metadata(&self, release: &(PackageName, Version)) -> Result<&ExpectedMetadata> {
+        get_or_fill(&self.expected_metadata, release, || {
+            let ais = self.db.artifacts_for_release(&release.0, &release.1)?;
+            let (ai, wheel_metadata) = self.db.get_metadata::<Wheel, _>(ais)?;
+            Ok(Box::new(ExpectedMetadata {
+                provenance: ai.url.clone(),
+                requires_dist: wheel_metadata.requires_dist,
+                requires_python: wheel_metadata.requires_python,
+                extras: wheel_metadata.extras,
+            }))
+        })
+    }
+
+    fn versions(&self, package: &PackageName) -> Result<&[&Version]> {
+        get_or_fill(&self.versions, &package, || {
+            let artifacts = self.db.available_artifacts(&package)?;
+            let mut versions = Vec::<&Version>::new();
+            for (version, ais) in artifacts.iter() {
+                for ai in ais {
+                    if ai.yanked.yanked {
+                        continue;
+                    }
+                    if let Some(requires_python) = &ai.requires_python {
+                        let requires_python: Specifiers = requires_python.parse()?;
+                        if !requires_python.satisfied_by(&self.python_full_version)? {
+                            continue;
+                        }
+                    }
+                    versions.push(version);
+                }
+            }
+            versions.sort_unstable();
+            Ok(versions)
+        })
+    }
+}
+
+pub fn resolve_wheels(
+    db: &PackageDB,
     requirements: &Vec<UserRequirement>,
     env: &HashMap<String, String>,
-    db: &PackageDB,
-    preferred_versions: &HashMap<PackageName, Version>,
-    consider_prereleases: &dyn Fn(&PackageName) -> bool,
-) -> Result<Vec<PinnedPackage>> {
+) -> Result<Vec<(PackageName, Version, ExpectedMetadata)>> {
     let state = PubgrubState {
+        db,
         root_reqs: requirements,
         env,
-        db,
-        preferred_versions,
-        consider_prereleases,
-        releases: HashMap::new().into(),
-        versions: HashMap::new().into(),
-        metadata: HashMap::new().into(),
+        python_full_version: env
+            .get("python_full_version")
+            .ok_or(anyhow!(
+                "Missing 'python_full_version' environment marker variable"
+            ))?
+            .parse()?,
+        expected_metadata: Default::default(),
+        versions: Default::default(),
     };
 
     // XX this error reporting is terrible. It's a hack to work around PubGrubError not
@@ -38,33 +117,11 @@ pub fn resolve(
                 ResPkg::Root => None,
                 ResPkg::Package(_, Some(_)) => None,
                 ResPkg::Package(name, None) => Some({
-                    let (cm, provenance) = state
-                        .metadata
-                        .borrow_mut()
-                        .remove(&(name.clone(), v.clone()))
-                        .unwrap();
-
-                    PinnedPackage {
-                        name: name.clone(),
-                        version: v.clone(),
-                        known_artifacts: state
-                            .releases
-                            .borrow()
-                            .get(&name)
-                            .unwrap()
-                            .get(&v)
-                            .unwrap()
-                            .iter()
-                            .map(|artifact| {
-                                (artifact.url.clone(), artifact.hash.clone())
-                            })
-                            .collect(),
-                        expected_requirements: Rc::try_unwrap(cm)
-                            .unwrap()
-                            .requires_dist,
-                        expected_requirements_source: Rc::try_unwrap(provenance)
-                            .unwrap(),
-                    }
+                    (
+                        name.clone(),
+                        v.clone(),
+                        state.expected_metadata.get(&(name, v)).unwrap().clone(),
+                    )
                 }),
             })
             .collect()),
@@ -132,26 +189,19 @@ pub fn resolve(
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PinnedPackage {
-    pub name: PackageName,
-    pub version: Version,
-    pub known_artifacts: Vec<(Url, ArtifactHash)>,
-    // For install-time consistency checking/debugging
-    pub expected_requirements: Vec<PackageRequirement>,
-    pub expected_requirements_source: String,
-}
-
 struct HashMapEnv<'a> {
     basic_env: &'a HashMap<String, String>,
-    extra: &'a str,
+    extra: Option<&'a str>,
 }
 
 impl<'a> marker::Env for HashMapEnv<'a> {
     fn get_marker_var(&self, var: &str) -> Option<&str> {
         match var {
-            "extra" => Some(self.extra),
-            _ => self.basic_env.get(var).map(|s| s.as_ref()),
+            // we want 'extra' to have some value, because looking it up shouldn't be an
+            // error. But we want that value to be something that will never match a
+            // real extra. So choose something with illegal characters in it.
+            "extra" => Some(self.extra.unwrap_or("!")),
+            _ => self.basic_env.get(var).map(|s| s.as_str()),
         }
     }
 }
@@ -202,146 +252,26 @@ impl Display for ResPkg {
     }
 }
 
-struct PubgrubState<'a> {
-    // These are inputs to the resolve process
-    db: &'a PackageDB,
-    root_reqs: &'a Vec<UserRequirement>,
-    env: &'a HashMap<String, String>,
-    preferred_versions: &'a HashMap<PackageName, Version>,
-    consider_prereleases: &'a dyn Fn(&PackageName) -> bool,
-
-    // Rest of these are memo tables, to make sure that we provide consistent answers to
-    // PubGrub's queries within a single run.
-    releases: RefCell<HashMap<PackageName, Rc<HashMap<Version, Vec<Artifact>>>>>,
-    // These are sorted with most-preferred first.
-    versions: RefCell<HashMap<PackageName, Rc<Vec<Version>>>>,
-    // The String is some kind of provenance info for the metadata, so that if later on
-    // when using the resolved pins we find an inconsistency, we can track down where
-    // our assumptions came from.
-    metadata: RefCell<HashMap<(PackageName, Version), (Rc<WheelCoreMetadata>, Rc<String>)>>,
-}
-
-use std::collections::hash_map::Entry::*;
 impl<'a> PubgrubState<'a> {
-    fn releases(
-        &self,
-        package: &PackageName,
-    ) -> Result<Rc<HashMap<Version, Vec<Artifact>>>> {
-        // https://users.rust-lang.org/t/issue-with-hashmap-and-fallible-update/44960
-        let mut memo = self.releases.borrow_mut();
-        Ok(if let Some(e) = memo.get(&package) {
-            e.clone()
-        } else {
-            let value = Rc::new(self.index.releases(&package)?);
-            memo.insert(package.clone(), value.clone());
-            value
-        })
-    }
-
-    fn versions(&self, pkg: &ResPkg) -> Result<Rc<Vec<Version>>> {
-        Ok(match pkg {
-            ResPkg::Root => Rc::new(vec![ROOT_VERSION.clone()]),
-            ResPkg::Package(name, _) => {
-                let mut memo = self.versions.borrow_mut();
-                if let Some(e) = memo.get(&name) {
-                    e.clone()
-                } else {
-                    let releases = self.releases(&name)?;
-                    // first filter out yanked versions
-                    let unyanked = releases
-                        .iter()
-                        .filter_map(|(version, artifacts)| {
-                            if artifacts.iter().all(|a| a.yanked.is_some()) {
-                                None
-                            } else {
-                                Some(version.clone())
-                            }
-                        })
-                        .collect::<Vec<Version>>();
-                    // then check if all the ones that are left are prereleases --
-                    // if so, then prereleases are ok to consider.
-                    let all_pres = unyanked.iter().all(|v| v.is_prerelease());
-                    let pre_ok = all_pres || (self.consider_prereleases)(&name);
-
-                    let mut versions = unyanked
-                        .into_iter()
-                        .filter_map(|v| {
-                            if !pre_ok && v.is_prerelease() {
-                                None
-                            } else {
-                                Some(v)
-                            }
-                        })
-                        .collect::<Vec<Version>>();
-
-                    versions.sort_unstable();
-                    if let Some(pref) = self.preferred_versions.get(&name) {
-                        versions.push(pref.clone());
-                    }
-                    versions.reverse();
-                    let value = Rc::new(versions);
-                    memo.insert(name.clone(), value.clone());
-                    value
-                }
-            }
-        })
-    }
-
-    fn metadata_from_artifacts(
-        &self,
-        artifacts: &Vec<Artifact>,
-    ) -> Result<(Rc<WheelCoreMetadata>, Rc<String>)> {
-        // first, try to find an un-yanked wheel
-        for artifact in artifacts {
-            if artifact.url.path().ends_with(".whl") && artifact.yanked.is_none() {
-                let cm = self.index.wheel_metadata(&artifact.url)?;
-                return Ok((Rc::new(cm), Rc::new(artifact.url.to_string())));
-            }
-        }
-        todo!("figure out what to do if no un-yanked wheels");
-    }
-
-    fn metadata(
-        &self,
-        package: &PackageName,
-        version: &Version,
-    ) -> Result<(Rc<WheelCoreMetadata>, Rc<String>)> {
-        let mut memo = self.metadata.borrow_mut();
-        let key = (package.clone(), version.clone());
-        Ok(match memo.entry(key) {
-            Occupied(e) => e.get().clone(),
-            Vacant(e) => {
-                let releases = self.releases(package)?;
-                let artifacts = releases.get(version).ok_or_else(|| {
-                    anyhow!("where did {} v{} come from?", package.as_given(), version)
-                })?;
-                e.insert(self.metadata_from_artifacts(&artifacts)?).clone()
-            }
-        })
-    }
-
     fn requirements_to_pubgrub<'r, R, I>(
         &self,
         reqs: I,
         dc: &mut DependencyConstraints<ResPkg, Version>,
-        extra: &Option<Extra>,
-    )
-        where R: std::ops::Deref<Target=Requirement> + 'r, I: Iterator<Item = &'r R>
+        extra: Option<&Extra>,
+    ) -> Result<()>
+    where
+        R: std::ops::Deref<Target = Requirement> + 'r,
+        I: Iterator<Item = &'r R>,
     {
-        let extra_str: &str = match extra {
-            Some(e) => e.normalized(),
-            None => "",
-        };
         let env = HashMapEnv {
             basic_env: &self.env,
-            extra: extra_str,
+            extra: extra.map(|e| e.normalized()),
         };
 
         for req in reqs {
-            if let Some(expr) = &req.env_marker {
-                // XX bad unwrap
-                if !expr.eval(&env).unwrap() {
-                    return;
+            if let Some(expr) = &req.env_marker_expr {
+                if !expr.eval(&env)? {
+                    continue;
                 }
             }
 
@@ -353,12 +283,12 @@ impl<'a> PubgrubState<'a> {
 
             for maybe_extra in maybe_extras {
                 let pkg = ResPkg::Package(req.name.clone(), maybe_extra);
-                // XX bad unwrap
-                let range = specifiers_to_pubgrub(&req.specifiers).unwrap();
+                let range = specifiers_to_pubgrub(&req.specifiers)?;
                 println!("adding dependency: {} {}", pkg, range);
                 dc.insert(pkg, range);
             }
         }
+        Ok(())
     }
 }
 
@@ -383,84 +313,48 @@ fn specifiers_to_pubgrub(specs: &Specifiers) -> Result<Range<Version>> {
 impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'a> {
     fn choose_package_version<T, U>(
         &self,
-        potential_packages: impl Iterator<Item = (T, U)>,
+        mut potential_packages: impl Iterator<Item = (T, U)>,
     ) -> Result<(T, Option<Version>), Box<dyn std::error::Error>>
     where
         T: Borrow<ResPkg>,
         U: Borrow<Range<Version>>,
     {
         println!("----> pubgrub called choose_package_version");
-        // Heuristic: for our next package candidate, use the package with the fewest
-        // remaining versions to consider. This tends to drive to either a workable
-        // version or a conflict as fast as possible.
-        let count_valid = |(p, range): &(T, U)| match self.versions(p.borrow()) {
-            Err(_) => 0,
-            Ok(versions) => versions
-                .iter()
-                .filter(|v| range.borrow().contains(v))
-                .count(),
-        };
+        // XX TODO: laziest possible heuristic, just pick the first package offered
+        let (respkg, range) = potential_packages.next().unwrap();
 
-        let (pkg, range) = potential_packages
-            .map(|(p, range)| {
-                println!(
-                    "-> For {}, allowed range is: {}",
-                    p.borrow(),
-                    range.borrow()
-                );
-                (p, range)
-            })
-            .min_by_key(count_valid)
-            .ok_or_else(|| anyhow!("No packages found within range"))?;
-
-        println!(
-            "Chose package {}; now let's decide which version",
-            pkg.borrow(),
-        );
-
-        match pkg.borrow() {
+        match respkg.borrow() {
             ResPkg::Root => {
                 println!("<---- decision: root package magic version 0");
-                Ok((pkg, Some(ROOT_VERSION.clone())))
+                Ok((respkg, Some(ROOT_VERSION.clone())))
             }
             ResPkg::Package(name, _) => {
-                // why does this have to be 'parse' instead of 'try_into'?! it is a
-                // mystery
-                let python_full_version: Version =
-                    self.env.get("python_full_version").unwrap().parse()?;
-
-                for version in self.versions(pkg.borrow())?.iter() {
-                    if !range.borrow().contains(&version) {
+                for &version in self.versions(&name)?.iter().rev() {
+                    if !range.borrow().contains(version) {
                         println!("Version {} is out of range", version);
                         continue;
                     }
 
-                    println!("Considering {} v{}", pkg.borrow(), version);
-
-                    let (metadata, _) = self.metadata(&name, &version)?;
-
-                    // check if this version is even compatible with our python
-                    match metadata.requires_python.satisfied_by(&python_full_version) {
-                        Err(e) => {
-                            println!("Error checking Requires-Python: {}; skipping", e);
-                            continue;
-                        }
-                        Ok(false) => {
-                            println!(
-                                "Python {} doesn't satisfy Requires-Python: {:?}",
-                                python_full_version, metadata.requires_python
-                            );
-                            continue;
-                        }
-                        Ok(true) => {
-                            println!("<---- decision: {} v{}", pkg.borrow(), version);
-                            return Ok((pkg, Some(version.clone())));
-                        }
+                    let metadata = self.metadata(&(name.clone(), version.clone()))?;
+                    if !metadata
+                        .requires_python
+                        .satisfied_by(&self.python_full_version)?
+                    {
+                        Err(anyhow!(
+                            "{} {}: bad requires-python, but pypi didn't tell us!",
+                            name.as_given(),
+                            version
+                        ))?;
                     }
+                    println!("<---- decision: {} {}", respkg.borrow(), version);
+                    return Ok((respkg, Some(version.clone())));
                 }
 
-                println!("<---- decision: no versions of {} in range", pkg.borrow());
-                Ok((pkg, None))
+                println!(
+                    "<---- decision: no versions of {} in range",
+                    respkg.borrow()
+                );
+                Ok((respkg, None))
             }
         }
     }
@@ -469,7 +363,7 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
         &self,
         pkg: &ResPkg,
         version: &Version,
-    ) -> std::result::Result<
+    ) -> Result<
         pubgrub::solver::Dependencies<ResPkg, Version>,
         Box<dyn std::error::Error>,
     > {
@@ -479,20 +373,29 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
             ResPkg::Root => {
                 let mut dc: DependencyConstraints<ResPkg, Version> =
                     vec![].into_iter().collect();
-                self.requirements_to_pubgrub(self.root_reqs.iter(), &mut dc, &None);
+                self.requirements_to_pubgrub(self.root_reqs.iter(), &mut dc, None)?;
                 println!("<---- dependencies complete");
                 Ok(Dependencies::Known(dc))
             }
             ResPkg::Package(name, extra) => {
-                let (metadata, _) = self.metadata(&name, &version)?;
+                let metadata = self.metadata(&(name.clone(), version.clone()))?;
 
-                // why can't I call ::new on this?
-                let mut dc: DependencyConstraints<ResPkg, Version> =
-                    vec![].into_iter().collect();
+                let mut dc: DependencyConstraints<ResPkg, Version> = Default::default();
 
-                self.requirements_to_pubgrub(metadata.requires_dist.iter(), &mut dc, &extra);
+                self.requirements_to_pubgrub(
+                    metadata.requires_dist.iter(),
+                    &mut dc,
+                    extra.as_ref(),
+                )?;
 
-                if let Some(_) = extra {
+                if let Some(inner) = extra {
+                    if !metadata.extras.contains(inner) {
+                        Err(anyhow!(
+                            "package {} has no extra [{}]",
+                            name.as_given(),
+                            inner.as_given()
+                        ))?;
+                    }
                     dc.insert(
                         ResPkg::Package(name.clone(), None),
                         Range::exact(version.clone()),

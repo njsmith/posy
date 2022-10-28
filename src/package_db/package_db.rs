@@ -59,7 +59,7 @@ impl PackageDB {
             for index_url in self.index_urls.iter() {
                 let maybe_pi = fetch_simple_api(
                     &self.http,
-                    &index_url.join(&format!("/{}/", p.normalized()))?,
+                    &index_url.join(&format!("{}/", p.normalized()))?,
                 )?;
                 if let Some(pi) = maybe_pi {
                     pack_by_version(pi, &mut packed)?;
@@ -104,7 +104,9 @@ impl PackageDB {
         ArtifactName: ArtifactNameUnwrap<T::Name>,
         T::Name: Clone,
     {
-        let artifact_name = ai.name.inner_as::<T::Name>()
+        let artifact_name = ai
+            .name
+            .inner_as::<T::Name>()
             .ok_or_else(|| {
                 anyhow!("{} is not a {}", ai.name, std::any::type_name::<T>())
             })?
@@ -112,19 +114,21 @@ impl PackageDB {
         Ok(T::new(artifact_name, body)?)
     }
 
-    pub fn get_metadata<'a, T>(
+    pub fn get_metadata<'a, T, B>(
         &self,
-        artifacts: &[&'a ArtifactInfo],
+        artifacts: &'a [B],
     ) -> Result<(&'a ArtifactInfo, T::Metadata)>
     where
+        B: std::borrow::Borrow<ArtifactInfo>,
         T: BinaryArtifact,
         ArtifactName: ArtifactNameUnwrap<T::Name>,
         T::Name: Clone,
     {
         let matching = || {
-            artifacts.iter().filter(|ai| {
-                ai.name.inner_as::<T::Name>().is_some()
-            })
+            artifacts
+                .iter()
+                .filter(|ai| ai.borrow().name.inner_as::<T::Name>().is_some())
+                .map(|ai| ai.borrow())
         };
 
         // have we cached any of these artifacts' metadata before?
@@ -183,7 +187,11 @@ impl PackageDB {
         }
 
         // XX TODO: sdist support: fetch an sdist and build a wheel
-        bail!("couldn't find any metadata for {artifacts:?}");
+        bail!(
+            "couldn't find any {} metadata for {:#?}",
+            std::any::type_name::<T>(),
+            artifacts.iter().map(|ai| ai.borrow()).collect::<Vec<_>>()
+        );
     }
 
     fn _get_artifact<T>(&self, ai: &ArtifactInfo, cache_mode: CacheMode) -> Result<T>

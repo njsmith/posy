@@ -7,7 +7,6 @@ use super::rfc822ish::RFC822ish;
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(Serialize))]
 pub struct WheelCoreMetadata {
-    pub metadata_version: Version,
     pub name: PackageName,
     pub version: Version,
     pub requires_dist: Vec<PackageRequirement>,
@@ -18,7 +17,6 @@ pub struct WheelCoreMetadata {
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(Serialize))]
 pub struct PybiCoreMetadata {
-    pub metadata_version: Version,
     pub name: PackageName,
     pub version: Version,
     pub environment_marker_variables: HashMap<String, String>,
@@ -26,7 +24,7 @@ pub struct PybiCoreMetadata {
     pub paths: HashMap<String, String>,
 }
 
-fn parse_common(input: &[u8]) -> Result<(Version, PackageName, Version, RFC822ish)> {
+fn parse_common(input: &[u8]) -> Result<(PackageName, Version, RFC822ish)> {
     let input = String::from_utf8_lossy(input);
     let mut parsed = RFC822ish::parse(&input)?;
 
@@ -52,11 +50,10 @@ fn parse_common(input: &[u8]) -> Result<(Version, PackageName, Version, RFC822is
     // about it it's because the tool is abandoned anyway.
     let metadata_version: Version = parsed.take_the("Metadata-Version")?.try_into()?;
     if metadata_version >= *NEXT_MAJOR_METADATA_VERSION {
-        anyhow::bail!("unsupported Metadata-Version {}", metadata_version);
+        bail!("unsupported Metadata-Version {}", metadata_version);
     }
 
     Ok((
-        metadata_version,
         parsed.take_the("Name")?.parse()?,
         parsed.take_the("Version")?.try_into()?,
         parsed,
@@ -67,7 +64,7 @@ impl TryFrom<&[u8]> for WheelCoreMetadata {
     type Error = anyhow::Error;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let (metadata_version, name, version, mut parsed) = parse_common(value)?;
+        let (name, version, mut parsed) = parse_common(value)?;
 
         let mut requires_dist = Vec::new();
         for req_str in parsed.take_all("Requires-Dist").drain(..) {
@@ -85,7 +82,6 @@ impl TryFrom<&[u8]> for WheelCoreMetadata {
         }
 
         Ok(WheelCoreMetadata {
-            metadata_version,
             name,
             version,
             requires_dist,
@@ -99,10 +95,9 @@ impl TryFrom<&[u8]> for PybiCoreMetadata {
     type Error = anyhow::Error;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let (metadata_version, name, version, mut parsed) = parse_common(value)?;
+        let (name, version, mut parsed) = parse_common(value)?;
 
         Ok(PybiCoreMetadata {
-            metadata_version,
             name,
             version,
             environment_marker_variables: serde_json::from_str(
@@ -140,7 +135,6 @@ mod test {
 
         insta::assert_ron_snapshot!(metadata, @r###"
         WheelCoreMetadata(
-          metadata_version: "2.1",
           name: "trio",
           version: "0.16.0",
           requires_dist: [
@@ -174,11 +168,10 @@ mod test {
         insta::assert_ron_snapshot!(metadata,
             {
                 ".paths" => insta::sorted_redaction(),
-                ".markers_env" => insta::sorted_redaction(),
+                ".environment_marker_variables" => insta::sorted_redaction(),
             },
                                     @r###"
         PybiCoreMetadata(
-          metadata_version: "2.1",
           name: "CPython",
           version: "3.11.2",
           environment_marker_variables: {

@@ -1230,6 +1230,7 @@ dependencies = [
  "serde_with",
  "shrinkwraprs",
  "slice",
+ "stable_deref_trait",
  "string_cache",
  "structopt",
  "tempfile",

@@ -117,7 +117,7 @@ pub mod marker {
                     let mut lhs_val = lhs.eval(env)?;
                     let mut rhs_val = rhs.eval(env)?;
                     // special hack for comparisons involving the magic 'extra'
-                    // variable: always normalize both sides
+                    // variable: always normalize both sides (see PEP 685)
                     let lhs_holder: String;
                     let rhs_holder: String;
                     if lhs == &*EXTRA || rhs == &*EXTRA {

@@ -1,7 +1,7 @@
 mod cache;
 mod package_db;
 mod prelude;
-//mod resolve;
+mod resolve;
 mod util;
 mod vocab;
 
@@ -13,7 +13,7 @@ mod test_util;
 
 use anyhow::Result;
 
-use crate::{prelude::*, brief::Brief, platform_tags::Platform};
+use crate::{brief::Brief, platform_tags::Platform, prelude::*};
 
 use structopt::StructOpt;
 
@@ -57,17 +57,28 @@ fn main() -> Result<()> {
     let db = package_db::PackageDB::new(
         &vec![
             Url::parse("https://pybi.vorpus.org")?,
-            Url::parse("https://pypi.org/simple")?,
+            Url::parse("https://pypi.org/simple/")?,
         ],
         PROJECT_DIRS.cache_dir(),
     );
+    println!("{:#?}", db.get_metadata::<Wheel, _>(
+        db.artifacts_for_release(
+            &"anyio".try_into().unwrap(),
+            &"3.0.1".try_into().unwrap(),
+        )
+        .unwrap(),
+    )
+    .unwrap());
     let brief = Brief {
         python: "cpython_unofficial >= 3".try_into().unwrap(),
-        requires: vec!["trio".try_into().unwrap()],
+        requirements: vec![
+            "sniffio < 1.1".try_into().unwrap(),
+            "anyio".try_into().unwrap(),
+        ],
     };
     let platform = Platform::from_core_tag("manylinux_2_17_x86_64");
 
-    brief.resolve(&db, &platform)?;
+    //brief.resolve(&db, &platform)?;
 
     // let root_reqs = opt
     //     .inputs

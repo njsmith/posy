@@ -69,7 +69,7 @@ impl TryFrom<&str> for DistInfoDirName {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         static DIST_INFO_NAME_RE: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^(.*)-([^-]*)\.(dist-info)$").unwrap());
+            Lazy::new(|| Regex::new(r"^([^/]*)-([^-/]*)\.dist-info$").unwrap());
 
         match DIST_INFO_NAME_RE.captures(&value) {
             None => bail!("invalid sdist name"),

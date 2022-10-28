@@ -91,7 +91,10 @@ fn parse_format_metadata_and_check_version(
 }
 
 #[context("extracting {name}")]
-fn slurp_from_zip<'a, T: Read + Seek>(z: &'a mut ZipArchive<T>, name: &str) -> Result<Vec<u8>> {
+fn slurp_from_zip<'a, T: Read + Seek>(
+    z: &'a mut ZipArchive<T>,
+    name: &str,
+) -> Result<Vec<u8>> {
     Ok(slurp(&mut z.by_name(name)?)?)
 }
 
@@ -104,32 +107,36 @@ impl BinaryArtifact for Wheel {
 
     #[context("Reading metadata from {}", self.name)]
     fn metadata(&self) -> Result<(Vec<u8>, Self::Metadata)> {
+        static DIST_INFO_NAME_RE: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"^([^/]*)-([^-/]*)\.dist-info/").unwrap());
+
         let mut z = self.z.borrow_mut();
 
         let dist_info;
         {
-            let mut dist_infos: Vec<&str> = z
+            let mut dist_infos = z
                 .file_names()
-                .filter(|n| n.ends_with(".dist-info"))
-                .collect();
+                .filter_map(|n| DIST_INFO_NAME_RE.find(n).map(|m| m.as_str()))
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+
             dist_info = match dist_infos.pop() {
-                Some(d) => d,
+                Some(d) => d.to_owned(),
                 None => bail!("no .dist-info/ directory found in wheel"),
-            }
-            .to_owned();
+            };
             if !dist_infos.is_empty() {
                 bail!("found multiple .dist-info/ directories in wheel");
             }
         }
-        let parsed_dist_info: DistInfoDirName = dist_info.as_str().try_into()?;
-        if parsed_dist_info.distribution != self.name.distribution {
-            bail!("name mismatch between {} and {}", dist_info, self.name);
-        }
-        if parsed_dist_info.version != self.name.version {
-            bail!("version mismatch between {} and {}", dist_info, self.name);
+        let captures = DIST_INFO_NAME_RE.captures(dist_info.as_str()).ok_or(anyhow!("malformed .dist-info name {dist_info}"))?;
+        let dist: PackageName = captures.get(1).unwrap().as_str().try_into()?;
+        let version: Version = captures.get(2).unwrap().as_str().try_into()?;
+        if (&dist, &version) != (&self.name.distribution, &self.name.version) {
+            bail!("wrong name/version in directory name {dist_info}");
         }
 
-        let wheel_path = format!("{dist_info}/WHEEL");
+        let wheel_path = format!("{dist_info}WHEEL");
         let wheel_metadata = slurp_from_zip(&mut z, &wheel_path)?;
 
         let mut parsed =
@@ -147,21 +154,21 @@ impl BinaryArtifact for Wheel {
         // (of course it will also need entry points and RECORD and stuff)
         drop(root_is_purelib);
 
-        let metadata_path = format!("{dist_info}/METADATA");
+        let metadata_path = format!("{dist_info}METADATA");
         let metadata_blob = slurp_from_zip(&mut z, &metadata_path)?;
 
         let metadata: WheelCoreMetadata = metadata_blob.as_slice().try_into()?;
 
         if metadata.name != self.name.distribution {
             bail!(
-                "name mismatch between {dist_info}/METADATA and filename ({} != {}",
+                "name mismatch between {dist_info}METADATA and filename ({} != {}",
                 metadata.name.as_given(),
                 self.name.distribution.as_given()
             );
         }
         if metadata.version != self.name.version {
             bail!(
-                "version mismatch between {dist_info}/METADATA and filename ({} != {})",
+                "version mismatch between {dist_info}METADATA and filename ({} != {})",
                 metadata.version,
                 self.name.version
             );
