@@ -69,6 +69,13 @@ pub mod marker {
         fn get_marker_var(&self, var: &str) -> Option<&str>;
     }
 
+    // for testing
+    impl Env for HashMap<&'static str, &'static str> {
+        fn get_marker_var(&self, var: &str) -> Option<&str> {
+            self.get(var).map(|s| *s)
+        }
+    }
+
     impl Value {
         pub fn eval<'a>(&'a self, env: &'a dyn Env) -> Result<&'a str> {
             match self {
@@ -76,7 +83,7 @@ pub mod marker {
                     .get_marker_var(&varname)
                     .map(|s| s.as_ref())
                     .ok_or_else(|| {
-                        anyhow!("no environment marker named '{}'", varname)
+                        anyhow!("no environment marker variable named '{}'", varname)
                     }),
                 Value::Literal(s) => Ok(s),
             }
@@ -104,8 +111,21 @@ pub mod marker {
                 EnvMarkerExpr::And(lhs, rhs) => lhs.eval(env)? && rhs.eval(env)?,
                 EnvMarkerExpr::Or(lhs, rhs) => lhs.eval(env)? || rhs.eval(env)?,
                 EnvMarkerExpr::Operator { op, lhs, rhs } => {
-                    let lhs_val = lhs.eval(env)?;
-                    let rhs_val = rhs.eval(env)?;
+                    static EXTRA: Lazy<marker::Value> =
+                        Lazy::new(|| marker::Value::Variable("extra".to_string()));
+
+                    let mut lhs_val = lhs.eval(env)?;
+                    let mut rhs_val = rhs.eval(env)?;
+                    // special hack for comparisons involving the magic 'extra'
+                    // variable: always normalize both sides
+                    let lhs_holder: String;
+                    let rhs_holder: String;
+                    if lhs == &*EXTRA || rhs == &*EXTRA {
+                        lhs_holder = Extra::try_from(lhs_val)?.normalized().to_string();
+                        rhs_holder = Extra::try_from(rhs_val)?.normalized().to_string();
+                        lhs_val = lhs_holder.as_ref();
+                        rhs_val = rhs_holder.as_ref();
+                    };
                     match op {
                         Op::In => rhs_val.contains(lhs_val),
                         Op::NotIn => !rhs_val.contains(lhs_val),
@@ -120,7 +140,6 @@ pub mod marker {
                                         .any(|r| r.contains(&lhs_ver)));
                                 }
                             }
-                            // Otherwise, we do a simple string comparison
                             use CompareOp::*;
                             match op {
                                 LessThanEqual => lhs_val <= rhs_val,
@@ -174,7 +193,7 @@ pub struct Requirement {
     pub name: PackageName,
     pub extras: Vec<Extra>,
     pub specifiers: Specifiers,
-    pub env_marker: Option<marker::EnvMarkerExpr>,
+    pub env_marker_expr: Option<marker::EnvMarkerExpr>,
 }
 
 impl Requirement {
@@ -205,7 +224,7 @@ impl Display for Requirement {
         if !self.specifiers.0.is_empty() {
             write!(f, " {}", self.specifiers)?;
         }
-        if let Some(env_marker) = &self.env_marker {
+        if let Some(env_marker) = &self.env_marker_expr {
             write!(f, "; {}", env_marker)?;
         }
         Ok(())
@@ -279,7 +298,7 @@ impl TryFrom<&str> for PythonRequirement {
         if !r.extras.is_empty() {
             bail!("can't have extras on python requirement {}", value);
         }
-        if r.env_marker.is_some() {
+        if r.env_marker_expr.is_some() {
             bail!(
                 "can't have env marker restrictions on python requirement {}",
                 value
@@ -320,6 +339,31 @@ mod test {
     }
 
     #[test]
+    fn test_no_paren_chained_operators() {
+        // The formal grammar in PEP 508 fails to parse expressions like:
+        //   "_ and _ and _"
+        //   "_ or _ or _"
+        let r: PackageRequirement =
+            "foo; os_name == 'a' and os_name == 'b' and os_name == 'c' or os_name == 'd' or os_name == 'e'"
+                .try_into()
+                .unwrap();
+        insta::assert_ron_snapshot!(
+            r,
+            @r###""foo; ((os_name == \"a\" and (os_name == \"b\" and os_name == \"c\")) or (os_name == \"d\" or os_name == \"e\"))""###
+        );
+    }
+
+    #[test]
+    fn test_legacy_env_marker_vars() {
+        // should parse these, and normalize them to their PEP 508 equivalents
+        let r: PackageRequirement =
+            "foo; os.name == 'nt' and python_implementation == 'pypy'"
+                .try_into()
+                .unwrap();
+        insta::assert_ron_snapshot!(r, @r###""foo; (os_name == \"nt\" and platform_python_implementation == \"pypy\")""###);
+    }
+
+    #[test]
     fn test_requirement_roundtrip() {
         let reqs = vec![
             "foo",
@@ -336,5 +380,14 @@ mod test {
             let pr: PackageRequirement = req.try_into().unwrap();
             assert_eq!(pr, pr.to_string().try_into().unwrap());
         }
+    }
+
+    #[test]
+    fn test_extra_normalization() {
+        let r: PackageRequirement = "foo; extra == 'HeLlO' and extra in 'hElLoWorld'"
+            .try_into()
+            .unwrap();
+        let env = HashMap::from([("extra", "hello")]);
+        assert!(r.env_marker_expr.as_ref().unwrap().eval(&env).unwrap());
     }
 }

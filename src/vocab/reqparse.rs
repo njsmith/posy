@@ -88,12 +88,30 @@ peg::parser! {
                Ok(marker::Value::Variable(var.to_owned()))
               }
 
-        rule marker_var(parse_extra: ParseExtra) -> marker::Value
-            = _ v:(env_var(parse_extra) / python_str()) { v }
+        // https://peps.python.org/pep-0345/#environment-markers
+        rule pep345_env_var() -> marker::Value
+           = var:$(
+               "os.name" / "sys.platform" / "platform.version" / "platform.machine"
+               / "platform.python_implementation"
+             )
+             {
+               marker::Value::Variable(var.replace('.', "_"))
+             }
+
+        rule setuptools_env_var() -> marker::Value
+           = "python_implementation"
+             {
+               marker::Value::Variable("platform_python_implementation".into())
+             }
+
+        rule marker_value(parse_extra: ParseExtra) -> marker::Value
+            = _ v:(env_var(parse_extra) / pep345_env_var() / setuptools_env_var()
+                   / python_str())
+              { v }
 
         rule marker_expr(parse_extra: ParseExtra) -> marker::EnvMarkerExpr
             = _ "(" m:marker(parse_extra) _ ")" { m }
-              / lhs:marker_var(parse_extra) op:marker_op() rhs:marker_var(parse_extra)
+              / lhs:marker_value(parse_extra) op:marker_op() rhs:marker_value(parse_extra)
               {
                   use marker::EnvMarkerExpr::Operator;
                   use CompareOp::*;
@@ -113,12 +131,12 @@ peg::parser! {
               }
 
         rule marker_and(parse_extra: ParseExtra) -> marker::EnvMarkerExpr
-            = lhs:marker_expr(parse_extra) _ "and" _ rhs:marker_expr(parse_extra)
+            = lhs:marker_expr(parse_extra) _ "and" _ rhs:marker_and(parse_extra)
                  { marker::EnvMarkerExpr::And(Box::new(lhs), Box::new(rhs)) }
               / marker_expr(parse_extra)
 
         rule marker_or(parse_extra: ParseExtra) -> marker::EnvMarkerExpr
-            = lhs:marker_and(parse_extra) _ "or" _ rhs:marker_and(parse_extra)
+            = lhs:marker_and(parse_extra) _ "or" _ rhs:marker_or(parse_extra)
                  { marker::EnvMarkerExpr::Or(Box::new(lhs), Box::new(rhs)) }
               / marker_and(parse_extra)
 
@@ -144,13 +162,13 @@ peg::parser! {
             = name:name()
               _ extras:(extras() / "" { Vec::new() })
               _ specifiers:(versionspec() / "" { Specifiers(Vec::new()) })
-              _ env_marker:(quoted_marker(parse_extra)?)
+              _ env_marker_expr:(quoted_marker(parse_extra)?)
               {
                   Requirement {
                       name,
                       extras,
                       specifiers,
-                      env_marker,
+                      env_marker_expr,
                   }
               }
 
