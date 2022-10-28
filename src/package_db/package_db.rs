@@ -102,7 +102,6 @@ impl PackageDB {
     where
         T: Artifact,
         ArtifactName: ArtifactNameUnwrap<T::Name>,
-        T::Name: Clone,
     {
         let artifact_name = ai
             .name
@@ -122,7 +121,6 @@ impl PackageDB {
         B: std::borrow::Borrow<ArtifactInfo>,
         T: BinaryArtifact,
         ArtifactName: ArtifactNameUnwrap<T::Name>,
-        T::Name: Clone,
     {
         let matching = || {
             artifacts
@@ -198,7 +196,6 @@ impl PackageDB {
     where
         T: Artifact,
         ArtifactName: ArtifactNameUnwrap<T::Name>,
-        T::Name: Clone,
     {
         let body = self
             .http
@@ -210,7 +207,6 @@ impl PackageDB {
     where
         T: Artifact,
         ArtifactName: ArtifactNameUnwrap<T::Name>,
-        T::Name: Clone,
     {
         self._get_artifact(ai, CacheMode::Default)
     }
