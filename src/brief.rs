@@ -82,15 +82,9 @@ fn pick_best_pybi<'a>(
         .iter()
         .filter_map(|ai| {
             if let ArtifactName::Pybi(name) = &ai.name {
-                // if a pybi has multiple platform tags, score it as whichever tag gets
-                // the highest score (if any)
-                let best_score = name
-                    .arch_tags
-                    .iter()
-                    .filter_map(|ai| platform.compatibility(ai))
-                    .max();
-                // then re-attach the ai associated with this score
-                best_score.map(|score| (ai, score))
+                platform
+                    .max_compatibility(name.arch_tags.iter())
+                    .map(|score| (ai, score))
             } else {
                 None
             }
@@ -99,6 +93,8 @@ fn pick_best_pybi<'a>(
         .map(|(ai, _)| ai)
 }
 
+// XX TODO: merge with version preference logic in resolve.rs, b/c this should have
+// similar handling of prereleases, yanks, previous-blueprint-hints, etc.
 fn resolve_pybi<'a>(
     db: &'a PackageDB,
     req: &PythonRequirement,
@@ -181,48 +177,3 @@ impl Brief {
         })
     }
 }
-
-// PackageIndex needs to memoize metadata within a single run, so things like multiple
-// resolutions will be consistent
-//  (maybe PackageDB would be a better name?)
-// and also eventually provide built wheels on demand
-//
-// also want to pull out the "pick a version" logic from resolve.rs somehow so can share
-// it with pick-a-python-version logic. quite a bit is shared actually:
-// - prioritizing newest version, unless have a previous blueprint
-// - yank handling (also depends on previous blueprint)
-// - pre handling (and retry if resolution failed)
-// - package pinning output struct
-
-// need a version of this that tries to stick to a previous blueprint too
-// (affects: yanking, package preference)
-
-// pub trait PyEnvMaker {
-//     fn make(&self, blueprint: &Blueprint) -> Result<PyEnv>;
-// }
-
-// pub struct PyEnv {
-//     pub envvars: HashMap<String, String>,
-//     // destructor? not necessary in short term, but in long term might want to track
-//     // references so can do GC
-// }
-
-// pub struct ProjectWorkspace {}
-
-// pub struct TempWorkspace {}
-
-// // represents a _posy directory with persistent named environments
-// // I guess needs some locking?
-// impl ProjectWorkspace {
-//     pub fn get_env(name: &str, blueprint: &Blueprint) -> PyEnv {
-//         todo!()
-//     }
-// }
-
-// // represents a temp collection of environments, maybe can do everything with env
-// // manipulation + share copies of python/packages, including concurrently?
-// impl TempWorkspace {
-//     pub fn get_env(blueprint: &Blueprint) -> PyEnv {
-//         todo!()
-//     }
-// }

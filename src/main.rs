@@ -1,4 +1,3 @@
-mod cache;
 mod package_db;
 mod prelude;
 mod resolve;
@@ -6,6 +5,7 @@ mod util;
 mod vocab;
 
 mod brief;
+mod env;
 mod platform_tags;
 mod seek_slice;
 #[cfg(test)]
@@ -21,29 +21,6 @@ use structopt::StructOpt;
 struct Opt {
     inputs: Vec<String>,
 }
-
-const ENV: Lazy<HashMap<String, String>> = Lazy::new(|| {
-    // Copied from
-    //   print(json.dumps(packaging.markers.default_environment(), sort_keys=True, indent=4))
-    serde_json::from_str(
-        r##"
-        {
-            "implementation_name": "cpython",
-            "implementation_version": "3.8.6",
-            "os_name": "posix",
-            "platform_machine": "x86_64",
-            "platform_python_implementation": "CPython",
-            "platform_release": "5.8.0-53-generic",
-            "platform_system": "Linux",
-            "platform_version": "#60-Ubuntu SMP Thu May 6 07:46:32 UTC 2021",
-            "python_full_version": "3.8.6",
-            "python_version": "3.8",
-            "sys_platform": "linux"
-        }
-        "##,
-    )
-    .unwrap()
-});
 
 fn main() -> Result<()> {
     let opt = Opt::from_args();
@@ -61,14 +38,18 @@ fn main() -> Result<()> {
         ],
         PROJECT_DIRS.cache_dir(),
     );
-    println!("{:#?}", db.get_metadata::<Wheel, _>(
-        db.artifacts_for_release(
-            &"anyio".try_into().unwrap(),
-            &"3.0.1".try_into().unwrap(),
-        )
-        .unwrap(),
-    )
-    .unwrap());
+
+    // let pybi_ai = db
+    //     .artifacts_for_release(
+    //         &"cpython_unofficial".try_into().unwrap(),
+    //         &"3.10.8".try_into().unwrap(),
+    //     )
+    //     .unwrap();
+    // let pybi = db.get_artifact::<Pybi>(&pybi_ai[0]).unwrap();
+    // _ = std::fs::remove_dir_all("/tmp/unpack-test");
+    // std::fs::create_dir_all("/tmp/unpack-test")?;
+    // pybi.unpack(&std::path::Path::new("/tmp/unpack-test"))?;
+
     let brief = Brief {
         python: "cpython_unofficial >= 3".try_into().unwrap(),
         requirements: vec![

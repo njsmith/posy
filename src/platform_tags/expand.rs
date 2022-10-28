@@ -65,6 +65,16 @@ impl Platform {
         self.tag_map.get(tag).map(|score| *score)
     }
 
+    pub fn max_compatibility<T, S>(&self, tags: T) -> Option<i32>
+    where
+        T: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        tags.into_iter()
+            .filter_map(|t| self.compatibility(t.as_ref()))
+            .max()
+    }
+
     // create a new Platform that includes a subset of tags from the current platform,
     // and which are all in the same compat group, and also all in the given pybi's
     // compat group.
@@ -105,16 +115,18 @@ impl Platform {
                 match compat_group.as_str() {
                     "macos-x86_64" => {
                         possible.insert("x86_64");
-                    },
+                    }
                     "macos-arm64" => {
                         possible.insert("arm64");
-                    },
+                    }
                     _ => (),
                 }
             }
         }
         if possible.len() > 1 {
-            bail!("macOS platform selected, but can't tell if you want arm64 or x86-64");
+            bail!(
+                "macOS platform selected, but can't tell if you want arm64 or x86-64"
+            );
         }
         if possible.len() < 1 {
             bail!("can't infer platform_machine for this platform/pybi");
@@ -294,12 +306,16 @@ mod test {
 
         // given a pybi that can handle both, on a platform that can handle both, pick
         // the preferred platform and restrict to it.
-        let arm_only = platform.restrict(&vec!["macosx_10_15_universal2".to_owned()]).unwrap();
+        let arm_only = platform
+            .restrict(&vec!["macosx_10_15_universal2".to_owned()])
+            .unwrap();
         assert!(arm_only.compatibility("macosx_11_0_arm64").is_some());
         assert!(arm_only.compatibility("macosx_11_0_x86_64").is_none());
 
         // but if the pybi only supports one, go with that
-        let x86_64_only = platform.restrict(&vec!["macosx_10_15_x86_64".to_owned()]).unwrap();
+        let x86_64_only = platform
+            .restrict(&vec!["macosx_10_15_x86_64".to_owned()])
+            .unwrap();
         assert!(x86_64_only.compatibility("macosx_11_0_arm64").is_none());
         assert!(x86_64_only.compatibility("macosx_11_0_x86_64").is_some());
     }

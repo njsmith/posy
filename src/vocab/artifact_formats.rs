@@ -1,6 +1,9 @@
 use super::rfc822ish::RFC822ish;
 use crate::prelude::*;
-use std::cell::RefCell;
+use std::{
+    cell::RefCell,
+    path::{Component, Path, PathBuf},
+};
 use zip::ZipArchive;
 
 // probably should:
@@ -73,6 +76,8 @@ pub trait BinaryArtifact: Artifact {
     // use this to pull out the metadata from a remote artifact without downloading the
     // whole thing, and also cache the core metadata locally for next time.
     fn metadata(&self) -> Result<(Vec<u8>, Self::Metadata)>;
+
+    fn unpack(&self, destination: &Path) -> Result<()>;
 }
 
 fn parse_format_metadata_and_check_version(
@@ -96,6 +101,74 @@ fn slurp_from_zip<'a, T: Read + Seek>(
     name: &str,
 ) -> Result<Vec<u8>> {
     Ok(slurp(&mut z.by_name(name)?)?)
+}
+
+fn unpack<T: Read + Seek>(z: &mut ZipArchive<T>, dest: &Path) -> Result<()> {
+    // As of zipfile v0.15.3, this is symlink-oblivious: it'll just unpack symlinks as
+    // regular files with the link target as their contents.
+    z.extract(&dest)?;
+    // So we come in after to fix up the symlinks. There are a few nasty issues with
+    // symlinks that we have to be careful about:
+    //
+    // - foo -> baz, foo/bar regular entry or symlink: does 'bar' get put in 'baz', or
+    //   what?
+    //
+    //   Prevented by: the initial symlink-oblivious extract step will fail here, b/c
+    //   'foo' appears as both a "regular file" and a directory.
+    //
+    // - symlinks pointing outside the extracted archive: weird, suspicious, don't like
+    //   it.
+    //
+    //   Prevented by: careful examination of the symlink destination path.
+    #[cfg(unix)]
+    for i in 0..z.len() {
+        let mut zip_file = z.by_index(i)?;
+        let is_symlink = match zip_file.unix_mode() {
+            Some(mode) => mode & 0xf000 == 0xa000,
+            None => false,
+        };
+        println!("{}: is_symlink = {}", zip_file.name(), is_symlink);
+        if is_symlink {
+            let source = zip_file
+                .enclosed_name()
+                .ok_or(anyhow!("bad symlink source: {}", zip_file.name()))?
+                .to_path_buf();
+            let raw_target = slurp(&mut zip_file)?;
+            let target = std::str::from_utf8(&raw_target)?;
+            if target.contains('\0') {
+                bail!("bad symlink: {} -> {:?}", zip_file.name(), target);
+            }
+            let target = Path::new(target);
+            let resolved = source.join(&target);
+            // count depth of resolved path: add 1 for each directory segment, subtract
+            // one for each '..', it should be positive at the end
+            let mut depth = 0i32;
+            for component in resolved.components() {
+                match component {
+                    Component::Prefix(_) => {
+                        bail!("invalid symlink target {}", target.display())
+                    }
+                    Component::RootDir => {
+                        bail!("invalid symlink target {}", target.display())
+                    }
+                    Component::CurDir => (),
+                    Component::ParentDir => depth -= 1,
+                    Component::Normal(_) => depth += 1,
+                }
+            }
+            if depth <= 0 {
+                bail!(
+                    "symlink target {} points outside archive directory",
+                    target.display()
+                );
+            }
+            let full_source = dest.join(&source);
+            println!("symlinking {} -> {}", full_source.display(), target.display());
+            std::fs::remove_file(&full_source)?;
+            std::os::unix::fs::symlink(&target, &full_source)?;
+        }
+    }
+    Ok(())
 }
 
 impl BinaryArtifact for Wheel {
@@ -129,7 +202,9 @@ impl BinaryArtifact for Wheel {
                 bail!("found multiple .dist-info/ directories in wheel");
             }
         }
-        let captures = DIST_INFO_NAME_RE.captures(dist_info.as_str()).ok_or(anyhow!("malformed .dist-info name {dist_info}"))?;
+        let captures = DIST_INFO_NAME_RE
+            .captures(dist_info.as_str())
+            .ok_or(anyhow!("malformed .dist-info name {dist_info}"))?;
         let dist: PackageName = captures.get(1).unwrap().as_str().try_into()?;
         let version: Version = captures.get(2).unwrap().as_str().try_into()?;
         if (&dist, &version) != (&self.name.distribution, &self.name.version) {
@@ -176,6 +251,12 @@ impl BinaryArtifact for Wheel {
 
         Ok((metadata_blob, metadata))
     }
+
+    #[context("Unpacking {}", self.name)]
+    fn unpack(&self, destination: &Path) -> Result<()> {
+        // XX TODO RECORD? spreading?
+        unpack(&mut self.z.borrow_mut(), destination)
+    }
 }
 
 impl BinaryArtifact for Pybi {
@@ -206,5 +287,11 @@ impl BinaryArtifact for Pybi {
             );
         }
         Ok((metadata_blob, metadata))
+    }
+
+    #[context("Unpacking {}", self.name)]
+    fn unpack(&self, destination: &Path) -> Result<()> {
+        // XX TODO RECORD?
+        unpack(&mut self.z.borrow_mut(), destination)
     }
 }

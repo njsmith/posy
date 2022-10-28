@@ -405,9 +405,9 @@ control, we impose the following restrictions:
 - Symlinks MUST NOT be used in `.pybi`s targeting Windows, or other
   platforms that are missing first-class symlink support.
 
-- Symlinks MUST NOT be used inside the `.pybi-info` directory.
+- Symlinks MUST NOT be used inside the `pybi-info` directory.
   (Rationale: there's no need, and it makes things simpler for
-  resolvers that need to extract info from `.pybi-info` without
+  resolvers that need to extract info from `pybi-info` without
   unpacking the whole archive.)
 
 - Symlink targets MUST be relative paths, and MUST be inside the pybi

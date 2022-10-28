@@ -144,7 +144,7 @@ impl CacheDir {
         CacheDir { base: base.into() }
     }
 
-    pub fn get<T: CacheKey>(&self, key: T) -> Result<CacheHandle> {
+    pub fn get<T: CacheKey>(&self, key: &T) -> Result<CacheHandle> {
         let path = self.base.join(key.key());
         let lock = lock(&path, LockMode::Lock)?;
         Ok(CacheHandle { lock, path })

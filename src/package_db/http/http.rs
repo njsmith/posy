@@ -198,7 +198,7 @@ impl HttpInner {
         let maybe_handle = if cache_mode == CacheMode::NoStore {
             None
         } else {
-            Some(self.http_cache.get(key.as_slice())?)
+            Some(self.http_cache.get(&key.as_slice())?)
         };
 
         if let Some(handle) = &maybe_handle {
@@ -320,12 +320,18 @@ impl HttpInner {
         let request = http::Request::builder().uri(url.as_str()).body(())?;
         if maybe_hash.is_some() && cache_mode != CacheMode::NoStore {
             let hash = maybe_hash.unwrap();
-            let handle = self.hash_cache.get(hash)?;
-            if let Some(reader) = handle.reader() {
-                Ok(Box::new(reader.detach_unlocked()))
+            if cache_mode == CacheMode::OnlyIfCached {
+                if let Some(handle) = self.hash_cache.get_if_exists(&hash) {
+                    if let Some(reader) = handle.reader() {
+                        return Ok(Box::new(reader.detach_unlocked()));
+                    }
+                }
+                Err(NotCached {}.into())
             } else {
-                if cache_mode == CacheMode::OnlyIfCached {
-                    Err(NotCached {}.into())
+                assert!(cache_mode == CacheMode::Default);
+                let handle = self.hash_cache.get(&hash)?;
+                if let Some(reader) = handle.reader() {
+                    Ok(Box::new(reader.detach_unlocked()))
                 } else {
                     // fetch and store into the artifact cache, bypassing the regular
                     // http cache

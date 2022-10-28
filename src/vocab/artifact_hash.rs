@@ -58,7 +58,6 @@ impl<'a, T: Write> HashChecker<'a, T> {
 impl<'a, T: Write> Write for HashChecker<'a, T> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let written = self.inner.write(&buf)?;
-        println!("update {:?}", &buf[..written]);
         self.state.update(&buf[..written]);
         Ok(written)
     }
