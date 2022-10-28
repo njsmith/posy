@@ -202,8 +202,8 @@ impl<'a> marker::Env for HashMapEnv<'a> {
         match var {
             // we want 'extra' to have some value, because looking it up shouldn't be an
             // error. But we want that value to be something that will never match a
-            // real extra. So choose something with illegal characters in it.
-            "extra" => Some(self.extra.unwrap_or("!")),
+            // real extra. We use an empty string.
+            "extra" => Some(self.extra.unwrap_or("")),
             _ => self.basic_env.get(var).map(|s| s.as_str()),
         }
     }

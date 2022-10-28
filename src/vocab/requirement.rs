@@ -120,12 +120,18 @@ pub mod marker {
                     // variable: always normalize both sides (see PEP 685)
                     let lhs_holder: String;
                     let rhs_holder: String;
-                    if lhs == &*EXTRA || rhs == &*EXTRA {
-                        lhs_holder = Extra::try_from(lhs_val)?.normalized().to_string();
-                        rhs_holder = Extra::try_from(rhs_val)?.normalized().to_string();
-                        lhs_val = lhs_holder.as_ref();
-                        rhs_val = rhs_holder.as_ref();
-                    };
+                    if lhs == &*EXTRA {
+                        if let Ok(extra) = Extra::try_from(rhs_val) {
+                            rhs_holder = extra.normalized().to_string();
+                            rhs_val = rhs_holder.as_str();
+                        }
+                    }
+                    if rhs == &*EXTRA {
+                        if let Ok(extra) = Extra::try_from(lhs_val) {
+                            lhs_holder = extra.normalized().to_string();
+                            lhs_val = lhs_holder.as_str();
+                        }
+                    }
                     match op {
                         Op::In => rhs_val.contains(lhs_val),
                         Op::NotIn => !rhs_val.contains(lhs_val),
