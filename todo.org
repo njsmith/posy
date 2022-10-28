@@ -63,6 +63,10 @@ version set is represented as 3 sets of ranges, one for each tier
 
 when picking the next (package, version) to try, we always prefer candidates from a higher tier, so e.g. we never try any version from tier 3 until *all* packages have exhausted all their tier 1 and tier 2 options
 
+...or, hmm. Does this actually work? when pubgrub asks us for the next (package, version) candidate assignment, then it restricts it to only a subset of packages. so we could be in a situation where the only valid candidates *from those packages* are pre-releases, b/c of the constraints set by the versions already chosen, even though there still exists some other resolution that doesn't use the pre-releases.
+
+What this *might* do though is give the equivalent to "we only return pre-releases if explicitly requested"? ...ah, but no, if someone says `foo >= 10` and the only version >=10 is a pre-release, it could be selected. So this whole approach for pre-releases doesn't work.
+
 * make resolution less wildly inefficient when choosing next candidate
 [NOTE: there's a PR for this: https://github.com/pubgrub-rs/pubgrub/pull/104]
 
