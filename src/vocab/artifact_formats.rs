@@ -34,7 +34,7 @@ pub struct Pybi {
 }
 
 pub trait Artifact: Sized {
-    type Name: Clone;
+    type Name: Clone + UnwrapFromArtifactName;
 
     fn new(name: Self::Name, f: Box<dyn ReadPlusSeek>) -> Result<Self>;
 }

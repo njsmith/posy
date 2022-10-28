@@ -15,7 +15,7 @@ mod version;
 pub use self::artifact_formats::{Artifact, BinaryArtifact, Pybi, Sdist, Wheel};
 pub use self::artifact_hash::ArtifactHash;
 pub use self::artifact_name::{
-    ArtifactName, ArtifactNameUnwrap, DistInfoDirName, PybiName, SdistName, WheelName,
+    ArtifactName, UnwrapFromArtifactName, DistInfoDirName, PybiName, SdistName, WheelName,
 };
 pub use self::core_metadata::{PybiCoreMetadata, WheelCoreMetadata};
 pub use self::extra::Extra;

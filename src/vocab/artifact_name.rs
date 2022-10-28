@@ -299,22 +299,21 @@ impl ArtifactName {
         }
     }
 
-    pub fn inner_as<T: Clone>(&self) -> Option<&T>
-        where ArtifactName: ArtifactNameUnwrap<T>
+    pub fn inner_as<T: Clone + UnwrapFromArtifactName>(&self) -> Option<&T>
     {
-        ArtifactNameUnwrap::<T>::try_borrow(self)
+        T::try_unwrap_from(self)
     }
 }
 
-pub trait ArtifactNameUnwrap<T: Clone> {
-    fn try_borrow(&self) -> Option<&T>;
+pub trait UnwrapFromArtifactName {
+    fn try_unwrap_from(value: &ArtifactName) -> Option<&Self>;
 }
 
 macro_rules! impl_unwrap {
     ($enum:ident, $type:ty) => {
-        impl ArtifactNameUnwrap<$type> for ArtifactName {
-            fn try_borrow(&self) -> Option<&$type> {
-                if let ArtifactName::$enum(inner) = self {
+        impl UnwrapFromArtifactName for $type {
+            fn try_unwrap_from(value: &ArtifactName) -> Option<&$type> {
+                if let ArtifactName::$enum(inner) = value {
                     Some(inner)
                 } else {
                     None

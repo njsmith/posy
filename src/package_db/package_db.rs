@@ -101,7 +101,6 @@ impl PackageDB {
     ) -> Result<T>
     where
         T: Artifact,
-        ArtifactName: ArtifactNameUnwrap<T::Name>,
     {
         let artifact_name = ai
             .name
@@ -120,7 +119,6 @@ impl PackageDB {
     where
         B: std::borrow::Borrow<ArtifactInfo>,
         T: BinaryArtifact,
-        ArtifactName: ArtifactNameUnwrap<T::Name>,
     {
         let matching = || {
             artifacts
@@ -195,7 +193,6 @@ impl PackageDB {
     fn _get_artifact<T>(&self, ai: &ArtifactInfo, cache_mode: CacheMode) -> Result<T>
     where
         T: Artifact,
-        ArtifactName: ArtifactNameUnwrap<T::Name>,
     {
         let body = self
             .http
@@ -206,7 +203,6 @@ impl PackageDB {
     pub fn get_artifact<T>(&self, ai: &ArtifactInfo) -> Result<T>
     where
         T: Artifact,
-        ArtifactName: ArtifactNameUnwrap<T::Name>,
     {
         self._get_artifact(ai, CacheMode::Default)
     }
