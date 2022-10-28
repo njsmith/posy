@@ -66,6 +66,9 @@ impl<'a> PubgrubState<'a> {
             let artifacts = self.db.available_artifacts(&package)?;
             let mut versions = Vec::<&Version>::new();
             for (version, ais) in artifacts.iter() {
+                if version.is_prerelease() {
+                    continue;
+                }
                 for ai in ais {
                     if ai.yanked.yanked {
                         continue;
