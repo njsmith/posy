@@ -2,6 +2,7 @@ use crate::{
     package_db::{ArtifactInfo, PackageDB},
     platform_tags::Platform,
     prelude::*,
+    resolve::{resolve_wheels, ExpectedMetadata},
 };
 // blueprint:
 // - exactly one pinned pybi
@@ -45,11 +46,32 @@ pub struct PinnedPackage {
     // have mismatched requirements. (just Python-Requires and Requires-Dist?)
 }
 
+impl Display for PinnedPackage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} ({} known hashes)",
+            self.name.as_given(),
+            self.version,
+            self.hashes.len()
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Blueprint {
-    pub python: PinnedPackage,
-    pub packages: Vec<PinnedPackage>,
-    // XX TODO: metadata + provenance relied on
+    pub pybi: PinnedPackage,
+    pub wheels: Vec<(PinnedPackage, ExpectedMetadata)>,
+}
+
+impl Display for Blueprint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "pybi: {}\n", self.pybi)?;
+        for (wheel, em) in &self.wheels {
+            write!(f, "wheel: {} (metadata from {})\n", wheel, em.provenance)?;
+        }
+        Ok(())
+    }
 }
 
 fn pick_best_pybi<'a>(
@@ -93,6 +115,23 @@ fn resolve_pybi<'a>(
     bail!("no compatible pybis found for requirement and platform");
 }
 
+fn pinned(
+    db: &PackageDB,
+    name: PackageName,
+    version: Version,
+) -> Result<PinnedPackage> {
+    let hashes = db
+        .artifacts_for_release(&name, &version)?
+        .iter()
+        .filter_map(|ai| ai.hash.clone())
+        .collect::<Vec<_>>();
+    Ok(PinnedPackage {
+        name,
+        version,
+        hashes,
+    })
+}
+
 impl Brief {
     pub fn resolve(&self, db: &PackageDB, platform: &Platform) -> Result<Blueprint> {
         let pybi_ai = resolve_pybi(&db, &self.python, &platform)?;
@@ -126,30 +165,21 @@ impl Brief {
             );
         }
 
-        println!("{:#?}", pybi_metadata);
-        println!("{:#?}", env_marker_vars);
+        let resolved_wheels = resolve_wheels(db, &self.requirements, &env_marker_vars)?;
+        let mut wheels = Vec::<(PinnedPackage, ExpectedMetadata)>::new();
+        for (p, v, em) in resolved_wheels {
+            wheels.push((pinned(&db, p, v)?, em));
+        }
 
-        let wheels = crate::resolve::resolve_wheels(db, &self.requirements, &env_marker_vars)?;
-
-        println!("{:#?}", wheels);
-
-        todo!()
+        Ok(Blueprint {
+            pybi: pinned(
+                &db,
+                pybi_name.distribution.to_owned(),
+                pybi_name.version.to_owned(),
+            )?,
+            wheels,
+        })
     }
-
-    // Version that lets you specify the "preferred" version of some packages.
-    // This affects:
-    // - try to use those versions if can
-    // - will be willing to use those versions even if they're yanked (maybe with a
-    // warning)
-    // TODO
-    // pub fn resolve_with_preferences(
-    //     &self,
-    //     db: &str,
-    //     platform_tags: Vec<String>,
-    //     preferred_version: &dyn FnMut(&PackageName) -> Option<Version>,
-    // ) -> Result<Blueprint> {
-    //     todo!()
-    // }
 }
 
 // PackageIndex needs to memoize metadata within a single run, so things like multiple

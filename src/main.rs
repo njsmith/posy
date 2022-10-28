@@ -72,13 +72,16 @@ fn main() -> Result<()> {
     let brief = Brief {
         python: "cpython_unofficial >= 3".try_into().unwrap(),
         requirements: vec![
-            "sniffio < 1.1".try_into().unwrap(),
-            "anyio".try_into().unwrap(),
+            "trio".try_into().unwrap(),
+            "starlette".try_into().unwrap(),
+            "scipy".try_into().unwrap(),
         ],
     };
     let platform = Platform::from_core_tag("manylinux_2_17_x86_64");
 
-    //brief.resolve(&db, &platform)?;
+    let blueprint = brief.resolve(&db, &platform)?;
+
+    println!("{}", blueprint);
 
     // let root_reqs = opt
     //     .inputs
