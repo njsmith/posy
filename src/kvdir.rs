@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use std::fs::{self, File};
-use std::io::prelude::*;
 use std::io::SeekFrom;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
@@ -117,7 +116,7 @@ enum LockMode {
     IfExists,
 }
 
-fn lock(path: &Path, mode: LockMode) -> Result<File> {
+fn lock(path: &Path, mode: LockMode) -> Result<(PathBuf, File)> {
     let mut lock_path = path.to_path_buf();
     // unwrap rationale: this function should never be passed paths with trailing /
     let mut basename = lock_path.file_name().unwrap().to_os_string();
@@ -140,7 +139,7 @@ fn lock(path: &Path, mode: LockMode) -> Result<File> {
     };
     let lock = open_options.open(&lock_path)?;
     lock.lock_exclusive()?;
-    Ok(lock)
+    Ok((lock_path, lock))
 }
 
 #[derive(Debug)]
@@ -153,7 +152,7 @@ impl KVDir {
         KVDir { base: base.into() }
     }
 
-    pub fn get_or_set<K: PathKey, F>(
+    pub fn get_or_set_file<K: PathKey, F>(
         &self,
         key: &K,
         f: F,
@@ -171,7 +170,7 @@ impl KVDir {
         }
     }
 
-    pub fn get_contents_if_exists<K: PathKey>(
+    pub fn get_file<K: PathKey>(
         &self,
         key: &K,
     ) -> Option<Box<dyn ReadPlusSeek>> {
@@ -185,16 +184,16 @@ impl KVDir {
 
     pub fn lock<T: PathKey>(&self, key: &T) -> Result<KVDirLock> {
         let path = self.base.join(key.key());
-        let lock = lock(&path, LockMode::Lock)?;
-        Ok(KVDirLock { _lock: lock, path })
+        let (lock_path, lock) = lock(&path, LockMode::Lock)?;
+        Ok(KVDirLock { lock_path, _lock: lock, path })
     }
 
     // the reason this exists is to make it possible to probe for cache entries without
     // creating tons of directories/lock files that will never be used.
     pub fn lock_if_exists<T: PathKey>(&self, key: &T) -> Option<KVDirLock> {
         let path = self.base.join(key.key());
-        if let Ok(lock) = lock(&path, LockMode::IfExists) {
-            Some(KVDirLock { _lock: lock, path })
+        if let Ok((lock_path, lock)) = lock(&path, LockMode::IfExists) {
+            Some(KVDirLock { lock_path, _lock: lock, path })
         } else {
             None
         }
@@ -202,6 +201,7 @@ impl KVDir {
 }
 
 pub struct KVDirLock {
+    lock_path: PathBuf,
     _lock: File,
     path: PathBuf,
 }
@@ -278,5 +278,11 @@ impl KVDirLock {
             f: tempfile::NamedTempFile::new_in(&self.path.parent().unwrap())?,
             _lifetime: Default::default(),
         })
+    }
+
+    pub fn remove(self) -> Result<()> {
+        fs::remove_file(self.path)?;
+        fs::remove_file(self.lock_path)?;
+        Ok(())
     }
 }

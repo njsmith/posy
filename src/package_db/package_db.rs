@@ -3,7 +3,7 @@ use elsa::FrozenMap;
 use indexmap::IndexMap;
 use std::path::Path;
 
-use crate::kvdir::{KVDir, PathKey};
+use crate::kvdir::KVDir;
 use super::http::{CacheMode, Http, NotCached};
 use super::simple_api::{fetch_simple_api, pack_by_version, ArtifactInfo};
 
@@ -74,12 +74,12 @@ impl PackageDB {
     }
 
     fn metadata_from_cache(&self, ai: &ArtifactInfo) -> Option<Vec<u8>> {
-        slurp(&mut self.metadata_cache.get_contents_if_exists(&ai.hash.as_ref()?)?).ok()
+        slurp(&mut self.metadata_cache.get_file(&ai.hash.as_ref()?)?).ok()
     }
 
     fn put_metadata_in_cache(&self, ai: &ArtifactInfo, blob: &[u8]) -> Result<()> {
         if let Some(hash) = &ai.hash {
-            self.metadata_cache.get_or_set(&hash, |w| Ok(w.write_all(&blob)?))?;
+            self.metadata_cache.get_or_set_file(&hash, |w| Ok(w.write_all(&blob)?))?;
         }
         Ok(())
     }
