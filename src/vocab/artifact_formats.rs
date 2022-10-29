@@ -2,7 +2,7 @@ use super::rfc822ish::RFC822ish;
 use crate::prelude::*;
 use std::{
     cell::RefCell,
-    path::{Component, Path, PathBuf},
+    path::{Component, Path},
 };
 use zip::ZipArchive;
 
@@ -103,6 +103,13 @@ fn slurp_from_zip<'a, T: Read + Seek>(
     Ok(slurp(&mut z.by_name(name)?)?)
 }
 
+// XX TODO: rewrite this
+// - I'm not at all convinced that the symlink target sanitization is correct, e.g. what
+//   if 'source' ends in / (or what if it doesn't? foo/bar.join(baz) is what? do I need
+//   to call .parent? what if .parent is None?) need to pull it out and make it testable
+// - should do our own extraction b/c wheel wants to redirect stuff
+// - .enclosed_name allows stuff like foo/../bar, and probably we just want to error out
+//   if anyone has a filename like that
 fn unpack<T: Read + Seek>(z: &mut ZipArchive<T>, dest: &Path) -> Result<()> {
     // As of zipfile v0.15.3, this is symlink-oblivious: it'll just unpack symlinks as
     // regular files with the link target as their contents.
@@ -141,19 +148,26 @@ fn unpack<T: Read + Seek>(z: &mut ZipArchive<T>, dest: &Path) -> Result<()> {
             let target = Path::new(target);
             let resolved = source.join(&target);
             // count depth of resolved path: add 1 for each directory segment, subtract
-            // one for each '..', it should be positive at the end
-            let mut depth = 0i32;
+            // one for each '..', it should never go negative.
+            let mut depth = 0u32;
             for component in resolved.components() {
                 match component {
-                    Component::Prefix(_) => {
-                        bail!("invalid symlink target {}", target.display())
-                    }
-                    Component::RootDir => {
+                    Component::Prefix(_) | Component::RootDir => {
                         bail!("invalid symlink target {}", target.display())
                     }
                     Component::CurDir => (),
-                    Component::ParentDir => depth -= 1,
-                    Component::Normal(_) => depth += 1,
+                    Component::ParentDir => {
+                        depth = depth.checked_add(1).ok_or(anyhow!(
+                            "invalid symlink target {}",
+                            target.display()
+                        ))?;
+                    }
+                    Component::Normal(_) => {
+                        depth = depth.checked_sub(1).ok_or(anyhow!(
+                            "invalid symlink target {}",
+                            target.display()
+                        ))?;
+                    },
                 }
             }
             if depth <= 0 {
@@ -163,7 +177,11 @@ fn unpack<T: Read + Seek>(z: &mut ZipArchive<T>, dest: &Path) -> Result<()> {
                 );
             }
             let full_source = dest.join(&source);
-            println!("symlinking {} -> {}", full_source.display(), target.display());
+            println!(
+                "symlinking {} -> {}",
+                full_source.display(),
+                target.display()
+            );
             std::fs::remove_file(&full_source)?;
             std::os::unix::fs::symlink(&target, &full_source)?;
         }
