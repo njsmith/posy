@@ -3,7 +3,7 @@ use elsa::FrozenMap;
 use indexmap::IndexMap;
 use std::path::Path;
 
-use super::cache::CacheDir;
+use crate::kvdir::{KVDir, PathKey};
 use super::http::{CacheMode, Http, NotCached};
 use super::simple_api::{fetch_simple_api, pack_by_version, ArtifactInfo};
 
@@ -11,8 +11,8 @@ static NO_ARTIFACTS: [ArtifactInfo; 0] = [];
 
 pub struct PackageDB {
     http: Http,
-    metadata_cache: CacheDir,
-    wheel_cache: CacheDir,
+    metadata_cache: KVDir,
+    wheel_cache: KVDir,
     index_urls: Vec<Url>,
 
     // memo table to make sure we're internally consistent within a single invocation,
@@ -22,12 +22,12 @@ pub struct PackageDB {
 
 impl PackageDB {
     pub fn new(index_urls: &[Url], cache_path: &Path) -> PackageDB {
-        let http_cache = CacheDir::new(&cache_path.join("http"));
-        let hash_cache = CacheDir::new(&cache_path.join("by-hash"));
+        let http_cache = KVDir::new(&cache_path.join("http"));
+        let hash_cache = KVDir::new(&cache_path.join("by-hash"));
         PackageDB {
             http: Http::new(http_cache, hash_cache),
-            metadata_cache: CacheDir::new(&cache_path.join("metadata")),
-            wheel_cache: CacheDir::new(&cache_path.join("local-wheels")),
+            metadata_cache: KVDir::new(&cache_path.join("metadata")),
+            wheel_cache: KVDir::new(&cache_path.join("local-wheels")),
             index_urls: index_urls.into(),
             artifacts: Default::default(),
         }
@@ -74,22 +74,12 @@ impl PackageDB {
     }
 
     fn metadata_from_cache(&self, ai: &ArtifactInfo) -> Option<Vec<u8>> {
-        match &ai.hash {
-            Some(hash) => {
-                let entry = self.metadata_cache.get_if_exists(&hash)?;
-                let mut reader = entry.reader()?;
-                slurp(&mut reader).ok()
-            }
-            None => None,
-        }
+        slurp(&mut self.metadata_cache.get_contents_if_exists(&ai.hash.as_ref()?)?).ok()
     }
 
     fn put_metadata_in_cache(&self, ai: &ArtifactInfo, blob: &[u8]) -> Result<()> {
         if let Some(hash) = &ai.hash {
-            let handle = self.metadata_cache.get(&hash)?;
-            let mut writer = handle.begin()?;
-            writer.write_all(&blob)?;
-            writer.commit()?;
+            self.metadata_cache.get_or_set(&hash, |w| Ok(w.write_all(&blob)?))?;
         }
         Ok(())
     }

@@ -5,9 +5,9 @@ use http_cache_semantics::{AfterResponse, BeforeRequest, CachePolicy};
 use std::io::SeekFrom;
 use std::time::SystemTime;
 
-use super::cache::{CacheDir, CacheHandle};
 use super::ureq_glue::{do_request_ureq, new_ureq_agent};
 use super::LazyRemoteFile;
+use crate::kvdir::{KVDir, KVDirLock};
 
 const MAX_REDIRECTS: u16 = 5;
 const REDIRECT_STATUSES: &[u16] = &[301, 302, 303, 307, 308];
@@ -83,7 +83,7 @@ fn make_response(
 pub struct Http(Rc<HttpInner>);
 
 impl Http {
-    pub fn new(http_cache: CacheDir, hash_cache: CacheDir) -> Http {
+    pub fn new(http_cache: KVDir, hash_cache: KVDir) -> Http {
         Http(Rc::new(HttpInner::new(http_cache, hash_cache)))
     }
 
@@ -111,8 +111,8 @@ impl Http {
 
 pub struct HttpInner {
     agent: ureq::Agent,
-    http_cache: CacheDir,
-    hash_cache: CacheDir,
+    http_cache: KVDir,
+    hash_cache: KVDir,
 }
 
 // pass in Option<ArtifactHash> to request/request_if_cached, thread through to fill_cache
@@ -140,7 +140,7 @@ pub struct HttpInner {
 fn fill_cache<R>(
     policy: &CachePolicy,
     mut body: R,
-    handle: CacheHandle,
+    handle: KVDirLock,
 ) -> Result<impl Read + Seek>
 where
     R: Read,
@@ -172,6 +172,8 @@ fn key_for_request<T>(req: &http::Request<T>) -> Vec<u8> {
     let method = req.method().to_string().into_bytes();
     key.extend(method.len().to_le_bytes());
     key.extend(method);
+    // http::uri::Uri strips the fragment automatically, so we don't need to worry about
+    // it leaking into our cache key.
     let uri = req.uri().to_string().into_bytes();
     key.extend(uri.len().to_le_bytes());
     key.extend(uri);
@@ -179,7 +181,7 @@ fn key_for_request<T>(req: &http::Request<T>) -> Vec<u8> {
 }
 
 impl HttpInner {
-    pub fn new(http_cache: CacheDir, hash_cache: CacheDir) -> HttpInner {
+    pub fn new(http_cache: KVDir, hash_cache: KVDir) -> HttpInner {
         HttpInner {
             agent: new_ureq_agent(),
             http_cache,
@@ -192,13 +194,11 @@ impl HttpInner {
         request: &http::Request<()>,
         cache_mode: CacheMode,
     ) -> Result<http::Response<ReadPlusMaybeSeek>> {
-        // http::uri::Uri strips the fragment automatically, so we don't need to worry
-        // about it leaking into our cache key.
         let key = key_for_request(&request);
         let maybe_handle = if cache_mode == CacheMode::NoStore {
             None
         } else {
-            Some(self.http_cache.get(&key.as_slice())?)
+            Some(self.http_cache.lock(&key.as_slice())?)
         };
 
         if let Some(handle) = &maybe_handle {
@@ -321,27 +321,17 @@ impl HttpInner {
         if maybe_hash.is_some() && cache_mode != CacheMode::NoStore {
             let hash = maybe_hash.unwrap();
             if cache_mode == CacheMode::OnlyIfCached {
-                if let Some(handle) = self.hash_cache.get_if_exists(&hash) {
-                    if let Some(reader) = handle.reader() {
-                        return Ok(Box::new(reader.detach_unlocked()));
-                    }
-                }
-                Err(NotCached {}.into())
+                self.hash_cache
+                    .get_contents_if_exists(&hash)
+                    .ok_or(NotCached {}.into())
             } else {
                 assert!(cache_mode == CacheMode::Default);
-                let handle = self.hash_cache.get(&hash)?;
-                if let Some(reader) = handle.reader() {
-                    Ok(Box::new(reader.detach_unlocked()))
-                } else {
-                    // fetch and store into the artifact cache, bypassing the regular
-                    // http cache
+                Ok(self.hash_cache.get_or_set(&hash, |mut w| {
                     let mut body =
                         self.request(request, CacheMode::NoStore)?.into_body();
-                    let mut outer_writer = hash.checker(handle.begin()?)?;
-                    std::io::copy(&mut body, &mut outer_writer)?;
-                    let inner_writer = outer_writer.finish()?;
-                    Ok(Box::new(inner_writer.commit()?.detach_unlocked()))
-                }
+                    std::io::copy(&mut body, &mut w)?;
+                    Ok(())
+                })?)
             }
         } else {
             Ok(self

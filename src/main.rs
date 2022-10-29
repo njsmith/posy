@@ -3,6 +3,7 @@ mod prelude;
 mod resolve;
 mod util;
 mod vocab;
+mod kvdir;
 
 mod brief;
 mod env;

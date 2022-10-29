@@ -8,10 +8,13 @@ use std::path::{Path, PathBuf};
 use fs2::FileExt;
 use ring::digest;
 
-// A simple on-disk cache for static blobs of data.
+// A simple on-disk key-value store for static blobs of data. Used for stuff like
+// caches, holding a forest of unpacked wheels within a directory without conflicts,
+// etc.
 //
-// Keys are arbitrary Vec<u8>, which get run through sha256 to generate something with a
-// nice length and distribution.
+// Keys are anything whose reference type implements PathKey. In practice this is mostly
+// ArtifactHash, which produces a nicely formed path, or an arbitrary &[u8] blob, which
+// gets hashed to produce some arbitrary fixed-length path. Both use urlsafe-base64.
 //
 // For each key, we have a lockfile, + a file of data.
 //
@@ -33,7 +36,7 @@ use ring::digest;
 // The locking has two purposes:
 //
 // - It prevents "dogpiling", where multiple independent instances of this program waste
-//   energy on filling in the same cache entry at the same time.
+//   energy on filling in the same entry at the same time.
 // - In the future, we hope it will allow us to safely do garbage collection on the
 //   cache, because it will let the GC process safely assume that no-one is using the
 //   entry it's about to delete.
@@ -57,7 +60,8 @@ use ring::digest;
 // wouldn't actually happen until all handles were closed. This means currently, our
 // atomic updates are currently broken on Windows 7. If this becomes a problem, the
 // workaround is to rename the old file out of the way before renaming the new file into
-// place, and then deleting the old file under its new name.
+// place, and then deleting the old file under its new name. But Win7 is EOL, so,
+// whatever.
 
 // thoughts on adding GC:
 // - when accessing a key should update the mtime on the lock file; that's an easy way
@@ -88,18 +92,18 @@ fn bytes_to_path_suffix(bytes: &[u8]) -> PathBuf {
     path
 }
 
-pub trait CacheKey {
+pub trait PathKey {
     fn key(&self) -> PathBuf;
 }
 
-impl CacheKey for &[u8] {
+impl PathKey for &[u8] {
     fn key(&self) -> PathBuf {
         let scrambled_key = digest::digest(&digest::SHA256, self);
         bytes_to_path_suffix(scrambled_key.as_ref())
     }
 }
 
-impl CacheKey for &ArtifactHash {
+impl PathKey for &ArtifactHash {
     fn key(&self) -> PathBuf {
         let mut path = PathBuf::new();
         path.push(&self.mode);
@@ -123,11 +127,16 @@ fn lock(path: &Path, mode: LockMode) -> Result<File> {
     open_options.append(true);
     match mode {
         LockMode::Lock => {
-            fs::create_dir_all(lock_path.parent().unwrap())
-                .context("Failed to create cache directory")?;
+            let dir = lock_path.parent().unwrap();
+            fs::create_dir_all(dir).with_context(|| {
+                format!("Failed to create directory {}", dir.display())
+            })?;
             open_options.create(true);
         }
-        LockMode::IfExists => {}
+        LockMode::IfExists => {
+            // don't create directory or set create() flag; if it doesn't exist the open
+            // will error out.
+        }
     };
     let lock = open_options.open(&lock_path)?;
     lock.lock_exclusive()?;
@@ -135,35 +144,65 @@ fn lock(path: &Path, mode: LockMode) -> Result<File> {
 }
 
 #[derive(Debug)]
-pub struct CacheDir {
+pub struct KVDir {
     base: PathBuf,
 }
 
-impl CacheDir {
-    pub fn new(base: &Path) -> CacheDir {
-        CacheDir { base: base.into() }
+impl KVDir {
+    pub fn new(base: &Path) -> KVDir {
+        KVDir { base: base.into() }
     }
 
-    pub fn get<T: CacheKey>(&self, key: &T) -> Result<CacheHandle> {
+    pub fn get_or_set<K: PathKey, F>(
+        &self,
+        key: &K,
+        f: F,
+    ) -> Result<Box<dyn ReadPlusSeek>>
+    where
+        F: FnOnce(&mut dyn Write) -> Result<()>,
+    {
+        let handle = self.lock(key)?;
+        if let Some(reader) = handle.reader() {
+            Ok(Box::new(reader.detach_unlocked()))
+        } else {
+            let mut writer = handle.begin()?;
+            f(&mut writer)?;
+            Ok(Box::new(writer.commit()?.detach_unlocked()))
+        }
+    }
+
+    pub fn get_contents_if_exists<K: PathKey>(
+        &self,
+        key: &K,
+    ) -> Option<Box<dyn ReadPlusSeek>> {
+        if let Some(handle) = self.lock_if_exists(key) {
+            if let Some(reader) = handle.reader() {
+                return Some(Box::new(reader.detach_unlocked()));
+            }
+        }
+        return None;
+    }
+
+    pub fn lock<T: PathKey>(&self, key: &T) -> Result<KVDirLock> {
         let path = self.base.join(key.key());
         let lock = lock(&path, LockMode::Lock)?;
-        Ok(CacheHandle { lock, path })
+        Ok(KVDirLock { _lock: lock, path })
     }
 
     // the reason this exists is to make it possible to probe for cache entries without
     // creating tons of directories/lock files that will never be used.
-    pub fn get_if_exists<T: CacheKey>(&self, key: &T) -> Option<CacheHandle> {
+    pub fn lock_if_exists<T: PathKey>(&self, key: &T) -> Option<KVDirLock> {
         let path = self.base.join(key.key());
         if let Ok(lock) = lock(&path, LockMode::IfExists) {
-            Some(CacheHandle { lock, path })
+            Some(KVDirLock { _lock: lock, path })
         } else {
             None
         }
     }
 }
 
-pub struct CacheHandle {
-    lock: File,
+pub struct KVDirLock {
+    _lock: File,
     path: PathBuf,
 }
 
@@ -224,7 +263,7 @@ impl<'a> LockedWrite<'a> {
     }
 }
 
-impl CacheHandle {
+impl KVDirLock {
     pub fn reader<'a>(&'a self) -> Option<LockedRead<'a>> {
         Some(LockedRead {
             f: File::open(&self.path).ok()?,

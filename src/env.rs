@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::package_db::{ArtifactInfo, CacheKey, PackageDB};
+use crate::kvdir::PathKey;
+use crate::package_db::{ArtifactInfo, PackageDB};
 use crate::{brief::Blueprint, platform_tags::Platform, prelude::*};
 
 // site.py as $stdlib/site.py
@@ -32,7 +33,8 @@ impl EnvForest {
         let path = self.root.join(&hash.key());
         // XX TODO locking?
         if !path.exists() {
-            let tmp = tempfile::tempdir()?;
+            // XX TODO best dir? not sure
+            let tmp = tempfile::tempdir_in(&self.root)?;
             artifact.unpack(tmp.path())?;
             // unwrap safe b/c: <ArtifactHash as CacheKey>::key always returns a path
             // with multiple segments

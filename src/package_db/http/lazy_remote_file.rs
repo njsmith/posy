@@ -278,7 +278,7 @@ mod test {
     use std::fs::File;
     use std::io::prelude::*;
 
-    use crate::package_db::cache::CacheDir;
+    use crate::kvdir::KVDir;
 
     use super::*;
 
@@ -296,8 +296,8 @@ mod test {
 
         let caches = tempfile::tempdir().unwrap();
         let http = HttpInner::new(
-            CacheDir::new(&caches.path().join("http")),
-            CacheDir::new(&caches.path().join("hashed")),
+            KVDir::new(&caches.path().join("http")),
+            KVDir::new(&caches.path().join("hashed")),
         );
 
         let rr = fetch_range(&http, &url, "bytes=900-999").unwrap();
@@ -365,8 +365,8 @@ mod test {
         }
         let caches = tempfile::tempdir().unwrap();
         let http = HttpInner::new(
-            CacheDir::new(&caches.path().join("http")),
-            CacheDir::new(&caches.path().join("hashed")),
+            KVDir::new(&caches.path().join("http")),
+            KVDir::new(&caches.path().join("hashed")),
         );
 
         let mut lazy =
@@ -411,8 +411,8 @@ mod test {
         }
         let caches = tempfile::tempdir().unwrap();
         let http = Rc::new(HttpInner::new(
-            CacheDir::new(&caches.path().join("http")),
-            CacheDir::new(&caches.path().join("hashed")),
+            KVDir::new(&caches.path().join("http")),
+            KVDir::new(&caches.path().join("hashed")),
         ));
 
         // Reads the given number of bytes, unless it hits EOF, in which case it reads
