@@ -7,7 +7,7 @@ use std::time::SystemTime;
 
 use super::ureq_glue::{do_request_ureq, new_ureq_agent};
 use super::LazyRemoteFile;
-use crate::kvdir::{KVDir, KVDirLock};
+use crate::kvstore::{KVFileStore, KVFileLock};
 
 const MAX_REDIRECTS: u16 = 5;
 const REDIRECT_STATUSES: &[u16] = &[301, 302, 303, 307, 308];
@@ -83,7 +83,7 @@ fn make_response(
 pub struct Http(Rc<HttpInner>);
 
 impl Http {
-    pub fn new(http_cache: KVDir, hash_cache: KVDir) -> Http {
+    pub fn new(http_cache: KVFileStore, hash_cache: KVFileStore) -> Http {
         Http(Rc::new(HttpInner::new(http_cache, hash_cache)))
     }
 
@@ -111,8 +111,8 @@ impl Http {
 
 pub struct HttpInner {
     agent: ureq::Agent,
-    http_cache: KVDir,
-    hash_cache: KVDir,
+    http_cache: KVFileStore,
+    hash_cache: KVFileStore,
 }
 
 // pass in Option<ArtifactHash> to request/request_if_cached, thread through to fill_cache
@@ -140,7 +140,7 @@ pub struct HttpInner {
 fn fill_cache<R>(
     policy: &CachePolicy,
     mut body: R,
-    handle: KVDirLock,
+    handle: KVFileLock,
 ) -> Result<impl Read + Seek>
 where
     R: Read,
@@ -181,7 +181,7 @@ fn key_for_request<T>(req: &http::Request<T>) -> Vec<u8> {
 }
 
 impl HttpInner {
-    pub fn new(http_cache: KVDir, hash_cache: KVDir) -> HttpInner {
+    pub fn new(http_cache: KVFileStore, hash_cache: KVFileStore) -> HttpInner {
         HttpInner {
             agent: new_ureq_agent(),
             http_cache,
@@ -211,7 +211,7 @@ impl HttpInner {
                               new_parts,
                               body,
                               cache_status,
-                              lock: KVDirLock| {
+                              lock: KVFileLock| {
                 if !new_policy.is_storable() {
                     lock.remove()?;
                     Ok(make_response(
@@ -331,10 +331,10 @@ impl HttpInner {
         if maybe_hash.is_some() && cache_mode != CacheMode::NoStore {
             let hash = maybe_hash.unwrap();
             if cache_mode == CacheMode::OnlyIfCached {
-                self.hash_cache.get_file(&hash).ok_or(NotCached {}.into())
+                self.hash_cache.get(&hash).ok_or(NotCached {}.into())
             } else {
                 assert!(cache_mode == CacheMode::Default);
-                Ok(self.hash_cache.get_or_set_file(&hash, |mut w| {
+                Ok(self.hash_cache.get_or_set(&hash, |mut w| {
                     let mut body =
                         self.request(request, CacheMode::NoStore)?.into_body();
                     std::io::copy(&mut body, &mut w)?;

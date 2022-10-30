@@ -278,9 +278,18 @@ mod test {
     use std::fs::File;
     use std::io::prelude::*;
 
-    use crate::kvdir::KVDir;
+    use crate::kvstore::KVFileStore;
 
     use super::*;
+
+    fn tmp_http() -> (tempfile::TempDir, HttpInner) {
+        let caches = tempfile::tempdir().unwrap();
+        let http = HttpInner::new(
+            KVFileStore::new(&caches.path().join("http")).unwrap(),
+            KVFileStore::new(&caches.path().join("hashed")).unwrap(),
+        );
+        (caches, http)
+    }
 
     #[test]
     fn test_fetch_range() {
@@ -293,12 +302,7 @@ mod test {
             f.write_all(&[2; 1000]).unwrap();
         }
         let url = server.url("blobby");
-
-        let caches = tempfile::tempdir().unwrap();
-        let http = HttpInner::new(
-            KVDir::new(&caches.path().join("http")),
-            KVDir::new(&caches.path().join("hashed")),
-        );
+        let (_caches, http) = tmp_http();
 
         let rr = fetch_range(&http, &url, "bytes=900-999").unwrap();
         if let RangeResponse::Partial {
@@ -363,11 +367,7 @@ mod test {
             f.write_all(&[1; 13000]).unwrap();
             f.write_all(&[2; 13000]).unwrap();
         }
-        let caches = tempfile::tempdir().unwrap();
-        let http = HttpInner::new(
-            KVDir::new(&caches.path().join("http")),
-            KVDir::new(&caches.path().join("hashed")),
-        );
+        let (_caches, http) = tmp_http();
 
         let mut lazy =
             LazyRemoteFile::new(Rc::new(http), &server.url("blobby")).unwrap();
@@ -409,11 +409,7 @@ mod test {
                 .collect();
             f.write_all(&data).unwrap();
         }
-        let caches = tempfile::tempdir().unwrap();
-        let http = Rc::new(HttpInner::new(
-            KVDir::new(&caches.path().join("http")),
-            KVDir::new(&caches.path().join("hashed")),
-        ));
+        let (_caches, http) = tmp_http();
 
         // Reads the given number of bytes, unless it hits EOF, in which case it reads
         // everything available

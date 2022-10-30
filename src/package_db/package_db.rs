@@ -3,7 +3,7 @@ use elsa::FrozenMap;
 use indexmap::IndexMap;
 use std::path::Path;
 
-use crate::kvdir::KVDir;
+use crate::kvstore::KVFileStore;
 use super::http::{CacheMode, Http, NotCached};
 use super::simple_api::{fetch_simple_api, pack_by_version, ArtifactInfo};
 
@@ -11,8 +11,8 @@ static NO_ARTIFACTS: [ArtifactInfo; 0] = [];
 
 pub struct PackageDB {
     http: Http,
-    metadata_cache: KVDir,
-    wheel_cache: KVDir,
+    metadata_cache: KVFileStore,
+    wheel_cache: KVFileStore,
     index_urls: Vec<Url>,
 
     // memo table to make sure we're internally consistent within a single invocation,
@@ -21,16 +21,16 @@ pub struct PackageDB {
 }
 
 impl PackageDB {
-    pub fn new(index_urls: &[Url], cache_path: &Path) -> PackageDB {
-        let http_cache = KVDir::new(&cache_path.join("http"));
-        let hash_cache = KVDir::new(&cache_path.join("by-hash"));
-        PackageDB {
+    pub fn new(index_urls: &[Url], cache_path: &Path) -> Result<PackageDB> {
+        let http_cache = KVFileStore::new(&cache_path.join("http"))?;
+        let hash_cache = KVFileStore::new(&cache_path.join("by-hash"))?;
+        Ok(PackageDB {
             http: Http::new(http_cache, hash_cache),
-            metadata_cache: KVDir::new(&cache_path.join("metadata")),
-            wheel_cache: KVDir::new(&cache_path.join("local-wheels")),
+            metadata_cache: KVFileStore::new(&cache_path.join("metadata"))?,
+            wheel_cache: KVFileStore::new(&cache_path.join("local-wheels"))?,
             index_urls: index_urls.into(),
             artifacts: Default::default(),
-        }
+        })
     }
 
     pub fn artifacts_for_release(
@@ -74,12 +74,12 @@ impl PackageDB {
     }
 
     fn metadata_from_cache(&self, ai: &ArtifactInfo) -> Option<Vec<u8>> {
-        slurp(&mut self.metadata_cache.get_file(&ai.hash.as_ref()?)?).ok()
+        slurp(&mut self.metadata_cache.get(&ai.hash.as_ref()?)?).ok()
     }
 
     fn put_metadata_in_cache(&self, ai: &ArtifactInfo, blob: &[u8]) -> Result<()> {
         if let Some(hash) = &ai.hash {
-            self.metadata_cache.get_or_set_file(&hash, |w| Ok(w.write_all(&blob)?))?;
+            self.metadata_cache.get_or_set(&hash, |w| Ok(w.write_all(&blob)?))?;
         }
         Ok(())
     }

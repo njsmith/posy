@@ -1,7 +1,6 @@
-use std::fs;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 
-use crate::kvdir::PathKey;
+use crate::kvstore::KVDirStore;
 use crate::package_db::{ArtifactInfo, PackageDB};
 use crate::{brief::Blueprint, platform_tags::Platform, prelude::*};
 
@@ -21,27 +20,16 @@ use crate::{brief::Blueprint, platform_tags::Platform, prelude::*};
 // Error=...
 
 pub struct EnvForest {
-    root: PathBuf,
+    store: KVDirStore,
 }
 
 impl EnvForest {
-    fn ensure_unpacked<T>(&self, ai: &ArtifactInfo, artifact: &T) -> Result<PathBuf>
+    fn ensure_unpacked<T>(&self, ai: &ArtifactInfo, artifact: &T) -> Result<impl AsRef<Path>>
     where
         T: BinaryArtifact,
     {
         let hash = ai.hash.as_ref().ok_or(anyhow!("no hash"))?;
-        let path = self.root.join(&hash.key());
-        // XX TODO locking?
-        if !path.exists() {
-            // XX TODO best dir? not sure
-            let tmp = tempfile::tempdir_in(&self.root)?;
-            artifact.unpack(tmp.path())?;
-            // unwrap safe b/c: <ArtifactHash as CacheKey>::key always returns a path
-            // with multiple segments
-            fs::create_dir_all(path.parent().unwrap())?;
-            fs::rename(&tmp.into_path(), &path)?;
-        }
-        Ok(path)
+        Ok(self.store.get_or_set(&hash, |path| Ok(artifact.unpack(&path)?))?)
     }
 
     pub fn get_env(

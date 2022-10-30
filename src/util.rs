@@ -22,3 +22,20 @@ macro_rules! try_from_str_boilerplate {
         }
     };
 }
+
+pub fn retry_interrupted<F, T>(mut f: F) -> std::io::Result<T>
+where
+    F: FnMut() -> std::io::Result<T>,
+{
+    loop {
+        let res = f();
+        match &res {
+            Ok(_) => return res,
+            Err(err) => {
+                if err.kind() != std::io::ErrorKind::Interrupted {
+                    return res;
+                }
+            }
+        }
+    }
+}

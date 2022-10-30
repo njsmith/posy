@@ -3,7 +3,7 @@ mod prelude;
 mod resolve;
 mod util;
 mod vocab;
-mod kvdir;
+mod kvstore;
 
 mod brief;
 mod env;
@@ -38,7 +38,7 @@ fn main() -> Result<()> {
             Url::parse("https://pypi.org/simple/")?,
         ],
         PROJECT_DIRS.cache_dir(),
-    );
+    )?;
 
     // let pybi_ai = db
     //     .artifacts_for_release(
