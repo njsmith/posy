@@ -9,6 +9,7 @@ mod requirement;
 mod rfc822ish;
 mod specifier;
 mod version;
+mod entry_points;
 
 // All this stuff is also re-exported from crate::prelude::*
 
