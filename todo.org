@@ -33,19 +33,10 @@ can make pretty toml errors (https://docs.rs/toml_edit/latest/toml_edit/struct.T
 but even better would be if can convince it to make pretty explanations of failed resolution! (well, might have to do this on our own)
 maybe also look at https://docs.rs/ariadne/0.1.5/ariadne/
 
-* storage
-general Cache to KVDir or something?
-transactional operations that take a closure? + a new version for putting stuff in a directory
-
-fn get_or_set<K, F>(&self, key: &K, f: F) -> Result<impl Read + Seek>
-  where K: CacheKey, F: FnOnce(impl Read + Seek) -> Result<()>
-
-fn get_if_exists<K: CacheKey>(&self, key: &K) -> Option<impl Read + Seek>
-
-// maybe this needs to return an object holding a lock?
-fn read_through_dir<K: CacheKey, F>(&self, key: &K, f: F) -> Result<PathBuf>
-
-...could also do it in a way where there's a separate handle for the lock, but idk if it's really useful
+* locally-built wheels
+let's take the set of wheel compatibility tags for our current platform/pybi, and pick the most-compatible one, and use that for our lookup key in the sdist build dir
+so e.g. cp310-cp310-manylinux_2_34_x86_64
+*unless* it produces a *-none-any wheel, then it can get filed under its own tag
 
 * artifact types
 
