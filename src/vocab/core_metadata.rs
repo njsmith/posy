@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::prelude::*;
 
 use super::rfc822ish::RFC822ish;
@@ -22,6 +24,12 @@ pub struct PybiCoreMetadata {
     pub environment_marker_variables: HashMap<String, String>,
     pub tags: Vec<String>,
     pub paths: HashMap<String, String>,
+}
+
+impl PybiCoreMetadata {
+    pub fn path(&self, key: &str) -> Result<&Path> {
+        Ok(self.paths.get(key).ok_or(anyhow!("bad pybi: no '{key}' path"))?.as_ref())
+    }
 }
 
 fn parse_common(input: &[u8]) -> Result<(PackageName, Version, RFC822ish)> {
