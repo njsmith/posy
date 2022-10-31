@@ -282,13 +282,13 @@ mod test {
 
     use super::*;
 
-    fn tmp_http() -> (tempfile::TempDir, HttpInner) {
+    fn tmp_http() -> (tempfile::TempDir, Rc<HttpInner>) {
         let caches = tempfile::tempdir().unwrap();
         let http = HttpInner::new(
             KVFileStore::new(&caches.path().join("http")).unwrap(),
             KVFileStore::new(&caches.path().join("hashed")).unwrap(),
         );
-        (caches, http)
+        (caches, Rc::new(http))
     }
 
     #[test]
@@ -370,7 +370,7 @@ mod test {
         let (_caches, http) = tmp_http();
 
         let mut lazy =
-            LazyRemoteFile::new(Rc::new(http), &server.url("blobby")).unwrap();
+            LazyRemoteFile::new(http, &server.url("blobby")).unwrap();
 
         assert_eq!(lazy.seek(SeekFrom::End(0)).unwrap(), 3 * 13000);
         assert_eq!(lazy.seek(SeekFrom::Start(0)).unwrap(), 0);
