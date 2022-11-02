@@ -16,6 +16,7 @@ pub use serde::{Deserialize, Serialize};
 pub use serde_with::{DeserializeFromStr, SerializeDisplay};
 pub use url::Url;
 
+pub use crate::tree::NicePathBuf;
 pub use crate::try_from_str_boilerplate;
 pub use crate::vocab::*;
 

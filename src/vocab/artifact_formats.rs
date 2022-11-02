@@ -22,6 +22,10 @@ use zip::ZipArchive;
 pub struct Sdist {
     // TODO
 }
+pub enum ScriptType {
+    GUI,
+    Console,
+}
 pub struct Wheel {
     name: WheelName,
     z: RefCell<ZipArchive<Box<dyn ReadPlusSeek>>>,
@@ -99,17 +103,20 @@ fn slurp_from_zip<'a, T: Read + Seek>(
     Ok(slurp(&mut z.by_name(name)?)?)
 }
 
-impl BinaryArtifact for Wheel {
-    type Metadata = WheelCoreMetadata;
+struct WheelVitalSigns {
+    dist_info: NicePathBuf,
+    data: NicePathBuf,
+    root_is_purelib: bool,
+    metadata_blob: Vec<u8>,
+    metadata: WheelCoreMetadata,
+}
 
-    fn parse_metadata(value: &[u8]) -> Result<Self::Metadata> {
-        value.try_into()
-    }
-
-    #[context("Reading metadata from {}", self.name)]
-    fn metadata(&self) -> Result<(Vec<u8>, Self::Metadata)> {
+impl Wheel {
+    fn get_vital_signs(&self) -> Result<WheelVitalSigns> {
         static DIST_INFO_NAME_RE: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"^([^/]*)-([^-/]*)\.dist-info/").unwrap());
+        static DATA_NAME_RE: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"^([^/]*)-([^-/]*)\.data/").unwrap());
 
         let mut z = self.z.borrow_mut();
 
@@ -133,10 +140,28 @@ impl BinaryArtifact for Wheel {
         let captures = DIST_INFO_NAME_RE
             .captures(dist_info.as_str())
             .ok_or(anyhow!("malformed .dist-info name {dist_info}"))?;
-        let dist: PackageName = captures.get(1).unwrap().as_str().try_into()?;
-        let version: Version = captures.get(2).unwrap().as_str().try_into()?;
+        let dist_str = captures.get(1).unwrap().as_str();
+        let version_str = captures.get(2).unwrap().as_str();
+        let data = format!("{dist_str}-{version_str}.data/");
+        let dist: PackageName = dist_str.try_into()?;
+        let version: Version = version_str.try_into()?;
         if (&dist, &version) != (&self.name.distribution, &self.name.version) {
             bail!("wrong name/version in directory name {dist_info}");
+        }
+
+        let mut datas = z
+            .file_names()
+            .filter_map(|n| DATA_NAME_RE.find(n).map(|m| m.as_str()))
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        if datas.len() > 1 {
+            bail!("found multiple .data/ directories in wheel");
+        }
+        if let Some(&found_data) = datas.first() {
+            if found_data != data.as_str() {
+                bail!("malformed .data name: expected {data}, found {found_data}");
+            }
         }
 
         let wheel_path = format!("{dist_info}WHEEL");
@@ -153,9 +178,6 @@ impl BinaryArtifact for Wheel {
                 other,
             ),
         };
-        // XX refactor so this is accessible to the unpacking code once it's written
-        // (of course it will also need entry points and RECORD and stuff)
-        drop(root_is_purelib);
 
         let metadata_path = format!("{dist_info}METADATA");
         let metadata_blob = slurp_from_zip(&mut z, &metadata_path)?;
@@ -177,6 +199,26 @@ impl BinaryArtifact for Wheel {
             );
         }
 
+        Ok(WheelVitalSigns {
+            dist_info: dist_info.try_into()?,
+            data: data.try_into()?,
+            root_is_purelib,
+            metadata_blob,
+            metadata,
+        })
+    }
+}
+
+impl BinaryArtifact for Wheel {
+    type Metadata = WheelCoreMetadata;
+
+    fn parse_metadata(value: &[u8]) -> Result<Self::Metadata> {
+        value.try_into()
+    }
+
+    #[context("Reading metadata from {}", self.name)]
+    fn metadata(&self) -> Result<(Vec<u8>, Self::Metadata)> {
+        let WheelVitalSigns { metadata_blob, metadata, .. } = self.get_vital_signs()?;
         Ok((metadata_blob, metadata))
     }
 }
@@ -217,5 +259,76 @@ impl Pybi {
     pub fn unpack<T: WriteTree>(&self, destination: T) -> Result<()> {
         // XX TODO RECORD?
         unpack_zip_carefully(&mut self.z.borrow_mut(), destination)
+    }
+}
+
+impl Wheel {
+    #[context("Unpacking {}", self.name)]
+    pub fn unpack<W, F>(
+        &self,
+        paths: &HashMap<String, NicePathBuf>,
+        wrap_script: F,
+        mut dest: W,
+    ) -> Result<()>
+    where
+        W: WriteTree,
+        F: FnMut(Vec<u8>, ScriptType) -> Vec<u8>,
+    {
+        let vitals = self.get_vital_signs()?;
+        let transformer = WheelTreeTransformer {
+            paths: &paths,
+            wrap_script: &wrap_script,
+            dest: &mut dest,
+            vitals,
+        };
+        unpack_zip_carefully(&mut self.z.borrow_mut(), transformer)?;
+        Ok(())
+    }
+}
+
+struct WheelTreeTransformer<'a, W, F>
+where
+    W: WriteTree,
+    F: FnMut(Vec<u8>, ScriptType) -> Vec<u8>,
+{
+    paths: &'a HashMap<String, NicePathBuf>,
+    wrap_script: &'a F,
+    dest: &'a mut W,
+    vitals: WheelVitalSigns,
+}
+
+impl<'a, W, F> WheelTreeTransformer<'a, W, F>
+where
+    W: WriteTree,
+    F: FnMut(Vec<u8>, ScriptType) -> Vec<u8>,
+{
+    fn analyze_path(&self, path: &NicePathBuf) -> NicePathBuf {
+        // need to check if data path is a prefix, then extract the part after that, and
+        // then join with paths[whatever]
+        // and for scripts
+        todo!()
+    }
+}
+
+impl<'a, W, F> WriteTree for WheelTreeTransformer<'a, W, F>
+where
+    W: WriteTree,
+    F: FnMut(Vec<u8>, ScriptType) -> Vec<u8>,
+{
+    fn mkdir(&mut self, path: &NicePathBuf) -> Result<()> {
+        todo!()
+    }
+
+    fn write_file(
+        &mut self,
+        path: &NicePathBuf,
+        data: &mut dyn Read,
+        executable: bool,
+    ) -> Result<()> {
+        todo!()
+    }
+
+    fn write_symlink(&mut self, symlink: &crate::tree::NiceSymlinkPaths) -> Result<()> {
+        todo!()
     }
 }

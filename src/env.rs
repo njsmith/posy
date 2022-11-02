@@ -35,12 +35,12 @@ pub struct EnvForest {
 
 impl EnvForest {
     fn munge_unpacked_pybi(path: &Path, metadata: &PybiCoreMetadata) -> Result<()> {
-        let stdlib = path.join(metadata.path("stdlib")?);
+        let stdlib = path.join(metadata.path("stdlib")?.to_native());
         fs::write(
             &stdlib.join("EXTERNALLY-MANAGED"),
             include_bytes!("data-files/EXTERNALLY-MANAGED"),
         )?;
-        let purelib = path.join(metadata.path("purelib")?);
+        let purelib = path.join(metadata.path("purelib")?.to_native());
         fs::write(
             &purelib.join("sitecustomize.py"),
             include_bytes!("data-files/sitecustomize.py"),

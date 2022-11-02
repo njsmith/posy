@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use crate::prelude::*;
 
 use super::rfc822ish::RFC822ish;
@@ -23,12 +21,12 @@ pub struct PybiCoreMetadata {
     pub version: Version,
     pub environment_marker_variables: HashMap<String, String>,
     pub tags: Vec<String>,
-    pub paths: HashMap<String, String>,
+    pub paths: HashMap<String, NicePathBuf>,
 }
 
 impl PybiCoreMetadata {
-    pub fn path(&self, key: &str) -> Result<&Path> {
-        Ok(self.paths.get(key).ok_or(anyhow!("bad pybi: no '{key}' path"))?.as_ref())
+    pub fn path(&self, key: &str) -> Result<&NicePathBuf> {
+        Ok(self.paths.get(key).ok_or(anyhow!("bad pybi: no '{key}' path"))?)
     }
 }
 

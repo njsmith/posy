@@ -6,12 +6,12 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use zip::ZipArchive;
 
-// guaranteed to be relative, normalized (by being a Vec), valid filenames across
-// Windows/macOS/Linux, valid utf8. We don't currently rule out all the Windows device
-// names though (CON, LPT, etc.).
+// guaranteed to be relative, contained within the parent directory, normalized (by
+// being a Vec), valid filenames across Windows/macOS/Linux, valid utf8. We don't
+// currently rule out all the Windows device names though (CON, LPT, etc.).
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum NicePathComponent {
-    Parent,
+    Parent,  // only actually occurs in symlink target paths
     Normal(String),
 }
 
@@ -49,7 +49,7 @@ impl Display for NicePathComponent {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, DeserializeFromStr, SerializeDisplay)]
 pub struct NicePathBuf(Vec<NicePathComponent>);
 
 impl NicePathBuf {
@@ -125,6 +125,8 @@ impl TryFrom<&str> for NicePathBuf {
         value.as_bytes().try_into()
     }
 }
+
+try_from_str_boilerplate!(NicePathBuf);
 
 impl TryFrom<&[u8]> for NicePathBuf {
     type Error = anyhow::Error;
