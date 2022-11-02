@@ -1,0 +1,3 @@
+# https://peps.python.org/pep-0668/#marking-an-interpreter-as-using-an-external-package-manager
+[externally-managed]
+Error=This Python interpreter is managed by Posy. Use Posy to install or remove packages.
