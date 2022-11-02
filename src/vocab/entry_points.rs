@@ -42,7 +42,7 @@ pub struct Entry {
     pub object: Option<String>,
 }
 
-pub fn parse(contents: &str) -> Result<HashMap<String, Vec<Entry>>> {
+pub fn parse_entry_points(contents: &str) -> Result<HashMap<String, Vec<Entry>>> {
     let mut current_section_name = Some(String::new());
     let mut current_entries = Vec::<Entry>::new();
     let mut result = HashMap::<String, Vec<Entry>>::new();
@@ -97,7 +97,7 @@ mod test {
             [pytest11]
             nbval = nbval.plugin
         "};
-        let parsed = parse(ini).unwrap();
+        let parsed = parse_entry_points(ini).unwrap();
         insta::with_settings!({sort_maps => true}, {
             insta::assert_ron_snapshot!(parsed, @r###"
             {
@@ -133,7 +133,7 @@ mod test {
             foobar   =   foo.bar.baz:quux.main [bar,baz]  # comment
             another = value  \t\t
         "};
-        let parsed = parse(ini).unwrap();
+        let parsed = parse_entry_points(ini).unwrap();
         insta::with_settings!({sort_maps => true}, {
             insta::assert_ron_snapshot!(parsed, @r###"
             {
@@ -161,6 +161,6 @@ mod test {
         let bad = indoc! {"
             a = b
         "};
-        assert!(parse(bad).is_err());
+        assert!(parse_entry_points(bad).is_err());
     }
 }

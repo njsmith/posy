@@ -1235,6 +1235,7 @@ dependencies = [
  "structopt",
  "tempfile",
  "tokio",
+ "typed-path",
  "ureq",
  "url",
  "warp",
@@ -2060,6 +2061,12 @@ checksum = "59b11b2b5241ba34be09c3cc85a36e56e48f9888862e19cedf23336d35316ed1"
 dependencies = [
  "memchr",
 ]
+
+[[package]]
+name = "typed-path"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0303bfe6ef379273be7ce99d8a6a2e54261fd110a01cf70986ec0fe855ff075e"
 
 [[package]]
 name = "typenum"

@@ -11,6 +11,7 @@ mod platform_tags;
 mod seek_slice;
 #[cfg(test)]
 mod test_util;
+mod tree;
 
 use anyhow::Result;
 

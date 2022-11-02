@@ -1,8 +1,11 @@
-use std::path::{PathBuf, Path};
+use std::borrow::Cow;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use crate::kvstore::KVDirStore;
 use crate::package_db::{ArtifactInfo, PackageDB};
 use crate::{brief::Blueprint, platform_tags::Platform, prelude::*};
+use crate::tree::WriteTreeFS;
 
 // site.py as $stdlib/site.py
 // imports sitecustomize, which can use site.addsitedir to add directories that will be
@@ -19,17 +22,40 @@ use crate::{brief::Blueprint, platform_tags::Platform, prelude::*};
 // [externally-managed]
 // Error=...
 
+// pybi: generic code just unpacks; EnvForest wants to do fixups
+// wheels: generic code... takes paths dict, I guess?
+//   oh plus needs a strategy for how executable wrappers find python
+//     for EnvForest, probably $POSY_PYTHON; for export, path relative to executable
+//     or I guess can use distlib's launchers, with either #!/usr/bin/env python.exe for
+//     find-on-path, or #!./python.exe for relative path
+
 pub struct EnvForest {
     store: KVDirStore,
 }
 
 impl EnvForest {
-    fn ensure_unpacked<T>(&self, ai: &ArtifactInfo, artifact: &T) -> Result<impl AsRef<Path>>
-    where
-        T: BinaryArtifact,
-    {
-        let hash = ai.hash.as_ref().ok_or(anyhow!("no hash"))?;
-        Ok(self.store.get_or_set(&hash, |path| Ok(artifact.unpack(&path)?))?)
+    fn munge_unpacked_pybi(path: &Path, metadata: &PybiCoreMetadata) -> Result<()> {
+        let stdlib = path.join(metadata.path("stdlib")?);
+        fs::write(
+            &stdlib.join("EXTERNALLY-MANAGED"),
+            include_bytes!("data-files/EXTERNALLY-MANAGED"),
+        )?;
+        let purelib = path.join(metadata.path("purelib")?);
+        fs::write(
+            &purelib.join("sitecustomize.py"),
+            include_bytes!("data-files/sitecustomize.py"),
+        )?;
+        let site_py = fs::read(stdlib.join("site.py"))?;
+        static USER_SITE_RE: Lazy<regex::bytes::Regex> = Lazy::new(|| {
+            regex::bytes::Regex::new(r"^ENABLE_USER_SITE = None").unwrap()
+        });
+        let new_site_py =
+            USER_SITE_RE.replace(&site_py, &b"ENABLE_USER_SITE = False"[..]);
+        if let Cow::Borrowed(_) = new_site_py {
+            bail!("pybi's site.py has unexpected structure; couldn't disable user site-packages");
+        }
+        fs::write(stdlib.join("site.py"), &new_site_py)?;
+        Ok(())
     }
 
     pub fn get_env(
@@ -64,10 +90,17 @@ impl EnvForest {
         }
         let pybi = db.get_artifact::<Pybi>(pybi_ai)?;
         let (_, pybi_metadata) = pybi.metadata()?;
-        let pybi_root = self.ensure_unpacked(pybi_ai, &pybi)?;
+        let pybi_root = self.store.get_or_set(&pybi_hash, |p| {
+            pybi.unpack(WriteTreeFS::new(&p))?;
+            EnvForest::munge_unpacked_pybi(&p, &pybi_metadata)?;
+            Ok(())
+        })?;
 
-        // XX TODO: pass a fixup closure to ensure_unpacked?
-        // need to fixup site.py and sitecustomize.py and EXTERNALLY-MANAGED
+        // better handling of hash checking
+        // wheel compatibility / picking wheels
+        // entry points parser
+        //   entry points require adding extras to Blueprint!
+
 
         // then pick wheels and unpack them
         // their fixups:

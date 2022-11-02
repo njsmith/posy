@@ -1,9 +1,7 @@
 use super::rfc822ish::RFC822ish;
 use crate::prelude::*;
-use std::{
-    cell::RefCell,
-    path::{Component, Path},
-};
+use crate::tree::{unpack_zip_carefully, WriteTree};
+use std::cell::RefCell;
 use zip::ZipArchive;
 
 // probably should:
@@ -76,8 +74,6 @@ pub trait BinaryArtifact: Artifact {
     // use this to pull out the metadata from a remote artifact without downloading the
     // whole thing, and also cache the core metadata locally for next time.
     fn metadata(&self) -> Result<(Vec<u8>, Self::Metadata)>;
-
-    fn unpack(&self, destination: &Path) -> Result<()>;
 }
 
 fn parse_format_metadata_and_check_version(
@@ -101,92 +97,6 @@ fn slurp_from_zip<'a, T: Read + Seek>(
     name: &str,
 ) -> Result<Vec<u8>> {
     Ok(slurp(&mut z.by_name(name)?)?)
-}
-
-// XX TODO: rewrite this
-// - I'm not at all convinced that the symlink target sanitization is correct, e.g. what
-//   if 'source' ends in / (or what if it doesn't? foo/bar.join(baz) is what? do I need
-//   to call .parent? what if .parent is None?) need to pull it out and make it testable
-// - should do our own extraction b/c wheel wants to redirect stuff
-// - .enclosed_name allows stuff like foo/../bar, and probably we just want to error out
-//   if anyone has a filename like that
-fn unpack<T: Read + Seek>(z: &mut ZipArchive<T>, dest: &Path) -> Result<()> {
-    // As of zipfile v0.15.3, this is symlink-oblivious: it'll just unpack symlinks as
-    // regular files with the link target as their contents.
-    z.extract(&dest)?;
-    // So we come in after to fix up the symlinks. There are a few nasty issues with
-    // symlinks that we have to be careful about:
-    //
-    // - foo -> baz, foo/bar regular entry or symlink: does 'bar' get put in 'baz', or
-    //   what?
-    //
-    //   Prevented by: the initial symlink-oblivious extract step will fail here, b/c
-    //   'foo' appears as both a "regular file" and a directory.
-    //
-    // - symlinks pointing outside the extracted archive: weird, suspicious, don't like
-    //   it.
-    //
-    //   Prevented by: careful examination of the symlink destination path.
-    #[cfg(unix)]
-    for i in 0..z.len() {
-        let mut zip_file = z.by_index(i)?;
-        let is_symlink = match zip_file.unix_mode() {
-            Some(mode) => mode & 0xf000 == 0xa000,
-            None => false,
-        };
-        println!("{}: is_symlink = {}", zip_file.name(), is_symlink);
-        if is_symlink {
-            let source = zip_file
-                .enclosed_name()
-                .ok_or(anyhow!("bad symlink source: {}", zip_file.name()))?
-                .to_path_buf();
-            let raw_target = slurp(&mut zip_file)?;
-            let target = std::str::from_utf8(&raw_target)?;
-            if target.contains('\0') {
-                bail!("bad symlink: {} -> {:?}", zip_file.name(), target);
-            }
-            let target = Path::new(target);
-            let resolved = source.join(&target);
-            // count depth of resolved path: add 1 for each directory segment, subtract
-            // one for each '..', it should never go negative.
-            let mut depth = 0u32;
-            for component in resolved.components() {
-                match component {
-                    Component::Prefix(_) | Component::RootDir => {
-                        bail!("invalid symlink target {}", target.display())
-                    }
-                    Component::CurDir => (),
-                    Component::ParentDir => {
-                        depth = depth.checked_add(1).ok_or(anyhow!(
-                            "invalid symlink target {}",
-                            target.display()
-                        ))?;
-                    }
-                    Component::Normal(_) => {
-                        depth = depth.checked_sub(1).ok_or(anyhow!(
-                            "invalid symlink target {}",
-                            target.display()
-                        ))?;
-                    },
-                }
-            }
-            if depth <= 0 {
-                bail!(
-                    "symlink target {} points outside archive directory",
-                    target.display()
-                );
-            }
-            let full_source = dest.join(&source);
-            println!(
-                "symlinking {} -> {}",
-                full_source.display(),
-                target.display()
-            );
-            std::fs::remove_file(&full_source)?;
-            std::os::unix::fs::symlink(&target, &full_source)?;
-        }
-    }
-    Ok(())
 }
 
 impl BinaryArtifact for Wheel {
@@ -269,12 +179,6 @@ impl BinaryArtifact for Wheel {
 
         Ok((metadata_blob, metadata))
     }
-
-    #[context("Unpacking {}", self.name)]
-    fn unpack(&self, destination: &Path) -> Result<()> {
-        // XX TODO RECORD? spreading?
-        unpack(&mut self.z.borrow_mut(), destination)
-    }
 }
 
 impl BinaryArtifact for Pybi {
@@ -306,10 +210,12 @@ impl BinaryArtifact for Pybi {
         }
         Ok((metadata_blob, metadata))
     }
+}
 
+impl Pybi {
     #[context("Unpacking {}", self.name)]
-    fn unpack(&self, destination: &Path) -> Result<()> {
+    pub fn unpack<T: WriteTree>(&self, destination: T) -> Result<()> {
         // XX TODO RECORD?
-        unpack(&mut self.z.borrow_mut(), destination)
+        unpack_zip_carefully(&mut self.z.borrow_mut(), destination)
     }
 }

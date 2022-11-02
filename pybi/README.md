@@ -176,6 +176,9 @@ In more detail:
   `sysconfig.get_paths()`), as relative paths starting at the root of the zip
   file, as a JSON dict.
 
+  These paths MUST be written in Unix format, using forward slashes as a
+  separator, not backslashes. 
+
   It must be possible to invoke the Python interpreter by running
   `{paths["scripts"]}/python`. If there are alternative interpreter
   entry points (e.g. `pythonw` for Windows GUI apps), then they
@@ -303,7 +306,7 @@ str_tags = [str(t).replace("xyzzy", "PLATFORM") for t in tags]
 # installed_base as a directory deep inside the framework.
 while "Python.framework" in base_path:
     base_path = os.path.dirname(base_path)
-paths = {key: os.path.relpath(path, base_path) for (key, path) in sysconfig.get_paths().items()}
+paths = {key: os.path.relpath(path, base_path).replace("\\", "/") for (key, path) in sysconfig.get_paths().items()}
 
 json.dump({"marker_vars": marker_vars, "tags": str_tags, "paths": paths}, sys.stdout)
 ```

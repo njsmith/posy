@@ -51,6 +51,7 @@ slice = "0.0.4"
 mime = "0.3.16"
 ciborium = "0.2.0"
 stable_deref_trait = "1.2.0"
+typed-path = "0.1.0"
 
 [dev-dependencies]
 fastrand = "1.4.1"

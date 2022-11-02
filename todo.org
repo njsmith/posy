@@ -76,7 +76,8 @@ What this *might* do though is give the equivalent to "we only return pre-releas
 [NOTE: there's a PR for this: https://github.com/pubgrub-rs/pubgrub/pull/104]
 
 right now, every time pubgrub wants to consider a candidate, it gives us a set of ranges for all the packages under consideration, and then for every one, we do an O(n) loop through every package version, filtering out which ones fit into the range.
-This is at least accidentally quadratic, quite possibly worse. There's gotta be a better data structure here.
+This is at least accidentally quadratic, quite possibly worse. There's gotta be a better .
+data structure here.
 
 One idea: with pubgrub custom Range trait support, have the range objects themselves aware of the complete version set and track which packages fit, propagating this incrementally through range operations?
 
@@ -91,3 +92,7 @@ so... say that @ dependencies are only supported at the top-level? must be speci
   prodigy-teams kind of case might want to also allow them in sibling projects within the same workspace
 and then we can process them up-front, and simply tell pubgrub that these are the *only* versions available of those packages, the end.
 (probably also want some kind of support for 'override' requirements there, which are regular dependencies that will usually be @ in practice, and that cause all other version constraints on that package to be *totally ignored*
+
+* optimizing network usage during resolution
+when we pull up a list of requirements for some package, can immediately fetch the simple pages for all of them in parallel, and even the metadata for the most-preferred version
+ideally over HTTP/2 or HTTP/3, and/or in the background
