@@ -4,89 +4,41 @@ use std::io;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
+use typed_path::unix::UnixComponent;
+use typed_path::UnixPath;
 use zip::ZipArchive;
 
 // guaranteed to be relative, contained within the parent directory, normalized (by
 // being a Vec), valid filenames across Windows/macOS/Linux, valid utf8. We don't
 // currently rule out all the Windows device names though (CON, LPT, etc.).
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum NicePathComponent {
-    Parent,  // only actually occurs in symlink target paths
-    Normal(String),
+#[derive(Debug, PartialEq, Eq, Clone, DeserializeFromStr, SerializeDisplay)]
+pub struct NicePathBuf {
+    pieces: Vec<String>,
 }
 
 // https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file
 const NAUGHTY_CHARS: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
 
-impl NicePathComponent {
-    pub fn try_from_bytes(value: &[u8]) -> Result<NicePathComponent> {
-        NicePathComponent::try_from_str(std::str::from_utf8(value)?)
+fn check_path_piece(piece: &[u8]) -> Result<&str> {
+    let piece = std::str::from_utf8(piece)?;
+    if piece.is_empty() {
+        bail!("path components must be non-empty");
     }
-
-    pub fn try_from_str(value: &str) -> Result<NicePathComponent> {
-        if value.is_empty() {
-            bail!("path components must be non-empty");
-        }
-        if value.contains(&*NAUGHTY_CHARS) {
-            bail!("invalid or non-portable characters in path component {value:?}");
-        }
-        if value.contains(|c: char| c.is_ascii_control()) {
-            bail!("invalid or non-portable characters in path component {value:?}");
-        }
-        if value.ends_with('.') || value.ends_with(' ') {
-            bail!("invalid or non-portable path component {value:?}");
-        }
-        Ok(NicePathComponent::Normal(value.into()))
+    if piece.contains(&*NAUGHTY_CHARS) {
+        bail!("invalid or non-portable characters in path component {piece:?}");
     }
+    if piece.contains(|c: char| c.is_ascii_control()) {
+        bail!("invalid or non-portable characters in path component {piece:?}");
+    }
+    if piece.ends_with('.') || piece.ends_with(' ') {
+        bail!("invalid or non-portable path component {piece:?}");
+    }
+    Ok(piece)
 }
-
-impl Display for NicePathComponent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            NicePathComponent::Parent => write!(f, ".."),
-            NicePathComponent::Normal(piece) => write!(f, "{}", piece),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, DeserializeFromStr, SerializeDisplay)]
-pub struct NicePathBuf(Vec<NicePathComponent>);
 
 impl NicePathBuf {
-    // This is the low-level private constructor, which doesn't check for
-    // "contained-ness" -- it can freely return paths that start with '../'
-    //
-    // It's called by the public constructors (TryFrom<...> for NicePathBuf), and also
-    // the NiceSymlinkPaths constructor (because symlink targets *are* allowed to start
-    // with ..).
-    fn from_unix(value: &typed_path::UnixPath) -> Result<NicePathBuf> {
-        use typed_path::unix::UnixComponent::*;
-        let mut new = NicePathBuf(Default::default());
-        for c in value.components() {
-            match c {
-                RootDir => bail!("expected relative path"),
-                CurDir => (),
-                ParentDir => {
-                    if let Some(NicePathComponent::Normal(_)) = new.0.last() {
-                        new.0.pop();
-                    } else {
-                        new.0.push(NicePathComponent::Parent);
-                    }
-                }
-                Normal(piece) => {
-                    new.0.push(NicePathComponent::try_from_bytes(piece)?);
-                }
-            }
-        }
-        Ok(new)
-    }
-
     pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn components(&self) -> impl Iterator<Item = &NicePathComponent> {
-        self.0.iter()
+        self.pieces.len()
     }
 
     pub fn to_native(&self) -> PathBuf {
@@ -96,23 +48,35 @@ impl NicePathBuf {
 
 impl Display for NicePathBuf {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.len() == 0 {
+        if self.pieces.is_empty() {
             write!(f, ".")
         } else {
-            let pieces = self.components().map(|c| c.to_string()).collect::<Vec<_>>();
-            write!(f, "{}", pieces.as_slice().join("/"))
+            write!(f, "{}", self.pieces.as_slice().join("/"))
         }
     }
 }
 
-impl TryFrom<&typed_path::UnixPath> for NicePathBuf {
+impl TryFrom<&UnixPath> for NicePathBuf {
     type Error = anyhow::Error;
 
     #[context("validating path {}", value.display())]
-    fn try_from(value: &typed_path::UnixPath) -> Result<Self, Self::Error> {
-        let new = NicePathBuf::from_unix(value)?;
-        if new.0.first() == Some(&NicePathComponent::Parent) {
-            bail!("path escapes containment");
+    fn try_from(value: &UnixPath) -> Result<Self, Self::Error> {
+        let mut new = NicePathBuf { pieces: vec![] };
+        for c in value.components() {
+            match c {
+                UnixComponent::RootDir => bail!("expected relative path"),
+                UnixComponent::CurDir => (),
+                UnixComponent::ParentDir => {
+                    if !new.pieces.is_empty() {
+                        new.pieces.pop();
+                    } else {
+                        bail!("path escapes parent directory");
+                    }
+                }
+                UnixComponent::Normal(piece) => {
+                    new.pieces.push(check_path_piece(piece)?.into());
+                }
+            }
         }
         Ok(new)
     }
@@ -132,54 +96,70 @@ impl TryFrom<&[u8]> for NicePathBuf {
     type Error = anyhow::Error;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        typed_path::UnixPath::new(value).try_into()
+        UnixPath::new(value).try_into()
     }
 }
 
 impl From<&NicePathBuf> for PathBuf {
     fn from(value: &NicePathBuf) -> Self {
-        if value.len() == 0 {
-            PathBuf::from(".")
-        } else {
-            let mut new = PathBuf::new();
-            for c in value.components() {
-                match c {
-                    NicePathComponent::Parent => new.push(".."),
-                    NicePathComponent::Normal(piece) => new.push(piece),
-                }
-            }
-            new
-        }
+        value.to_string().into()
     }
 }
 
 #[derive(Debug)]
 pub struct NiceSymlinkPaths {
     pub source: NicePathBuf,
-    pub target: NicePathBuf,
+    pub target: String,
 }
 
 impl NiceSymlinkPaths {
+    #[context(
+        "validating symlink {} -> {}",
+        source,
+        String::from_utf8_lossy(target_bytes)
+    )]
     pub fn new(source: &NicePathBuf, target_bytes: &[u8]) -> Result<NiceSymlinkPaths> {
-        let target_unix = typed_path::UnixPath::new(target_bytes);
-        let target = NicePathBuf::from_unix(target_unix)?;
-        let target_dotdots = target
-            .0
-            .iter()
-            .filter(|c| *c == &NicePathComponent::Parent)
-            .count();
-        // Example: symlink foo/bar -> ../../outside
-        //
-        //   foo/bar -> 2 entries
-        //   ../../outside -> 2 ..'s
-        //   2 < 1 + 2 -> fail (which is correct)
-        //
-        // Conceptually: we always go up one path segment b/c symlinks are resolved
-        // against the source's directory, not the source itself (e.g. foo/bar -> baz
-        // resolves to foo/baz, not foo/bar/baz).
-        if source.len() < 1 + target_dotdots {
-            bail!("symlink {} -> {} escapes confinement", source, target);
+        if source.pieces.is_empty() {
+            bail!("symlink source can't be '.'");
         }
+        let mut sanitized = Vec::<String>::new();
+        // We're counting '..'s on the symlink target, because we want to know if it
+        // goes up enough to escape the target, when resolved using 'source'. Since
+        // symlinks are resolved against the source's parent, they effectively get one
+        // '..' "for free".
+        let mut dotdots = 1usize;
+        for c in UnixPath::new(target_bytes).components() {
+            match c {
+                UnixComponent::RootDir => {
+                    bail!("symlink target must be a relative path")
+                }
+                UnixComponent::CurDir => (),
+                UnixComponent::ParentDir => {
+                    match sanitized.last().map(|s| s.as_str()) {
+                        None | Some("..") => {
+                            sanitized.push("..".into());
+                            dotdots = dotdots
+                                .checked_add(1)
+                                .ok_or(anyhow!("too many '..'s"))?;
+                        }
+                        Some(_) => {
+                            sanitized.pop();
+                        }
+                    }
+                }
+                UnixComponent::Normal(piece) => {
+                    sanitized.push(check_path_piece(piece)?.into());
+                }
+            }
+        }
+        if source.len() < dotdots {
+            bail!("symlink escapes confinement");
+        }
+        let target = if sanitized.is_empty() {
+            ".".into()
+        } else {
+            sanitized.as_slice().join("/")
+        };
         Ok(NiceSymlinkPaths { source: source.clone(), target })
     }
 }
@@ -235,7 +215,7 @@ impl WriteTree for WriteTreeFS {
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(
-                symlink.target.to_native(),
+                &symlink.target,
                 symlink.source.to_native(),
             )?;
         }
@@ -334,12 +314,17 @@ mod test {
         for (source, target, normalized) in [
             ("foo/bar", "..", ".."),
             ("foo", "./baz/bar", "baz/bar"),
-            ("foo/bar/baz", "something/../../..//./stuff/../thing", "../../thing"),
+            (
+                "foo/bar/baz",
+                "something/../../..//./stuff/../thing",
+                "../../thing",
+            ),
         ] {
             println!("{source} -> {target}");
-            let symlink = NiceSymlinkPaths::new(&source.try_into().unwrap(),
-                                      target.as_bytes()).unwrap();
-            assert_eq!(symlink.target.to_string(), normalized.to_string());
+            let symlink =
+                NiceSymlinkPaths::new(&source.try_into().unwrap(), target.as_bytes())
+                    .unwrap();
+            assert_eq!(symlink.target, normalized.to_string());
         }
     }
 
