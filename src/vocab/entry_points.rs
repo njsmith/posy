@@ -36,16 +36,16 @@ static ENTRY_LINE: Lazy<Regex> = Lazy::new(|| {
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(Serialize))]
-pub struct Entry {
+pub struct Entrypoint {
     pub name: String,
     pub module: String,
     pub object: Option<String>,
 }
 
-pub fn parse_entry_points(contents: &str) -> Result<HashMap<String, Vec<Entry>>> {
+pub fn parse_entry_points(contents: &str) -> Result<HashMap<String, Vec<Entrypoint>>> {
     let mut current_section_name = Some(String::new());
-    let mut current_entries = Vec::<Entry>::new();
-    let mut result = HashMap::<String, Vec<Entry>>::new();
+    let mut current_entries = Vec::<Entrypoint>::new();
+    let mut result = HashMap::<String, Vec<Entrypoint>>::new();
     for line in contents.split('\n') {
         let line = COMMENT.replace(line, "");
         if EMPTY_LINE.is_match(line.as_ref()) {
@@ -64,7 +64,7 @@ pub fn parse_entry_points(contents: &str) -> Result<HashMap<String, Vec<Entry>>>
             let name = captures.name("name").unwrap().as_str().to_string();
             let module = captures.name("module").unwrap().as_str().to_string();
             let object = captures.name("object").map(|m| m.as_str().to_string());
-            current_entries.push(Entry {
+            current_entries.push(Entrypoint {
                 name,
                 module,
                 object,

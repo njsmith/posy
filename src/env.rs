@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::kvstore::KVDirStore;
-use crate::package_db::{ArtifactInfo, PackageDB};
+use crate::package_db::PackageDB;
 use crate::{brief::Blueprint, platform_tags::Platform, prelude::*};
 use crate::tree::WriteTreeFS;
 
@@ -91,7 +91,7 @@ impl EnvForest {
         let pybi = db.get_artifact::<Pybi>(pybi_ai)?;
         let (_, pybi_metadata) = pybi.metadata()?;
         let pybi_root = self.store.get_or_set(&pybi_hash, |p| {
-            pybi.unpack(WriteTreeFS::new(&p))?;
+            pybi.unpack(&mut WriteTreeFS::new(&p))?;
             EnvForest::munge_unpacked_pybi(&p, &pybi_metadata)?;
             Ok(())
         })?;

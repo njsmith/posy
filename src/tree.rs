@@ -1,9 +1,11 @@
 use crate::prelude::*;
 use std::fs;
 use std::io;
+use std::ops::Index;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
+use std::slice::SliceIndex;
 use typed_path::unix::UnixComponent;
 use typed_path::UnixPath;
 use zip::ZipArchive;
@@ -43,6 +45,28 @@ impl NicePathBuf {
 
     pub fn to_native(&self) -> PathBuf {
         self.into()
+    }
+
+    pub fn contains(&self, other: &NicePathBuf) -> bool {
+        other.pieces.starts_with(&self.pieces)
+    }
+
+    pub fn join(&self, other: &NicePathBuf) -> NicePathBuf {
+        let mut pieces = self.pieces.clone();
+        for piece in &other.pieces {
+            pieces.push(piece.clone());
+        }
+        NicePathBuf { pieces }
+    }
+
+    pub fn pieces(&self) -> &[String] {
+        self.pieces.as_slice()
+    }
+
+    pub fn slice<I>(&self, index: I) -> NicePathBuf
+        where I: SliceIndex<[String], Output=[String]>,
+    {
+        NicePathBuf { pieces: self.pieces[index].into() }
     }
 }
 
@@ -229,7 +253,7 @@ impl WriteTree for WriteTreeFS {
 
 pub fn unpack_zip_carefully<T: Read + Seek, W: WriteTree>(
     z: &mut ZipArchive<T>,
-    mut dir: W,
+    mut dir: &mut W,
 ) -> Result<()> {
     // we process symlinks in a batch at the end
     let mut symlinks = Vec::<NiceSymlinkPaths>::new();

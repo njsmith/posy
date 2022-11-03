@@ -13,7 +13,7 @@ mod entry_points;
 
 // All this stuff is also re-exported from crate::prelude::*
 
-pub use self::entry_points::parse_entry_points;
+pub use self::entry_points::{parse_entry_points, Entrypoint};
 pub use self::artifact_formats::{Artifact, BinaryArtifact, Pybi, Sdist, Wheel, ScriptType};
 pub use self::artifact_hash::ArtifactHash;
 pub use self::artifact_name::{

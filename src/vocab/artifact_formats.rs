@@ -22,6 +22,8 @@ use zip::ZipArchive;
 pub struct Sdist {
     // TODO
 }
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ScriptType {
     GUI,
     Console,
@@ -103,16 +105,16 @@ fn slurp_from_zip<'a, T: Read + Seek>(
     Ok(slurp(&mut z.by_name(name)?)?)
 }
 
-struct WheelVitalSigns {
-    dist_info: NicePathBuf,
-    data: NicePathBuf,
+struct WheelVitals {
+    dist_info: String,
+    data: String,
     root_is_purelib: bool,
     metadata_blob: Vec<u8>,
     metadata: WheelCoreMetadata,
 }
 
 impl Wheel {
-    fn get_vital_signs(&self) -> Result<WheelVitalSigns> {
+    fn get_vitals(&self) -> Result<WheelVitals> {
         static DIST_INFO_NAME_RE: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"^([^/]*)-([^-/]*)\.dist-info/").unwrap());
         static DATA_NAME_RE: Lazy<Regex> =
@@ -199,9 +201,10 @@ impl Wheel {
             );
         }
 
-        Ok(WheelVitalSigns {
-            dist_info: dist_info.try_into()?,
-            data: data.try_into()?,
+        Ok(WheelVitals {
+            // go through NicePathBuf to make sure these are nice and normalized
+            dist_info: TryInto::<NicePathBuf>::try_into(dist_info)?.to_string(),
+            data: TryInto::<NicePathBuf>::try_into(data)?.to_string(),
             root_is_purelib,
             metadata_blob,
             metadata,
@@ -218,7 +221,11 @@ impl BinaryArtifact for Wheel {
 
     #[context("Reading metadata from {}", self.name)]
     fn metadata(&self) -> Result<(Vec<u8>, Self::Metadata)> {
-        let WheelVitalSigns { metadata_blob, metadata, .. } = self.get_vital_signs()?;
+        let WheelVitals {
+            metadata_blob,
+            metadata,
+            ..
+        } = self.get_vitals()?;
         Ok((metadata_blob, metadata))
     }
 }
@@ -256,13 +263,39 @@ impl BinaryArtifact for Pybi {
 
 impl Pybi {
     #[context("Unpacking {}", self.name)]
-    pub fn unpack<T: WriteTree>(&self, destination: T) -> Result<()> {
+    pub fn unpack<T: WriteTree>(&self, destination: &mut T) -> Result<()> {
         // XX TODO RECORD?
         unpack_zip_carefully(&mut self.z.borrow_mut(), destination)
     }
 }
 
+fn make_script(entry: &Entrypoint, script_type: ScriptType) -> Vec<u8> {
+    let w = if script_type == ScriptType::GUI {
+        "w"
+    } else {
+        ""
+    };
+    let Entrypoint { module, object, .. } = entry;
+    let suffix = if let Some(object) = object {
+        format!(".{object}")
+    } else {
+        "".into()
+    };
+    indoc::formatdoc! {r###"
+         #!python{w}
+         # -*- coding: utf-8 -*-
+         import sys
+         import {module}
+         if __name__ == "__main__":
+             if sys.argv[0].endswith(".exe"):
+                 sys.argv[0] = sys.argv[0][:-4]
+             sys.exit({module}{suffix}())
+    "###}
+    .into()
+}
+
 impl Wheel {
+    // XX TODO RECORD?
     #[context("Unpacking {}", self.name)]
     pub fn unpack<W, F>(
         &self,
@@ -274,14 +307,52 @@ impl Wheel {
         W: WriteTree,
         F: FnMut(Vec<u8>, ScriptType) -> Vec<u8>,
     {
-        let vitals = self.get_vital_signs()?;
-        let transformer = WheelTreeTransformer {
+        let vitals = self.get_vitals()?;
+        let mut transformer = WheelTreeTransformer {
             paths: &paths,
-            wrap_script: &wrap_script,
+            wrap_script,
             dest: &mut dest,
-            vitals,
+            vitals: &vitals,
         };
-        unpack_zip_carefully(&mut self.z.borrow_mut(), transformer)?;
+        let mut z = self.z.borrow_mut();
+        unpack_zip_carefully(&mut z, &mut transformer)?;
+        let mut installer: &[u8] = b"posy\n";
+        transformer.write_file(
+            &format!("{}/METADATA", vitals.dist_info)
+                .as_str()
+                .try_into()
+                .unwrap(),
+            &mut installer,
+            false,
+        )?;
+
+        if let Ok(entry_points) = slurp_from_zip(
+            &mut z,
+            format!("{}/{}", vitals.dist_info, "entry_points.txt").as_str(),
+        ) {
+            let entry_points = parse_entry_points(std::str::from_utf8(&entry_points)?)?;
+            let scripts = paths
+                .get("scripts")
+                .ok_or(anyhow!("missing 'scripts' path"))?;
+
+            let mut write_scripts = |name, script_type| -> Result<()> {
+                if let Some(script_entrypoints) = entry_points.get(name) {
+                    for entrypoint in script_entrypoints {
+                        let body = make_script(entrypoint, script_type);
+                        let name = format!("{scripts}/{}", entrypoint.name);
+                        transformer.write_file(
+                            &name.try_into().unwrap(),
+                            &mut &body[..],
+                            true,
+                        )?;
+                    }
+                }
+                Ok(())
+            };
+
+            write_scripts("console_scripts", ScriptType::Console)?;
+            write_scripts("gui_scripts", ScriptType::GUI)?;
+        }
         Ok(())
     }
 }
@@ -292,9 +363,9 @@ where
     F: FnMut(Vec<u8>, ScriptType) -> Vec<u8>,
 {
     paths: &'a HashMap<String, NicePathBuf>,
-    wrap_script: &'a F,
+    wrap_script: F,
     dest: &'a mut W,
-    vitals: WheelVitalSigns,
+    vitals: &'a WheelVitals,
 }
 
 impl<'a, W, F> WheelTreeTransformer<'a, W, F>
@@ -302,11 +373,35 @@ where
     W: WriteTree,
     F: FnMut(Vec<u8>, ScriptType) -> Vec<u8>,
 {
-    fn analyze_path(&self, path: &NicePathBuf) -> NicePathBuf {
+    fn analyze_path(&self, path: &NicePathBuf) -> Result<Option<(NicePathBuf, bool)>> {
         // need to check if data path is a prefix, then extract the part after that, and
         // then join with paths[whatever]
         // and for scripts
-        todo!()
+        let (category, range) = if path.pieces().get(0) == Some(&self.vitals.data) {
+            if let Some(category) = path.pieces().get(1) {
+                (category.as_str(), 2..)
+            } else {
+                // the .data directory itself; discard
+                return Ok(None);
+            }
+        } else {
+            (
+                if self.vitals.root_is_purelib {
+                    "purelib"
+                } else {
+                    "platlib"
+                },
+                0..,
+            )
+        };
+        let basepath = self
+            .paths
+            .get(category)
+            .ok_or_else(|| anyhow!("unrecognized wheel file category {category}"))?;
+        Ok(Some((
+            basepath.join(&path.slice(range)),
+            category == "scripts",
+        )))
     }
 }
 
@@ -316,19 +411,39 @@ where
     F: FnMut(Vec<u8>, ScriptType) -> Vec<u8>,
 {
     fn mkdir(&mut self, path: &NicePathBuf) -> Result<()> {
-        todo!()
+        if let Some((fixed_path, _)) = self.analyze_path(&path)? {
+            self.dest.mkdir(&fixed_path)
+        } else {
+            Ok(())
+        }
     }
 
     fn write_file(
         &mut self,
         path: &NicePathBuf,
-        data: &mut dyn Read,
-        executable: bool,
+        mut data: &mut dyn Read,
+        _executable: bool,
     ) -> Result<()> {
-        todo!()
+        if let Some((fixed_path, is_script)) = self.analyze_path(&path)? {
+            if is_script {
+                let mut script_body = slurp(&mut data)?;
+                if script_body.starts_with(b"#!pythonw\n") {
+                    script_body = (self.wrap_script)(script_body, ScriptType::GUI);
+                } else if script_body.starts_with(b"#!python\n") {
+                    script_body = (self.wrap_script)(script_body, ScriptType::Console);
+                }
+                self.dest.write_file(&fixed_path, &mut script_body.as_slice(), true)?;
+            } else {
+                self.dest.write_file(&fixed_path, data, false)?;
+            }
+        }
+        Ok(())
     }
 
-    fn write_symlink(&mut self, symlink: &crate::tree::NiceSymlinkPaths) -> Result<()> {
-        todo!()
+    fn write_symlink(
+        &mut self,
+        _symlink: &crate::tree::NiceSymlinkPaths,
+    ) -> Result<()> {
+        bail!("symlinks not supported in wheels");
     }
 }
