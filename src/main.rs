@@ -60,7 +60,7 @@ fn main() -> Result<()> {
             "scipy".try_into().unwrap(),
         ],
     };
-    let platform = Platform::from_core_tag("manylinux_2_17_x86_64");
+    let platform = PybiPlatform::from_core_tag("manylinux_2_17_x86_64");
 
     let blueprint = brief.resolve(&db, &platform)?;
 

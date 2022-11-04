@@ -1,6 +1,6 @@
 use crate::{
     package_db::{ArtifactInfo, PackageDB},
-    platform_tags::Platform,
+    platform_tags::PybiPlatform,
     prelude::*,
     resolve::{resolve_wheels, ExpectedMetadata},
 };
@@ -76,7 +76,7 @@ impl Display for Blueprint {
 
 fn pick_best_pybi<'a>(
     artifact_infos: &'a Vec<ArtifactInfo>,
-    platform: &Platform,
+    platform: &PybiPlatform,
 ) -> Option<&'a ArtifactInfo> {
     artifact_infos
         .iter()
@@ -98,7 +98,7 @@ fn pick_best_pybi<'a>(
 fn resolve_pybi<'a>(
     db: &'a PackageDB,
     req: &PythonRequirement,
-    platform: &Platform,
+    platform: &PybiPlatform,
 ) -> Result<&'a ArtifactInfo> {
     let available = db.available_artifacts(&req.name)?;
     for (version, artifact_infos) in available.iter() {
@@ -129,7 +129,7 @@ fn pinned(
 }
 
 impl Brief {
-    pub fn resolve(&self, db: &PackageDB, platform: &Platform) -> Result<Blueprint> {
+    pub fn resolve(&self, db: &PackageDB, platform: &PybiPlatform) -> Result<Blueprint> {
         let pybi_ai = resolve_pybi(&db, &self.python, &platform)?;
         // XX TODO: figure out how platform changes after pybi is selected (e.g. on a
         // system that has both manylinux+musllinux compatibility, we can pick a pybi
@@ -154,10 +154,11 @@ impl Brief {
 
         let mut env_marker_vars = pybi_metadata.environment_marker_variables.clone();
         if !env_marker_vars.contains_key("platform_machine") {
-            let restricted_platform = platform.restrict(&pybi_name.arch_tags)?;
+            let wheel_platform =
+                platform.wheel_platform_for_pybi(&pybi_name, &pybi_metadata)?;
             env_marker_vars.insert(
                 "platform_machine".to_string(),
-                restricted_platform.infer_platform_machine()?.to_string(),
+                wheel_platform.infer_platform_machine()?.to_string(),
             );
         }
 

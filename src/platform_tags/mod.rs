@@ -31,4 +31,6 @@ mod macos;
 use macos::core_platform_tags;
 
 mod expand;
-pub use expand::{current_platform_tags, expand_platform_tag, Platform};
+pub use expand::{
+    current_platform_tags, expand_platform_tag, PybiPlatform, WheelPlatform, Platform
+};

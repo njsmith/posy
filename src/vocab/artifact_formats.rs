@@ -67,6 +67,7 @@ impl Artifact for Pybi {
 
 pub trait BinaryArtifact: Artifact {
     type Metadata;
+    type Platform: Platform;
 
     // used to parse standalone METADATA files, like we might have cached or get from
     // PEP 658 (once it's implemented). Eventually we might want to split this off into
@@ -214,6 +215,7 @@ impl Wheel {
 
 impl BinaryArtifact for Wheel {
     type Metadata = WheelCoreMetadata;
+    type Platform = WheelPlatform;
 
     fn parse_metadata(value: &[u8]) -> Result<Self::Metadata> {
         value.try_into()
@@ -232,6 +234,7 @@ impl BinaryArtifact for Wheel {
 
 impl BinaryArtifact for Pybi {
     type Metadata = PybiCoreMetadata;
+    type Platform = PybiPlatform;
 
     fn parse_metadata(value: &[u8]) -> Result<Self::Metadata> {
         value.try_into()

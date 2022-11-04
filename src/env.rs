@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::kvstore::KVDirStore;
 use crate::package_db::PackageDB;
-use crate::{brief::Blueprint, platform_tags::Platform, prelude::*};
+use crate::{brief::Blueprint, platform_tags::PybiPlatform, prelude::*};
 use crate::tree::WriteTreeFS;
 
 // site.py as $stdlib/site.py
@@ -62,7 +62,7 @@ impl EnvForest {
         &self,
         db: &PackageDB,
         blueprint: &Blueprint,
-        platform: &Platform,
+        platform: &PybiPlatform,
     ) -> Result<Env> {
         let pybi_ai = db
             .artifacts_for_release(&blueprint.pybi.name, &blueprint.pybi.version)?

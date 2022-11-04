@@ -102,19 +102,19 @@ mod test {
             insta::assert_ron_snapshot!(parsed, @r###"
             {
               "console_scripts": [
-                Entry(
+                Entrypoint(
                   name: "foo",
                   module: "foomod",
                   object: Some("main"),
                 ),
-                Entry(
+                Entrypoint(
                   name: "foobar",
                   module: "foomod",
                   object: Some("main_bar"),
                 ),
               ],
               "pytest11": [
-                Entry(
+                Entrypoint(
                   name: "nbval",
                   module: "nbval.plugin",
                   object: None,
@@ -138,17 +138,17 @@ mod test {
             insta::assert_ron_snapshot!(parsed, @r###"
             {
               "console_scripts": [
-                Entry(
+                Entrypoint(
                   name: "foo",
                   module: "foomod",
                   object: Some("main"),
                 ),
-                Entry(
+                Entrypoint(
                   name: "foobar",
                   module: "foo.bar.baz",
                   object: Some("quux.main"),
                 ),
-                Entry(
+                Entrypoint(
                   name: "another",
                   module: "value",
                   object: None,

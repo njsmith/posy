@@ -13,7 +13,7 @@ static MACOSX_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^macosx_([0-9]+)_([0-9]+)_([a-zA-Z0-9_]*)$").unwrap());
 
 #[derive(Debug, Clone)]
-pub struct Platform {
+struct PlatformImpl {
     // smaller number = more preferred
     tag_map: HashMap<String, i32>,
     // earlier = more preferred
@@ -21,13 +21,9 @@ pub struct Platform {
     counter: i32,
 }
 
-impl Platform {
-    pub fn from_core_tag(tag: &str) -> Platform {
-        Platform::from_core_tags(&[tag])
-    }
-
-    fn empty() -> Platform {
-        Platform {
+impl PlatformImpl {
+    fn empty() -> PlatformImpl {
+        PlatformImpl {
             tag_map: Default::default(),
             tags: Default::default(),
             counter: 0,
@@ -42,30 +38,23 @@ impl Platform {
         }
     }
 
-    // assumes core tags are sorted from most-preferred to least-preferred
-    pub fn from_core_tags<'a, T, S>(tags: T) -> Platform
-    where
-        T: IntoIterator<Item = S>,
-        S: AsRef<str> + 'a,
-    {
-        let mut p = Platform::empty();
-        for tag in tags.into_iter() {
-            for expansion in expand_platform_tag(tag.as_ref()) {
-                p.push(expansion)
-            }
-        }
-        p
-    }
-
-    pub fn current_platform() -> Result<Platform> {
-        Ok(Platform::from_core_tags(super::core_platform_tags()?))
-    }
-
-    pub fn compatibility(&self, tag: &str) -> Option<i32> {
+    fn compatibility(&self, tag: &str) -> Option<i32> {
         self.tag_map.get(tag).map(|score| *score)
     }
+}
 
-    pub fn max_compatibility<T, S>(&self, tags: T) -> Option<i32>
+#[derive(Debug, Clone)]
+pub struct PybiPlatform(PlatformImpl);
+
+#[derive(Debug, Clone)]
+pub struct WheelPlatform(PlatformImpl);
+
+pub trait Platform {
+    fn tags(&self) -> &[String];
+
+    fn compatibility(&self, tag: &str) -> Option<i32>;
+
+    fn max_compatibility<T, S>(&self, tags: T) -> Option<i32>
     where
         T: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -74,23 +63,73 @@ impl Platform {
             .filter_map(|t| self.compatibility(t.as_ref()))
             .max()
     }
+}
 
-    // create a new Platform that includes a subset of tags from the current platform,
-    // and which are all in the same compat group, and also all in the given pybi's
-    // compat group.
-    //
-    // strategy: make a set of preliminary groups based on the pybi. then look at our
-    // tags from best -> worst, and use those to restrict the set of groups until
-    // there's just one left. (b/c of iteration order, it will be the most-preferred
-    // group for our Platform.) that's our group; restrict ourselves to the subset of
-    // tags that match that group and return it as a new Platform.
-    pub fn restrict(&self, pybi_arch_tags: &Vec<String>) -> Result<Platform> {
+impl Platform for PybiPlatform {
+    fn tags(&self) -> &[String] {
+        self.0.tags.as_slice()
+    }
+
+    fn compatibility(&self, tag: &str) -> Option<i32> {
+        self.0.compatibility(tag)
+    }
+}
+
+impl Platform for WheelPlatform {
+    fn tags(&self) -> &[String] {
+        self.0.tags.as_slice()
+    }
+
+    fn compatibility(&self, tag: &str) -> Option<i32> {
+        self.0.compatibility(tag)
+    }
+}
+
+impl PybiPlatform {
+    pub fn from_core_tag(tag: &str) -> PybiPlatform {
+        PybiPlatform::from_core_tags(&[tag])
+    }
+
+    // assumes core tags are sorted from most-preferred to least-preferred
+    pub fn from_core_tags<'a, T, S>(tags: T) -> PybiPlatform
+    where
+        T: IntoIterator<Item = S>,
+        S: AsRef<str> + 'a,
+    {
+        let mut p = PlatformImpl::empty();
+        for tag in tags.into_iter() {
+            for expansion in expand_platform_tag(tag.as_ref()) {
+                p.push(expansion)
+            }
+        }
+        PybiPlatform(p)
+    }
+
+    pub fn current_platform() -> Result<PybiPlatform> {
+        Ok(PybiPlatform::from_core_tags(super::core_platform_tags()?))
+    }
+
+    pub fn wheel_platform_for_pybi(
+        &self,
+        name: &PybiName,
+        metadata: &PybiCoreMetadata,
+    ) -> Result<WheelPlatform> {
+        // The current PybiPlatform might allow for multiple incompatible ABIs, e.g. on
+        // macOS it might support both arm64 and x86-64, but only one of those is usable
+        // within a given process. So first we need to filter down our platform tags to
+        // a single coherent set that will work for the given pybi.
+
+        // First, figure out which compat-groups *can* work with the chosen PyBI (no
+        // point in considering x86-64 tags if our pybi is arm64-only).
         let mut groups = HashSet::<String>::new();
-        for tag in pybi_arch_tags.iter() {
+        for tag in &name.arch_tags {
             groups.extend(compat_groups(tag)?);
         }
         assert!(!groups.is_empty());
-        for tag in &self.tags {
+        // Then, if there are still multiple possible ABIs (e.g. if the pybi is a
+        // universal2 fat binary), pick whichever one has the highest compatibility
+        // score (so e.g. prefer native arm64 over emulated x86-64).
+        for tag in &self.0.tags {
             if groups.len() == 1 {
                 break;
             }
@@ -99,39 +138,48 @@ impl Platform {
         }
         assert!(groups.len() == 1);
         let the_group = groups.into_iter().next().unwrap();
-        let mut p = Platform::empty();
-        for tag in &self.tags {
+        // And finally, pick out subset of our current tags that are compatible with
+        // that ABI.
+        let mut platform_tags = Vec::<&str>::new();
+        for tag in &self.0.tags {
             if compat_groups(tag)?.contains(&the_group) {
-                p.push(tag.to_owned());
+                platform_tags.push(tag);
             }
         }
-        Ok(p)
-    }
 
+        // Okay, we have our platform tags. Now we need to combine it with the Pybi
+        // metadata to get full wheel tags.
+        let mut wheel_platform = WheelPlatform(PlatformImpl::empty());
+        for wheel_tag_template in &metadata.tags {
+            if let Some(prefix) = wheel_tag_template.strip_suffix("-PLATFORM") {
+                for platform_tag in &platform_tags {
+                    wheel_platform.0.push(format!("{prefix}-{platform_tag}"));
+                }
+            } else {
+                wheel_platform.0.push(wheel_tag_template.into());
+            }
+        }
+
+        Ok(wheel_platform)
+    }
+}
+
+impl WheelPlatform {
     pub fn infer_platform_machine(&self) -> Result<&'static str> {
-        let mut possible = HashSet::<&'static str>::new();
-        for tag in &self.tags {
+        for tag in &self.0.tags {
             for compat_group in compat_groups(&tag).unwrap_or(vec![]) {
                 match compat_group.as_str() {
                     "macos-x86_64" => {
-                        possible.insert("x86_64");
+                        return Ok("x86_64");
                     }
                     "macos-arm64" => {
-                        possible.insert("arm64");
+                        return Ok("arm64");
                     }
                     _ => (),
                 }
             }
         }
-        if possible.len() > 1 {
-            bail!(
-                "macOS platform selected, but can't tell if you want arm64 or x86-64"
-            );
-        }
-        if possible.len() < 1 {
-            bail!("can't infer platform_machine for this platform/pybi");
-        }
-        Ok(possible.iter().next().unwrap())
+        bail!("can't infer platform_machine for this platform/pybi");
     }
 }
 
@@ -271,10 +319,11 @@ pub fn current_platform_tags() -> Result<Vec<String>> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use indoc::indoc;
 
     #[test]
-    fn test_platform() {
-        let platform = Platform::from_core_tag("manylinux2014_x86_64");
+    fn test_pybi_platform() {
+        let platform = PybiPlatform::from_core_tag("manylinux2014_x86_64");
         println!("{:#?}", platform);
 
         assert!(platform.compatibility("manylinux_2_17_x86_64").is_some());
@@ -286,8 +335,10 @@ mod test {
                 > platform.compatibility("manylinux_2_10_x86_64").unwrap()
         );
 
-        let multi_platform =
-            Platform::from_core_tags(["manylinux2014_x86_64", "musllinux_1_3_x86_64"]);
+        let multi_platform = PybiPlatform::from_core_tags([
+            "manylinux2014_x86_64",
+            "musllinux_1_3_x86_64",
+        ]);
         println!("{:#?}", multi_platform);
         assert!(
             multi_platform
@@ -300,24 +351,58 @@ mod test {
     }
 
     #[test]
-    fn test_platform_restrict() {
-        let platform =
-            Platform::from_core_tags(vec!["macosx_11_0_arm64", "macosx_11_0_x86_64"]);
+    fn test_pybi_platform_to_wheel_platform() {
+        let pybi_platform = PybiPlatform::from_core_tags(vec![
+            "macosx_11_0_arm64",
+            "macosx_11_0_x86_64",
+        ]);
+
+        let fake_metadata: PybiCoreMetadata = indoc! {b"
+            Metadata-Version: 2.1
+            Name: cpython
+            Version: 3.11
+            Pybi-Environment-Marker-Variables: {}
+            Pybi-Paths: {}
+            Pybi-Wheel-Tag: foo-bar-PLATFORM
+            Pybi-Wheel-Tag: foo-none-any
+            Pybi-Wheel-Tag: foo-baz-PLATFORM
+        "}
+        .as_slice()
+        .try_into()
+        .unwrap();
 
         // given a pybi that can handle both, on a platform that can handle both, pick
         // the preferred platform and restrict to it.
-        let arm_only = platform
-            .restrict(&vec!["macosx_10_15_universal2".to_owned()])
+        let arm_only = pybi_platform
+            .wheel_platform_for_pybi(
+                &"cpython-3.11-macosx_10_15_universal2.pybi"
+                    .try_into()
+                    .unwrap(),
+                &fake_metadata,
+            )
             .unwrap();
-        assert!(arm_only.compatibility("macosx_11_0_arm64").is_some());
-        assert!(arm_only.compatibility("macosx_11_0_x86_64").is_none());
+        assert!(arm_only.compatibility("foo-bar-macosx_11_0_arm64").is_some());
+        assert!(arm_only.compatibility("foo-bar-macosx_11_0_x86_64").is_none());
+
+        // also tags are sorted properly
+        assert!(arm_only.compatibility("foo-bar-macosx_11_0_arm64").unwrap()
+                > arm_only.compatibility("foo-bar-macosx_10_0_arm64").unwrap());
+        assert!(arm_only.compatibility("foo-bar-macosx_10_0_arm64").unwrap()
+                > arm_only.compatibility("foo-none-any").unwrap());
+        assert!(arm_only.compatibility("foo-none-any").unwrap()
+                > arm_only.compatibility("foo-baz-macosx_11_0_arm64").unwrap());
 
         // but if the pybi only supports one, go with that
-        let x86_64_only = platform
-            .restrict(&vec!["macosx_10_15_x86_64".to_owned()])
+        let x86_64_only = pybi_platform
+            .wheel_platform_for_pybi(
+                &"cpython-3.11-macosx_10_15_x86_64.pybi"
+                    .try_into()
+                    .unwrap(),
+                &fake_metadata,
+            )
             .unwrap();
-        assert!(x86_64_only.compatibility("macosx_11_0_arm64").is_none());
-        assert!(x86_64_only.compatibility("macosx_11_0_x86_64").is_some());
+        assert!(x86_64_only.compatibility("foo-bar-macosx_11_0_arm64").is_none());
+        assert!(x86_64_only.compatibility("foo-bar-macosx_11_0_x86_64").is_some());
     }
 
     #[test]
