@@ -1,7 +1,7 @@
 import os, sys, site
 
-if "POSY_ENV_PYTHONPATH" in os.environ:
-    paths = os.environ["POSY_ENV_PYTHONPATH"].split(":")
+if "POSY_PYTHON_PACKAGES" in os.environ:
+    paths = os.environ["POSY_PYTHON_PACKAGES"].split(os.pathsep)
     for path in paths:
         site.addsitedir(path)
 else:
