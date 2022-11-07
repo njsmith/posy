@@ -1,7 +1,9 @@
 use super::rfc822ish::RFC822ish;
 use crate::prelude::*;
+use crate::trampolines::{TrampolineMaker, ScriptType};
 use crate::tree::{unpack_zip_carefully, WriteTree};
 use std::cell::RefCell;
+use std::io::{BufRead, BufReader};
 use zip::ZipArchive;
 
 // probably should:
@@ -23,17 +25,12 @@ pub struct Sdist {
     // TODO
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum ScriptType {
-    GUI,
-    Console,
-}
 pub struct Wheel {
-    name: WheelName,
+    pub name: WheelName,
     z: RefCell<ZipArchive<Box<dyn ReadPlusSeek>>>,
 }
 pub struct Pybi {
-    name: PybiName,
+    pub name: PybiName,
     z: RefCell<ZipArchive<Box<dyn ReadPlusSeek>>>,
 }
 
@@ -65,6 +62,8 @@ impl Artifact for Pybi {
     }
 }
 
+// This should add a 'Name: BinaryName' bound on Artifact::Name, but that's not stable
+// yet: https://github.com/rust-lang/rust/issues/52662
 pub trait BinaryArtifact: Artifact {
     type Metadata;
     type Platform: Platform;
@@ -152,7 +151,7 @@ impl Wheel {
             bail!("wrong name/version in directory name {dist_info}");
         }
 
-        let mut datas = z
+        let datas = z
             .file_names()
             .filter_map(|n| DATA_NAME_RE.find(n).map(|m| m.as_str()))
             .collect::<HashSet<_>>()
@@ -272,7 +271,7 @@ impl Pybi {
     }
 }
 
-fn make_script(entry: &Entrypoint, script_type: ScriptType) -> Vec<u8> {
+fn script_for_entrypoint(entry: &Entrypoint, script_type: ScriptType) -> Vec<u8> {
     let w = if script_type == ScriptType::GUI {
         "w"
     } else {
@@ -300,20 +299,17 @@ fn make_script(entry: &Entrypoint, script_type: ScriptType) -> Vec<u8> {
 impl Wheel {
     // XX TODO RECORD?
     #[context("Unpacking {}", self.name)]
-    pub fn unpack<W, F>(
+    pub fn unpack<W: WriteTree>(
         &self,
         paths: &HashMap<String, NicePathBuf>,
-        wrap_script: F,
+        trampoline_maker: &TrampolineMaker,
         mut dest: W,
     ) -> Result<()>
-    where
-        W: WriteTree,
-        F: FnMut(Vec<u8>, ScriptType) -> Vec<u8>,
     {
         let vitals = self.get_vitals()?;
         let mut transformer = WheelTreeTransformer {
             paths: &paths,
-            wrap_script,
+            trampoline_maker: &trampoline_maker,
             dest: &mut dest,
             vitals: &vitals,
         };
@@ -321,7 +317,7 @@ impl Wheel {
         unpack_zip_carefully(&mut z, &mut transformer)?;
         let mut installer: &[u8] = b"posy\n";
         transformer.write_file(
-            &format!("{}/METADATA", vitals.dist_info)
+            &format!("{}/INSTALLER", vitals.dist_info)
                 .as_str()
                 .try_into()
                 .unwrap(),
@@ -341,7 +337,7 @@ impl Wheel {
             let mut write_scripts = |name, script_type| -> Result<()> {
                 if let Some(script_entrypoints) = entry_points.get(name) {
                     for entrypoint in script_entrypoints {
-                        let body = make_script(entrypoint, script_type);
+                        let body = script_for_entrypoint(entrypoint, script_type);
                         let name = format!("{scripts}/{}", entrypoint.name);
                         transformer.write_file(
                             &name.try_into().unwrap(),
@@ -360,21 +356,16 @@ impl Wheel {
     }
 }
 
-struct WheelTreeTransformer<'a, W, F>
-where
-    W: WriteTree,
-    F: FnMut(Vec<u8>, ScriptType) -> Vec<u8>,
-{
+struct WheelTreeTransformer<'a, W: WriteTree> {
     paths: &'a HashMap<String, NicePathBuf>,
-    wrap_script: F,
+    trampoline_maker: &'a TrampolineMaker,
     dest: &'a mut W,
     vitals: &'a WheelVitals,
 }
 
-impl<'a, W, F> WheelTreeTransformer<'a, W, F>
+impl<'a, W> WheelTreeTransformer<'a, W>
 where
     W: WriteTree,
-    F: FnMut(Vec<u8>, ScriptType) -> Vec<u8>,
 {
     fn analyze_path(&self, path: &NicePathBuf) -> Result<Option<(NicePathBuf, bool)>> {
         // need to check if data path is a prefix, then extract the part after that, and
@@ -408,10 +399,9 @@ where
     }
 }
 
-impl<'a, W, F> WriteTree for WheelTreeTransformer<'a, W, F>
+impl<'a, W> WriteTree for WheelTreeTransformer<'a, W>
 where
     W: WriteTree,
-    F: FnMut(Vec<u8>, ScriptType) -> Vec<u8>,
 {
     fn mkdir(&mut self, path: &NicePathBuf) -> Result<()> {
         if let Some((fixed_path, _)) = self.analyze_path(&path)? {
@@ -429,13 +419,31 @@ where
     ) -> Result<()> {
         if let Some((fixed_path, is_script)) = self.analyze_path(&path)? {
             if is_script {
-                let mut script_body = slurp(&mut data)?;
-                if script_body.starts_with(b"#!pythonw\n") {
-                    script_body = (self.wrap_script)(script_body, ScriptType::GUI);
-                } else if script_body.starts_with(b"#!python\n") {
-                    script_body = (self.wrap_script)(script_body, ScriptType::Console);
+                // use BufReader to "peek" into the start of the executable. Some wheels
+                // contain large compiled binaries as "scripts", so it's nicer not to
+                // load the whole thing into memory until we know what we're dealing
+                // with.
+                let mut bufread = BufReader::new(&mut data);
+                let script_start = bufread.fill_buf()?;
+                if script_start.starts_with(b"#!python") {
+                    // it's some kind of script, but which kind?
+                    let script_type = if script_start.starts_with(b"#!pythonw") {
+                        ScriptType::GUI
+                    } else {
+                        ScriptType::Console
+                    };
+                    // discard #! line
+                    bufread.read_line(&mut String::new())?;
+                    let script = slurp(&mut bufread)?;
+                    self.trampoline_maker.make_trampoline(
+                        &fixed_path,
+                        &script,
+                        script_type,
+                        &mut self.dest,
+                    )?;
+                } else {
+                    self.dest.write_file(&fixed_path, &mut bufread, true)?;
                 }
-                self.dest.write_file(&fixed_path, &mut script_body.as_slice(), true)?;
             } else {
                 self.dest.write_file(&fixed_path, data, false)?;
             }

@@ -12,10 +12,12 @@ mod seek_slice;
 #[cfg(test)]
 mod test_util;
 mod tree;
+mod trampolines;
 
+use std::path::Path;
 use anyhow::Result;
 
-use crate::{brief::Brief, platform_tags::Platform, prelude::*};
+use crate::{brief::Brief, prelude::*, env::EnvForest};
 
 use structopt::StructOpt;
 
@@ -60,25 +62,26 @@ fn main() -> Result<()> {
             "scipy".try_into().unwrap(),
         ],
     };
-    let platform = PybiPlatform::from_core_tag("manylinux_2_17_x86_64");
+    let platform = PybiPlatform::current_platform()?;
 
     let blueprint = brief.resolve(&db, &platform)?;
 
-    println!("{}", blueprint);
+    let env_forest = EnvForest::new(Path::new("/tmp/posy-test-forest"))?;
 
-    // let root_reqs = opt
-    //     .inputs
-    //     .into_iter()
-    //     .map(|s| s.try_into())
-    //     .collect::<Result<Vec<UserRequirement>>>()?;
+    let env = env_forest.get_env(&db, &blueprint, &platform)?;
 
-    // let pins =
-    //     resolve::resolve(&root_reqs, &*ENV, &index, &HashMap::new(), &|_| false)?;
-    // for pin in pins {
-    //     println!("{} v{}", pin.name.as_given(), pin.version);
-    //     println!("   requirements from {}", pin.expected_requirements_source);
-    //     //println!("   requirements: {:?}", pin.expected_requirements);
-    // }
+    let old_path = std::env::var_os("PATH").ok_or(anyhow!("no $PATH?"))?;
+    let mut new_paths = env.bin_dirs.clone();
+    new_paths.extend(std::env::split_paths(&old_path));
+    let new_path = std::env::join_paths(&new_paths)?;
+
+    let mut child = std::process::Command::new("python")
+        .env("PATH", new_path)
+        .env("POSY_PYTHON", env.python.as_os_str())
+        .env("POSY_PYTHONW", env.pythonw.as_os_str())
+        .env("POSY_PYTHON_PACKAGES", std::env::join_paths(&env.lib_dirs)?)
+        .spawn()?;
+    child.wait()?;
 
     Ok(())
 }

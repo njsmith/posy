@@ -116,8 +116,12 @@ pub struct WheelName {
     pub arch_tags: Vec<String>,
 }
 
-impl WheelName {
-    pub fn all_tags(&self) -> HashSet<String> {
+pub trait BinaryName {
+    fn all_tags(&self) -> HashSet<String>;
+}
+
+impl BinaryName for WheelName {
+    fn all_tags(&self) -> HashSet<String> {
         let mut retval = HashSet::new();
         for py in &self.py_tags {
             for abi in &self.abi_tags {
@@ -137,6 +141,12 @@ pub struct PybiName {
     pub build_number: Option<u32>,
     pub build_name: String,
     pub arch_tags: Vec<String>,
+}
+
+impl BinaryName for PybiName {
+    fn all_tags(&self) -> HashSet<String> {
+        self.arch_tags.iter().cloned().collect()
+    }
 }
 
 fn generic_parse<'a>(

@@ -29,7 +29,7 @@ pub static PROJECT_DIRS: Lazy<ProjectDirs> = Lazy::new(|| {
 });
 
 pub trait ReadPlusSeek: Read + Seek {}
-impl<T: Read + Seek> ReadPlusSeek for T {}
+impl<T> ReadPlusSeek for T where T: Read + Seek {}
 
 pub fn slurp<T: Read>(f: &mut T) -> Result<Vec<u8>> {
     let mut data = Vec::<u8>::new();

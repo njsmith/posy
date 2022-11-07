@@ -1,11 +1,11 @@
 use crate::prelude::*;
 use std::fs;
 use std::io;
-use std::ops::Index;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::slice::SliceIndex;
+use auto_impl::auto_impl;
 use typed_path::unix::UnixComponent;
 use typed_path::UnixPath;
 use zip::ZipArchive;
@@ -188,6 +188,7 @@ impl NiceSymlinkPaths {
     }
 }
 
+#[auto_impl(&mut)]
 pub trait WriteTree {
     fn mkdir(&mut self, path: &NicePathBuf) -> Result<()>;
     fn write_file(
@@ -209,19 +210,30 @@ impl WriteTreeFS {
             root: root.as_ref().into(),
         }
     }
+
+    fn full_path(&self, path: &NicePathBuf) -> Result<PathBuf> {
+        let full_path = self.root.join(path.to_native());
+        if let Some(parent) = full_path.parent() {
+            fs::create_dir_all(&parent)?;
+        }
+        Ok(full_path)
+    }
 }
 
 impl WriteTree for WriteTreeFS {
+    #[context("Creating {path}/")]
     fn mkdir(&mut self, path: &NicePathBuf) -> Result<()> {
-        Ok(fs::create_dir(self.root.join(path.to_native()))?)
+        Ok(fs::create_dir(self.full_path(&path)?)?)
     }
 
+    #[context("Writing out {path}")]
     fn write_file(
         &mut self,
         path: &NicePathBuf,
         data: &mut dyn Read,
         executable: bool,
     ) -> Result<()> {
+        println!("{}", path);
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -230,17 +242,18 @@ impl WriteTree for WriteTreeFS {
         } else {
             options.mode(0o666);
         }
-        let mut file = options.open(self.root.join(path.to_native()))?;
+        let mut file = options.open(&self.full_path(&path)?)?;
         io::copy(data, &mut file)?;
         Ok(())
     }
 
+    #[context("Symlinking {} -> {}", symlink.source, symlink.target)]
     fn write_symlink(&mut self, symlink: &NiceSymlinkPaths) -> Result<()> {
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(
                 &symlink.target,
-                symlink.source.to_native(),
+                &self.full_path(&symlink.source)?,
             )?;
         }
         #[cfg(not(unix))]
@@ -253,12 +266,15 @@ impl WriteTree for WriteTreeFS {
 
 pub fn unpack_zip_carefully<T: Read + Seek, W: WriteTree>(
     z: &mut ZipArchive<T>,
-    mut dir: &mut W,
+    dest: &mut W,
 ) -> Result<()> {
     // we process symlinks in a batch at the end
     let mut symlinks = Vec::<NiceSymlinkPaths>::new();
+    // indices is sorted from end to start; flip it back around when iterating to get
+    // better locality on our reads.
     for i in 0..z.len() {
         let mut zip_file = z.by_index(i)?;
+        println!("Unpacking {}", zip_file.name());
         if let Some(mode) = zip_file.unix_mode() {
             if mode & 0xf000 == 0xa000 {
                 // it's a symlink
@@ -271,13 +287,13 @@ pub fn unpack_zip_carefully<T: Read + Seek, W: WriteTree>(
         }
         let path: NicePathBuf = zip_file.name().try_into()?;
         if zip_file.is_dir() {
-            dir.mkdir(&path)?;
+            dest.mkdir(&path)?;
         } else {
             let executable = zip_file
                 .unix_mode()
                 .map(|v| v & 0o0111 != 0)
                 .unwrap_or(false);
-            dir.write_file(&path, &mut zip_file, executable)?;
+            dest.write_file(&path, &mut zip_file, executable)?;
         }
     }
 
@@ -286,8 +302,10 @@ pub fn unpack_zip_carefully<T: Read + Seek, W: WriteTree>(
     // something.
     symlinks.sort_unstable_by_key(|symlink| symlink.source.len());
     for symlink in symlinks.into_iter().rev() {
-        dir.write_symlink(&symlink)?;
+        dest.write_symlink(&symlink)?;
     }
+
+    println!("zip done!");
     Ok(())
 }
 

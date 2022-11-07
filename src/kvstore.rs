@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use fs2::FileExt;
 use ring::digest;
+use auto_impl::auto_impl;
 use crate::util::retry_interrupted;
 
 // A simple on-disk key-value store for static blobs of data. Each key maps to a
@@ -103,18 +104,19 @@ fn bytes_to_path_suffix(bytes: &[u8]) -> PathBuf {
     path
 }
 
+#[auto_impl(&)]
 pub trait PathKey {
     fn key(&self) -> PathBuf;
 }
 
-impl PathKey for &[u8] {
+impl PathKey for [u8] {
     fn key(&self) -> PathBuf {
         let scrambled_key = digest::digest(&digest::SHA256, self);
         bytes_to_path_suffix(scrambled_key.as_ref())
     }
 }
 
-impl PathKey for &ArtifactHash {
+impl PathKey for ArtifactHash {
     fn key(&self) -> PathBuf {
         let mut path = PathBuf::new();
         path.push(&self.mode);

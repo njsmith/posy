@@ -2,10 +2,12 @@ use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::brief::PinnedPackage;
 use crate::kvstore::KVDirStore;
 use crate::package_db::PackageDB;
-use crate::{brief::Blueprint, platform_tags::PybiPlatform, prelude::*};
+use crate::trampolines::{FindPython, ScriptPlatform, TrampolineMaker};
 use crate::tree::WriteTreeFS;
+use crate::{brief::Blueprint, platform_tags::PybiPlatform, prelude::*};
 
 // site.py as $stdlib/site.py
 // imports sitecustomize, which can use site.addsitedir to add directories that will be
@@ -33,7 +35,53 @@ pub struct EnvForest {
     store: KVDirStore,
 }
 
+fn pick_pinned<'a, T: BinaryArtifact>(
+    db: &'a PackageDB,
+    platform: &T::Platform,
+    pin: &PinnedPackage,
+) -> Result<(T, &'a ArtifactHash)>
+where
+    T::Name: BinaryName,
+{
+    let mut scored_candidates = db
+        .artifacts_for_release(&pin.name, &pin.version)?
+        .iter()
+        .filter_map(|ai| {
+            if let Some(name) = ai.name.inner_as::<T::Name>() {
+                if let Some(score) = platform.max_compatibility(name.all_tags().iter())
+                {
+                    return Some((ai, score));
+                }
+            }
+            None
+        })
+        .collect::<Vec<_>>();
+    scored_candidates.sort_unstable_by_key(|(_, score)| *score);
+    for (ai, _) in scored_candidates {
+        if ai.hash.is_none() {
+            // XX TODO should be a warning
+            bail!("best scoring artifact {} has no hash", ai.name);
+        } else if !pin.hashes.contains(ai.hash.as_ref().unwrap()) {
+            // XX TODO should be a warning
+            bail!("best scoring artifact {}'s does not appear in lock file (maybe need to update pins?)", ai.name);
+        } else {
+            return Ok((db.get_artifact(ai)?, ai.hash.as_ref().unwrap()));
+        }
+    }
+    bail!(
+        "no compatible artifacts found for {} {}",
+        pin.name.as_given(),
+        pin.version
+    );
+}
+
 impl EnvForest {
+    pub fn new(base: &Path) -> Result<EnvForest> {
+        Ok(EnvForest {
+            store: KVDirStore::new(&base)?,
+        })
+    }
+
     fn munge_unpacked_pybi(path: &Path, metadata: &PybiCoreMetadata) -> Result<()> {
         let stdlib = path.join(metadata.path("stdlib")?.to_native());
         fs::write(
@@ -47,7 +95,7 @@ impl EnvForest {
         )?;
         let site_py = fs::read(stdlib.join("site.py"))?;
         static USER_SITE_RE: Lazy<regex::bytes::Regex> = Lazy::new(|| {
-            regex::bytes::Regex::new(r"^ENABLE_USER_SITE = None").unwrap()
+            regex::bytes::Regex::new(r"(?m)^ENABLE_USER_SITE = None").unwrap()
         });
         let new_site_py =
             USER_SITE_RE.replace(&site_py, &b"ENABLE_USER_SITE = False"[..]);
@@ -62,66 +110,70 @@ impl EnvForest {
         &self,
         db: &PackageDB,
         blueprint: &Blueprint,
-        platform: &PybiPlatform,
+        pybi_platform: &PybiPlatform,
     ) -> Result<Env> {
-        let pybi_ai = db
-            .artifacts_for_release(&blueprint.pybi.name, &blueprint.pybi.version)?
-            .iter()
-            .filter_map(|ai| {
-                if let Some(name) = ai.name.inner_as::<PybiName>() {
-                    if let Some(score) =
-                        platform.max_compatibility(name.arch_tags.iter())
-                    {
-                        return Some((ai, score));
-                    }
-                }
-                None
-            })
-            .max_by_key(|(_, score)| *score)
-            .map(|(ai, _)| ai)
-            .ok_or(anyhow!("no compatible pybis found"))?;
-        let pybi_hash = pybi_ai.hash.as_ref().ok_or(anyhow!("pybi has no hash"))?;
-        if !blueprint.pybi.hashes.contains(&pybi_hash) {
-            // XX TODO maybe should filter it out during the selection stage instead?
-            // or even better, give error messages saying what's happening (warning if
-            // hashes rule out the best artifact, error if they rule out all artifacts,
-            // different error if there aren't any artifacts to start with, etc.)
-            bail!("pybi hash is not in list of pinned hashes");
-        }
-        let pybi = db.get_artifact::<Pybi>(pybi_ai)?;
+        let (pybi, pybi_hash) =
+            pick_pinned::<Pybi>(&db, &pybi_platform, &blueprint.pybi)?;
         let (_, pybi_metadata) = pybi.metadata()?;
-        let pybi_root = self.store.get_or_set(&pybi_hash, |p| {
-            pybi.unpack(&mut WriteTreeFS::new(&p))?;
-            EnvForest::munge_unpacked_pybi(&p, &pybi_metadata)?;
+        let pybi_root = self.store.get_or_set(&pybi_hash, |path| {
+            pybi.unpack(&mut WriteTreeFS::new(&path))?;
+            EnvForest::munge_unpacked_pybi(&path, &pybi_metadata)?;
             Ok(())
         })?;
+        let wheel_platform =
+            pybi_platform.wheel_platform_for_pybi(&pybi.name, &pybi_metadata)?;
+        let trampoline_maker =
+            TrampolineMaker::new(FindPython::FromEnv, ScriptPlatform::Both);
 
-        // better handling of hash checking
-        // wheel compatibility / picking wheels
-        // entry points parser
-        //   entry points require adding extras to Blueprint!
+        let paths: HashMap<String, NicePathBuf> = HashMap::from([
+            ("scripts".into(), "bin".try_into().unwrap()),
+            ("purelib".into(), "lib".try_into().unwrap()),
+            ("platlib".into(), "lib".try_into().unwrap()),
+            ("data".into(), ".".try_into().unwrap()),
+        ]);
 
+        let wheel_roots = blueprint
+            .wheels
+            .iter()
+            .map(|(pin, expected_metadata)| {
+                let (wheel, wheel_hash) =
+                    pick_pinned::<Wheel>(&db, &wheel_platform, &pin)?;
+                let got_metadata = wheel.metadata()?;
+                // XX TODO cross-check metadata
+                let wheel_root = self.store.get_or_set(&wheel_hash, |path| {
+                    wheel.unpack(&paths, &trampoline_maker, WriteTreeFS::new(&path))?;
+                    Ok(())
+                })?;
+                Ok(wheel_root)
+            })
+            .collect::<Result<Vec<_>>>()?;
 
-        // then pick wheels and unpack them
-        // their fixups:
-        // - put .data/{pure,plat}lib somewhere that the env stuff later can find it
-        //   (maybe lay it out as $dir/bin, $dir/purelib, $dir/platlib?)
-        // - fix up #!python/#!pythonw scripts
-        // - create wrappers for script entrypoints
-        //
-        // maybe Wheel::unpack should take a dict of paths? in forest mode we can fill
-        // them in with our ad hoc stuff; in venv mode can pass the pybi paths.
-        // and maybe ditto for the forwarding, b/c there again venv mode will want to
-        // use a relative-to-script lookup and forest mode will want to use a PATH
-        // lookup. (Or maybe that's just an enum.)
+        let pybi_bin = pybi_root.join(pybi_metadata.path("scripts")?.to_native());
+        let (python_basename, pythonw_basename) = if cfg!(unix) {
+            ("python", "python")
+        } else {
+            ("python.exe", "pythonw.exe")
+        };
+        let python = pybi_bin.join(python_basename);
+        let pythonw = pybi_bin.join(pythonw_basename);
 
-        todo!()
+        let mut bin_dirs = Vec::<PathBuf>::new();
+        bin_dirs.push(pybi_bin);
+        bin_dirs.extend(wheel_roots.iter().map(|root| root.join("bin")));
+
+        let lib_dirs = wheel_roots.iter().map(|root| root.join("lib")).collect();
+
+        Ok(Env { python, pythonw, bin_dirs, lib_dirs })
     }
 }
 
 pub struct Env {
-    bin_dirs: Vec<PathBuf>,
-    wheel_roots: Vec<PathBuf>,
+    // XX TODO for GC support: hold a lock to prevent anything from being GC'ed out from
+    // under us
+    pub python: PathBuf,
+    pub pythonw: PathBuf,
+    pub bin_dirs: Vec<PathBuf>,
+    pub lib_dirs: Vec<PathBuf>,
 }
 
 // pub trait PyEnvMaker {

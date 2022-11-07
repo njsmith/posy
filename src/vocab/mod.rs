@@ -2,6 +2,7 @@ mod artifact_formats;
 mod artifact_hash;
 mod artifact_name;
 mod core_metadata;
+mod entry_points;
 mod extra;
 mod package_name;
 mod reqparse;
@@ -9,17 +10,19 @@ mod requirement;
 mod rfc822ish;
 mod specifier;
 mod version;
-mod entry_points;
 
 // All this stuff is also re-exported from crate::prelude::*
 
-pub use self::entry_points::{parse_entry_points, Entrypoint};
-pub use self::artifact_formats::{Artifact, BinaryArtifact, Pybi, Sdist, Wheel, ScriptType};
+pub use self::artifact_formats::{
+    Artifact, BinaryArtifact, Pybi, Sdist, Wheel,
+};
 pub use self::artifact_hash::ArtifactHash;
 pub use self::artifact_name::{
-    ArtifactName, UnwrapFromArtifactName, DistInfoDirName, PybiName, SdistName, WheelName,
+    ArtifactName, BinaryName, DistInfoDirName, PybiName, SdistName,
+    UnwrapFromArtifactName, WheelName,
 };
 pub use self::core_metadata::{PybiCoreMetadata, WheelCoreMetadata};
+pub use self::entry_points::{parse_entry_points, Entrypoint};
 pub use self::extra::Extra;
 pub use self::package_name::PackageName;
 pub use self::requirement::{
