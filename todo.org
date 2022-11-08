@@ -35,6 +35,12 @@ maybe also look at https://docs.rs/ariadne/0.1.5/ariadne/
 
 * Actual todo/planning list
 
+- Pybis
+  - Build macOS
+  - Build Windows
+  - more Linux
+  - clean up build tooling
+  - post PEP
 - UI
   - Tracing
     - for better error reporting
@@ -69,9 +75,10 @@ maybe also look at https://docs.rs/ariadne/0.1.5/ariadne/
   - Readable failure reporting
   - progress reporting (progress bar showing (max(candidates.len()) - current(candidates.len())? show the top package/version pairs in each candidate request?)
   - performance:
-    - priority queue PR
     - better range representation
     - better next-package heuristics
+      - maybe pulling in the priority queue PR
+    - more efficient network usage
 - Trampolines
   - relative path support for exporting environments
   - fix quoting in windows wrappers
@@ -81,10 +88,98 @@ maybe also look at https://docs.rs/ariadne/0.1.5/ariadne/
 - 'posy self upgrade' (or 'up' or 'update' or whatever we pick)
 - 'posy self info' -> version, license, detected platform, paths, ...?
 
-* locally-built wheels
-let's take the set of wheel compatibility tags for our current platform/pybi, and pick the most-compatible one, and use that for our lookup key in the sdist build dir
-so e.g. cp310-cp310-manylinux_2_34_x86_64
-*unless* it produces a *-none-any wheel, then it can get filed under its own tag
+* sdist support
+given sdist AI + envmaker, get metadata / wheel
+
+so db.get_metadata needs to have access to envmaker+context somehow. maybe need an sdistbuilder object to encapsulate? (would also be a good place to stash stuff like build-constraints if we add them in the future)
+
+WheelBuilderConfig {
+  PackageDB,
+  EnvMaker,
+  // constraints, ...?
+}
+
+// whenever we start building an sdist, we first need to walk the stack to make sure
+// there's no loop, so we can also access the root's WheelBuilderConfig at the same time
+enum WheelBuilder<'a> {
+  Root(WheelBuilderConfig),
+  Nested(&WheelBuilder<'a>, &'a PackageName),
+}
+
+impl<'a> WheelBuilder<'a> {
+    fn check(&self, new_name: &PackageName) -> Result<&WheelBuilderConfig>
+    {
+        match self {
+            Root(config) => Ok(&config),
+            Nested(parent, name) => if name == new_name {
+                bail!("loop");
+            } else {
+                parent.check(&new_name),
+            }
+        }
+    }
+
+    fn new_child<'self, 'name, 'new>(&'self self, &'name PackageName)
+        -> Result<(WheelBuilder<'self + 'name>, &'self WheelBuilderConfig>
+    {
+        let config = self.check(name)?;
+        Ok((WheelBuilder::Nested(&self, &name), &config)
+    }
+
+    // pybi needs to come in here somewhere too... part of the config, or part of the
+    // invocation?
+    fn make_metadata(&self, sdist: &Sdist) -> Result<WheelCoreMetadata> {
+        let child = self.new_child(&sdist.name.distribution)?;
+        // unpack, read pyproject.toml, make brief
+        // pass 'child' into the resolver as the builder for any sdists it needs
+        // do pep517 stuff
+
+        // this should have the option of stashing the built wheel in the cache,
+        // in case it's forced to build one
+    }
+
+    fn make_wheel(&self, sdist: &Sdist) -> Result<Wheel> {
+        ...
+    }
+}
+
+so &WheelBuilder going into resolver, package_db.get_metadata, maybe get_artifact::<Wheel>?
+
+wheel caching:
+store mapping sdist -> dir
+  dir maps compat key -> wheel
+
+compat keys: if wheel has 'any' tag, use its actual tag as the key
+   sdist_hash/py3-none-any/foo-12.3-py3-none-any.whl
+             /py37-none-any/foo-12.3.py37-none-any.whl
+(allow dotted names here, we can parse and expand during retrieval)
+
+if has an abi, take the most-restrictive (highest priority) wheel tag
+...maybe should have some hack like, define our own "posy_local_manylinux_2_24_x86_64" tags?
+in practice wheels will end up with -linux_x86_64 tags and currently we don't believe those are compatible, so that's an issue
+and we can't just add those tags in general, b/c then will conflate locally-built manylinux+musllinux wheels in the cache
+
+oh shoot, build-constraints would also need to be included in the cache key
+ or maybe better, a record of which build-dependencies were actually used that we can check against when looking it up?
+
+so local-wheel cache is more like map sdist->set<(build context, wheel)>, where we treat all the wheels as candidates and loop through to pick the one we like best (or make a new one)
+maybe need a new KV*Store for this honestly
+
+choosing pybi to build with:
+for metadata we already assume that any wheel is as good as another, so we might as well do the same for building metadata?
+...though, we assume that any wheel is as good as another *for wheels that exist*, but b/c of python-requires (explicit or implicit) building a wheel on the wrong pybi might just fail.
+so maybe we should pass in a python version?
+
+for building (installing) a wheel, have a specific pybi in mind. we want to use exactly that one if possible. otherwise want something "close" (e.g. same version but different platform tag).
+
+maybe pass in the AI for the pybi we're actually using for (install/resolve), and then have fallback logic inside the SdistBuilder that tries "next best" if it can?
+
+and in cache, for each wheel include:
+- the wheel
+- the build tool versions used (so can filter for build-constraints post hoc)
+- the pybi name used?
+- the platform built on (could just dump the full WheelPlatform tag set)
+  then accept if *either* wheel's actual tag matches, or build platform is a subset of target platform?
 
 * artifact types
 
