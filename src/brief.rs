@@ -131,22 +131,6 @@ fn pinned(
 impl Brief {
     pub fn resolve(&self, db: &PackageDB, platform: &PybiPlatform) -> Result<Blueprint> {
         let pybi_ai = resolve_pybi(&db, &self.python, &platform)?;
-        // XX TODO: figure out how platform changes after pybi is selected (e.g. on a
-        // system that has both manylinux+musllinux compatibility, we can pick a pybi
-        // for either but once we do we have fewer choices for wheels).
-        // maybe we need some way to trim down a platform list to "can all coexist in
-        // the same process"? discard everything that's inconsistent with a
-        // higher-ranked tag?
-        // (and same machinery should be able to figure out platform_machine for
-        // markers, maybe?)
-        // ...for the resolution phase tho, we don't need to know about wheel tags at
-        // all. We assume all wheels for a given package+version have the same metadata.
-        // We just need to know the environment marker values (so only the universal2
-        // case is actually problematic). And for the pybi part of the pin, I guess we
-        // pick an arbitrary pybi that satisfies the version+platform constraints, and
-        // write down that version + the environment markers we needed for the pins?
-        // (Fortunately in practice the marker variables are very unlikely to change
-        // given a specific CPython release + OS + ISA.)
         let (_, pybi_metadata) = db
             .get_metadata::<Pybi, _>(&[pybi_ai])
             .with_context(|| format!("fetching metadata for {}", pybi_ai.url))?;

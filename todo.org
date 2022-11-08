@@ -33,6 +33,54 @@ can make pretty toml errors (https://docs.rs/toml_edit/latest/toml_edit/struct.T
 but even better would be if can convince it to make pretty explanations of failed resolution! (well, might have to do this on our own)
 maybe also look at https://docs.rs/ariadne/0.1.5/ariadne/
 
+* Actual todo/planning list
+
+- UI
+  - Tracing
+    - for better error reporting
+    - for general messages (warnings/etc.)
+    - progress reporting
+  - Command line parsing
+  - Finding pyproject.toml
+  - pyproject language for describing environments (steal heavily from Hatch, or even just merge the projects I guess)
+  - 'posy new'
+    - 'posy new --adopt'
+- storage
+  - GC
+- installer
+  - provenance/metadata validation on install
+  - record env markers (&simplify?) and use to pick between multiple blueprints
+  - serialize/deserialize blueprints
+  - figure out what to do with RECORD
+- sdist handling
+  - get metadata during resolution
+  - build during install
+- @ dependencies
+  - git
+  - relative paths
+  - random urls
+- workspaces?
+- package db
+  - multiple hash support + json support
+  - .metadata support
+- Resolver
+  - proper pybi resolution (combine version ranking code with wheels)
+  - minimal-upgrade support
+  - Readable failure reporting
+  - progress reporting (progress bar showing (max(candidates.len()) - current(candidates.len())? show the top package/version pairs in each candidate request?)
+  - performance:
+    - priority queue PR
+    - better range representation
+    - better next-package heuristics
+- Trampolines
+  - relative path support for exporting environments
+  - fix quoting in windows wrappers
+    - actual parsing/quoting algorithm [[https://github.com/rust-lang/rust/blob/master/library/std/src/sys/windows/args.rs][ref]]
+    - but what we actually need is much simpler than that! [[https://github.com/rust-lang/rust/blob/6b23a7e87fc60f6cc43c8cfb69169f2eecefaf14/library/std/src/sys/windows/process.rs#L755-L761][ref]] (which also means our current code is accidentally correct, b/c the broken quoting never executes)
+  - maybe remove link to shell32.dll? [[https://randomascii.wordpress.com/2018/12/03/a-not-called-function-can-cause-a-5x-slowdown/][ref]]
+- 'posy self upgrade' (or 'up' or 'update' or whatever we pick)
+- 'posy self info' -> version, license, detected platform, paths, ...?
+
 * locally-built wheels
 let's take the set of wheel compatibility tags for our current platform/pybi, and pick the most-compatible one, and use that for our lookup key in the sdist build dir
 so e.g. cp310-cp310-manylinux_2_34_x86_64
@@ -96,3 +144,5 @@ and then we can process them up-front, and simply tell pubgrub that these are th
 * optimizing network usage during resolution
 when we pull up a list of requirements for some package, can immediately fetch the simple pages for all of them in parallel, and even the metadata for the most-preferred version
 ideally over HTTP/2 or HTTP/3, and/or in the background
+
+We could even prime the pump by pre-fetching all the packages listed in the .lock or user-requirements

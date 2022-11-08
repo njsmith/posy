@@ -168,7 +168,6 @@ pub mod marker {
     impl Display for EnvMarkerExpr {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
-                // XX maybe it would be nice to reduce redundant parentheses here?
                 EnvMarkerExpr::And(lhs, rhs) => write!(f, "({} and {})", lhs, rhs)?,
                 EnvMarkerExpr::Or(lhs, rhs) => write!(f, "({} or {})", lhs, rhs)?,
                 EnvMarkerExpr::Operator { op, lhs, rhs } => write!(

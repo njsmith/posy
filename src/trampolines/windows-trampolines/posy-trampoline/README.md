@@ -24,8 +24,8 @@ Then when you run `python` on the `.exe`, it will see the `.zip` trailer at the
 end of the `.exe`, and automagically look inside to find and execute
 `__main__.py`. Easy-peasy.
 
-(XX TODO: we should probably make the Python-finding logic slightly more
-flexible at some point -- in particular to support more conventional venv-style
+(TODO: we should probably make the Python-finding logic slightly more flexible
+at some point -- in particular to support more conventional venv-style
 installation where you find `python` by looking in the directory next to the
 trampoline `.exe` -- but this is good enough to get started.)
 
