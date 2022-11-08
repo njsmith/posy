@@ -330,17 +330,14 @@ impl Wheel {
             format!("{}/{}", vitals.dist_info, "entry_points.txt").as_str(),
         ) {
             let entry_points = parse_entry_points(std::str::from_utf8(&entry_points)?)?;
-            let scripts = paths
-                .get("scripts")
-                .ok_or(anyhow!("missing 'scripts' path"))?;
 
             let mut write_scripts = |name, script_type| -> Result<()> {
                 if let Some(script_entrypoints) = entry_points.get(name) {
                     for entrypoint in script_entrypoints {
                         let body = script_for_entrypoint(entrypoint, script_type);
-                        let name = format!("{scripts}/{}", entrypoint.name);
+                        let name = format!("{}/scripts/{}", vitals.data, entrypoint.name);
                         transformer.write_file(
-                            &name.try_into().unwrap(),
+                            &name.try_into()?,
                             &mut &body[..],
                             true,
                         )?;

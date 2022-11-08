@@ -58,8 +58,8 @@ fn main() -> Result<()> {
         python: "cpython_unofficial >= 3".try_into().unwrap(),
         requirements: vec![
             "trio".try_into().unwrap(),
-            "starlette".try_into().unwrap(),
-            "scipy".try_into().unwrap(),
+            "numpy".try_into().unwrap(),
+            "black".try_into().unwrap(),
         ],
     };
     let platform = PybiPlatform::current_platform()?;
