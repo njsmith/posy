@@ -163,7 +163,12 @@ impl EnvForest {
 
         let lib_dirs = wheel_roots.iter().map(|root| root.join("lib")).collect();
 
-        Ok(Env { python, pythonw, bin_dirs, lib_dirs })
+        Ok(Env {
+            python,
+            pythonw,
+            bin_dirs,
+            lib_dirs,
+        })
     }
 }
 
@@ -174,6 +179,26 @@ pub struct Env {
     pub pythonw: PathBuf,
     pub bin_dirs: Vec<PathBuf>,
     pub lib_dirs: Vec<PathBuf>,
+}
+
+impl Env {
+    pub fn env_vars(
+        &self,
+    ) -> Result<impl IntoIterator<Item = (&'static str, std::ffi::OsString)>> {
+        let mut vars = Vec::new();
+
+        let old_path = std::env::var_os("PATH").ok_or(anyhow!("no $PATH?"))?;
+        let mut new_paths = self.bin_dirs.clone();
+        new_paths.extend(std::env::split_paths(&old_path));
+        let new_path = std::env::join_paths(&new_paths)?;
+
+        vars.push(("PATH", new_path));
+        vars.push(("POSY_PYTHON", self.python.clone().into_os_string()));
+        vars.push(("POSY_PYTHONW", self.pythonw.clone().into_os_string()));
+        vars.push(("POSY_PYTHON_PACKAGES", std::env::join_paths(&self.lib_dirs)?));
+
+        Ok(vars)
+    }
 }
 
 // pub trait PyEnvMaker {
