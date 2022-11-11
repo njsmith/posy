@@ -59,7 +59,10 @@ fn main() -> Result<()> {
         Err(cmd.exec())?;
         unreachable!();
     } else {
-        // XX FIXME: factor out the windows trampoline code and reuse it here
+        // XX FIXME: factor out the windows trampoline code and reuse it here.
+        //
+        // unwrap() is safe b/c this branch only runs on windows, and Windows doesn't
+        // have special exit statuses; that's a special thing for Unix signals.
         std::process::exit(cmd.status()?.code().unwrap());
     }
 }

@@ -99,6 +99,8 @@ WheelBuilderConfig {
   // constraints, ...?
 }
 
+maybe the Config should also keep a tempdir cache of unpacked sdists, b/c it's likely that within a single session we may want to first run get_requires_for_build_wheel and then build_wheel
+
 // whenever we start building an sdist, we first need to walk the stack to make sure
 // there's no loop, so we can also access the root's WheelBuilderConfig at the same time
 enum WheelBuilder<'a> {
@@ -180,6 +182,20 @@ and in cache, for each wheel include:
 - the pybi name used?
 - the platform built on (could just dump the full WheelPlatform tag set)
   then accept if *either* wheel's actual tag matches, or build platform is a subset of target platform?
+
+
+PEP 517 loop
+goal -> {metadata, wheel}
+  also backend-path
+state: initial -> all_requires -> prepare_metadata_for_build_wheel OR build_wheel
+
+so python script will get passed the relevant pyproject.toml data, the state, and the goal
+and returns either a wheel or a .dist-info directory
+
+ideally:
+- some way to pass in config settings
+- some way to hold onto unpacked sdists and .dist-info directories, so if the same process both gets metadata and then builds a wheel we can reuse that part
+
 
 * artifact types
 

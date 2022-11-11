@@ -53,6 +53,8 @@ ciborium = "0.2.0"
 stable_deref_trait = "1.2.0"
 typed-path = "0.1.0"
 auto_impl = "1.0.1"
+tar = "0.4.38"
+flate2 = { version = "1.0.24", default-features = false, features = ["zlib-ng"] }
 
 [dev-dependencies]
 fastrand = "1.4.1"

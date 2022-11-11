@@ -1,11 +1,12 @@
 use crate::prelude::*;
+use auto_impl::auto_impl;
 use std::fs;
 use std::io;
+use std::ops::Deref;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::slice::SliceIndex;
-use auto_impl::auto_impl;
 use typed_path::unix::UnixComponent;
 use typed_path::UnixPath;
 use zip::ZipArchive;
@@ -64,9 +65,12 @@ impl NicePathBuf {
     }
 
     pub fn slice<I>(&self, index: I) -> NicePathBuf
-        where I: SliceIndex<[String], Output=[String]>,
+    where
+        I: SliceIndex<[String], Output = [String]>,
     {
-        NicePathBuf { pieces: self.pieces[index].into() }
+        NicePathBuf {
+            pieces: self.pieces[index].into(),
+        }
     }
 }
 
@@ -184,7 +188,10 @@ impl NiceSymlinkPaths {
         } else {
             sanitized.as_slice().join("/")
         };
-        Ok(NiceSymlinkPaths { source: source.clone(), target })
+        Ok(NiceSymlinkPaths {
+            source: source.clone(),
+            target,
+        })
     }
 }
 
@@ -306,6 +313,35 @@ pub fn unpack_zip_carefully<T: Read + Seek, W: WriteTree>(
     }
 
     println!("zip done!");
+    Ok(())
+}
+
+pub fn unpack_tar_gz_carefully<T: Read + Seek, W: WriteTree>(
+    mut body: T,
+    mut dest: W,
+) -> Result<()> {
+    let ungz = flate2::read::MultiGzDecoder::new(body);
+    let mut archive = tar::Archive::new(ungz);
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path: NicePathBuf = entry.path_bytes().deref().try_into()?;
+        let kind = entry.header().entry_type();
+        let is_executable = entry.header().mode()? & 0o100 != 0;
+        use tar::EntryType::*;
+        match kind {
+            // In theory we could support symlinks here (and we do support them in zip
+            // files, by accident because we want to support them for pybis), but lets
+            // wait until someone actually needs it.
+            Symlink | Link | Char | Block | Fifo => {
+                bail!("sdist entry {} has unsupported type {:?}", path, kind)
+            }
+            Directory => dest.mkdir(&path)?,
+            GNULongName | GNULongLink | GNUSparse | XGlobalHeader | XHeader => (),
+            Regular | Continuous | _ => {
+                dest.write_file(&path, &mut entry, is_executable)?;
+            }
+        }
+    }
     Ok(())
 }
 

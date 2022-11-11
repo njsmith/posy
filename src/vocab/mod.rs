@@ -18,7 +18,7 @@ pub use self::artifact_formats::{
 };
 pub use self::artifact_hash::ArtifactHash;
 pub use self::artifact_name::{
-    ArtifactName, BinaryName, DistInfoDirName, PybiName, SdistName,
+    ArtifactName, BinaryName, DistInfoDirName, PybiName, SdistName, SdistFormat,
     UnwrapFromArtifactName, WheelName,
 };
 pub use self::core_metadata::{PybiCoreMetadata, WheelCoreMetadata};

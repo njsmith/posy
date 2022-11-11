@@ -2,6 +2,7 @@ use crate::prelude::*;
 use std::fs::{self, File};
 use std::io::SeekFrom;
 use std::marker::PhantomData;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use fs2::FileExt;
 use ring::digest;
@@ -338,19 +339,48 @@ impl KVDirStore {
         })
     }
 
+    pub fn lock<K: PathKey>(&self, key: &K) -> Result<KVDirLock> {
+        let path = self.base.join(key.key());
+        let lock = lock(&path, LockMode::Lock)?;
+        Ok(KVDirLock { tmp: self.tmp.clone(), _lock: lock, path })
+    }
+
     pub fn get_or_set<K, F>(&self, key: &K, f: F) -> Result<PathBuf>
     where
         K: PathKey,
         F: FnOnce(&Path) -> Result<()>,
     {
-        let path = self.base.join(key.key());
-        let _lock = lock(&path, LockMode::Lock)?;
-        if !path.exists() {
-            let tmp = tempfile::tempdir_in(&self.tmp)?;
+        let lock = self.lock(&key)?;
+        if !lock.exists() {
+            let tmp = lock.tempdir()?;
             f(tmp.as_ref())?;
-            fs::rename(&tmp.into_path(), &path)?;
+            fs::rename(&tmp.into_path(), &*lock)?;
         }
-        Ok(path)
+        Ok(lock.path)
+    }
+}
+
+pub struct KVDirLock {
+    tmp: PathBuf,
+    _lock: File,
+    path: PathBuf,
+}
+
+impl KVDirLock {
+    pub fn tempdir(&self) -> Result<tempfile::TempDir> {
+        Ok(tempfile::tempdir_in(&self.tmp)?)
+    }
+
+    pub fn tempfile(&self) -> Result<tempfile::NamedTempFile> {
+        Ok(tempfile::NamedTempFile::new_in(&self.tmp)?)
+    }
+}
+
+impl Deref for KVDirLock {
+    type Target = Path;
+
+    fn deref(&self) -> &Self::Target {
+        self.path.deref()
     }
 }
 

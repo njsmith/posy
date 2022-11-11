@@ -1,7 +1,8 @@
 use super::rfc822ish::RFC822ish;
+use crate::package_db::{ArtifactInfo, PackageDB};
 use crate::prelude::*;
-use crate::trampolines::{TrampolineMaker, ScriptType};
-use crate::tree::{unpack_zip_carefully, WriteTree};
+use crate::trampolines::{ScriptType, TrampolineMaker};
+use crate::tree::{unpack_zip_carefully, unpack_tar_gz_carefully, WriteTree};
 use std::cell::RefCell;
 use std::io::{BufRead, BufReader};
 use zip::ZipArchive;
@@ -22,15 +23,17 @@ use zip::ZipArchive;
 // guess that's a 4th artifact type?
 
 pub struct Sdist {
-    // TODO
+    name: SdistName,
+    body: RefCell<Box<dyn ReadPlusSeek>>,
 }
 
 pub struct Wheel {
-    pub name: WheelName,
+    name: WheelName,
     z: RefCell<ZipArchive<Box<dyn ReadPlusSeek>>>,
 }
+
 pub struct Pybi {
-    pub name: PybiName,
+    name: PybiName,
     z: RefCell<ZipArchive<Box<dyn ReadPlusSeek>>>,
 }
 
@@ -38,6 +41,36 @@ pub trait Artifact: Sized {
     type Name: Clone + UnwrapFromArtifactName;
 
     fn new(name: Self::Name, f: Box<dyn ReadPlusSeek>) -> Result<Self>;
+    fn name(&self) -> &Self::Name;
+}
+
+impl Artifact for Sdist {
+    type Name = SdistName;
+
+    fn new(name: Self::Name, body: Box<dyn ReadPlusSeek>) -> Result<Self> {
+        Ok(Sdist { name, body: body.into() })
+    }
+
+    fn name(&self) -> &Self::Name {
+        &self.name
+    }
+}
+
+impl Sdist {
+    #[context("Unpacking {}", self.name)]
+    pub fn unpack<T: WriteTree>(&self, destination: &mut T) -> Result<()> {
+        let mut boxed = self.body.borrow_mut();
+        let body = boxed.as_mut();
+        match self.name.format {
+            SdistFormat::Zip => unpack_zip_carefully(
+                &mut ZipArchive::new(body)?,
+                destination,
+            ),
+            SdistFormat::TarGz => {
+                unpack_tar_gz_carefully(body, destination)
+            },
+        }
+    }
 }
 
 impl Artifact for Wheel {
@@ -48,6 +81,11 @@ impl Artifact for Wheel {
             name,
             z: RefCell::new(ZipArchive::new(f)?),
         })
+    }
+
+    #[inline]
+    fn name(&self) -> &Self::Name {
+        &self.name
     }
 }
 
@@ -60,6 +98,10 @@ impl Artifact for Pybi {
             z: RefCell::new(ZipArchive::new(f)?),
         })
     }
+
+    fn name(&self) -> &Self::Name {
+        &self.name
+    }
 }
 
 // This should add a 'Name: BinaryName' bound on Artifact::Name, but that's not stable
@@ -67,6 +109,7 @@ impl Artifact for Pybi {
 pub trait BinaryArtifact: Artifact {
     type Metadata;
     type Platform: Platform;
+    type BuildContext<'a>;
 
     // used to parse standalone METADATA files, like we might have cached or get from
     // PEP 658 (once it's implemented). Eventually we might want to split this off into
@@ -80,6 +123,17 @@ pub trait BinaryArtifact: Artifact {
     // use this to pull out the metadata from a remote artifact without downloading the
     // whole thing, and also cache the core metadata locally for next time.
     fn metadata(&self) -> Result<(Vec<u8>, Self::Metadata)>;
+
+    fn build_metadata<'a>(
+        db: &PackageDB,
+        ctx: &Self::BuildContext<'a>,
+        ai: &ArtifactInfo,
+    ) -> Result<Option<Self::Metadata>>;
+    fn build<'a>(
+        db: &PackageDB,
+        ctx: &Self::BuildContext<'a>,
+        ai: &ArtifactInfo,
+    ) -> Result<Option<Self>>;
 }
 
 fn parse_format_metadata_and_check_version(
@@ -229,11 +283,31 @@ impl BinaryArtifact for Wheel {
         } = self.get_vitals()?;
         Ok((metadata_blob, metadata))
     }
+
+    type BuildContext<'a> = crate::package_db::BuildWheelContext<'a>;
+
+    fn build_metadata<'a>(
+        db: &PackageDB,
+        ctx: &Self::BuildContext<'a>,
+        ai: &ArtifactInfo,
+    ) -> Result<Option<Self::Metadata>> {
+        ctx.build_metadata(&db, &ai)
+    }
+
+    fn build<'a>(
+        db: &PackageDB,
+        ctx: &Self::BuildContext<'a>,
+        ai: &ArtifactInfo,
+    ) -> Result<Option<Self>> {
+        ctx.build_wheel(&db, &ai)
+    }
 }
 
 impl BinaryArtifact for Pybi {
     type Metadata = PybiCoreMetadata;
     type Platform = PybiPlatform;
+    // Pybis can't be built from source (at least for now)
+    type BuildContext<'a> = ();
 
     fn parse_metadata(value: &[u8]) -> Result<Self::Metadata> {
         value.try_into()
@@ -260,6 +334,22 @@ impl BinaryArtifact for Pybi {
             );
         }
         Ok((metadata_blob, metadata))
+    }
+
+    fn build_metadata<'a>(
+        _db: &PackageDB,
+        _ctx: &Self::BuildContext<'a>,
+        _ai: &ArtifactInfo,
+    ) -> Result<Option<Self::Metadata>> {
+        Ok(None)
+    }
+
+    fn build<'a>(
+        db: &PackageDB,
+        ctx: &Self::BuildContext<'a>,
+        ai: &ArtifactInfo,
+    ) -> Result<Option<Self>> {
+        Ok(None)
     }
 }
 
@@ -304,8 +394,7 @@ impl Wheel {
         paths: &HashMap<String, NicePathBuf>,
         trampoline_maker: &TrampolineMaker,
         mut dest: W,
-    ) -> Result<()>
-    {
+    ) -> Result<()> {
         let vitals = self.get_vitals()?;
         let mut transformer = WheelTreeTransformer {
             paths: &paths,
@@ -335,7 +424,8 @@ impl Wheel {
                 if let Some(script_entrypoints) = entry_points.get(name) {
                     for entrypoint in script_entrypoints {
                         let body = script_for_entrypoint(entrypoint, script_type);
-                        let name = format!("{}/scripts/{}", vitals.data, entrypoint.name);
+                        let name =
+                            format!("{}/scripts/{}", vitals.data, entrypoint.name);
                         transformer.write_file(
                             &name.try_into()?,
                             &mut &body[..],

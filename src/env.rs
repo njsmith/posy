@@ -121,7 +121,7 @@ impl EnvForest {
             Ok(())
         })?;
         let wheel_platform =
-            pybi_platform.wheel_platform_for_pybi(&pybi.name, &pybi_metadata)?;
+            pybi_platform.wheel_platform_for_pybi(&pybi.name(), &pybi_metadata)?;
         let trampoline_maker =
             TrampolineMaker::new(FindPython::FromEnv, ScriptPlatform::Both);
 
