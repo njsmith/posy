@@ -51,6 +51,7 @@ maybe also look at https://docs.rs/ariadne/0.1.5/ariadne/
   - pyproject language for describing environments (steal heavily from Hatch, or even just merge the projects I guess)
   - 'posy new'
     - 'posy new --adopt'
+  - update checking (crates.io/crate/update-informer?)
 - storage
   - GC
 - installer

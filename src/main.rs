@@ -13,21 +13,29 @@ mod seek_slice;
 mod test_util;
 mod trampolines;
 mod tree;
+mod output;
 
 use anyhow::Result;
 use std::path::Path;
 
 use crate::{brief::Brief, env::EnvForest, prelude::*};
 
-use structopt::StructOpt;
+use clap::Parser;
 
-#[derive(StructOpt)]
-struct Opt {
-    inputs: Vec<String>,
+#[derive(Parser)]
+#[command(author, version, about)]
+struct Cli {
+    #[command(flatten)]
+    output_args: output::OutputArgs,
 }
 
 fn main() -> Result<()> {
-    let opt = Opt::from_args();
+    let cli = Cli::parse();
+    output::init(&cli.output_args);
+    context!("foo: {}", "bar");
+    context!("more foo: {}", "more bar");
+    eprintln!("{:?}", crate::output::current_context());
+    tracing::warn!("bad stuff: {}", 0);
 
     let db = package_db::PackageDB::new(
         &vec![
