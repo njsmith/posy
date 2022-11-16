@@ -240,7 +240,6 @@ impl WriteTree for WriteTreeFS {
         executable: bool,
     ) -> Result<()> {
         context!("Writing out {path}");
-        println!("{}", path);
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -281,7 +280,7 @@ pub fn unpack_zip_carefully<T: Read + Seek, W: WriteTree>(
     // better locality on our reads.
     for i in 0..z.len() {
         let mut zip_file = z.by_index(i)?;
-        println!("Unpacking {}", zip_file.name());
+        context!("Unpacking zip file member {}", zip_file.name());
         if let Some(mode) = zip_file.unix_mode() {
             if mode & 0xf000 == 0xa000 {
                 // it's a symlink
@@ -312,7 +311,6 @@ pub fn unpack_zip_carefully<T: Read + Seek, W: WriteTree>(
         dest.write_symlink(&symlink)?;
     }
 
-    println!("zip done!");
     Ok(())
 }
 

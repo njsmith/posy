@@ -7,8 +7,8 @@ pub use std::str::FromStr;
 pub use shrinkwraprs::Shrinkwrap;
 
 pub use eyre::{eyre, bail, Result, WrapErr};
+pub use tracing::{warn, info, trace, debug};
 pub use derivative::Derivative;
-pub use log::{info, trace, warn};
 pub use once_cell::sync::Lazy;
 pub use regex::Regex;
 pub use serde::{Deserialize, Serialize};

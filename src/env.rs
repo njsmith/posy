@@ -59,11 +59,9 @@ where
     scored_candidates.sort_unstable_by_key(|(_, score)| *score);
     for (ai, _) in scored_candidates {
         if ai.hash.is_none() {
-            // XX TODO should be a warning
-            bail!("best scoring artifact {} has no hash", ai.name);
+            warn!("best scoring artifact {} has no hash", ai.name);
         } else if !pin.hashes.contains(ai.hash.as_ref().unwrap()) {
-            // XX TODO should be a warning
-            bail!("best scoring artifact {}'s does not appear in lock file (maybe need to update pins?)", ai.name);
+            warn!("best scoring artifact {} does not appear in lock file (maybe need to update pins?)", ai.name);
         } else {
             return Ok((db.get_artifact(ai)?, ai.hash.as_ref().unwrap()));
         }

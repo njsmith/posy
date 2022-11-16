@@ -289,7 +289,7 @@ impl<'a> PubgrubState<'a> {
             for maybe_extra in maybe_extras {
                 let pkg = ResPkg::Package(req.name.clone(), maybe_extra);
                 let range = specifiers_to_pubgrub(&req.specifiers)?;
-                println!("adding dependency: {} {}", pkg, range);
+                trace!("adding dependency: {} {}", pkg, range);
                 dc.insert(pkg, range);
             }
         }
@@ -324,19 +324,19 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
         T: Borrow<ResPkg>,
         U: Borrow<Range<Version>>,
     {
-        println!("----> pubgrub called choose_package_version");
+        trace!("----> pubgrub called choose_package_version");
         // XX TODO: laziest possible heuristic, just pick the first package offered
         let (respkg, range) = potential_packages.next().unwrap();
 
         match respkg.borrow() {
             ResPkg::Root => {
-                println!("<---- decision: root package magic version 0");
+                trace!("<---- decision: root package magic version 0");
                 Ok((respkg, Some(ROOT_VERSION.clone())))
             }
             ResPkg::Package(name, _) => {
                 for &version in self.versions(&name)?.iter().rev() {
                     if !range.borrow().contains(version) {
-                        println!("Version {} is out of range", version);
+                        trace!("Version {} is out of range", version);
                         continue;
                     }
 
@@ -351,11 +351,11 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
                             version
                         ))?;
                     }
-                    println!("<---- decision: {} {}", respkg.borrow(), version);
+                    trace!("<---- decision: {} {}", respkg.borrow(), version);
                     return Ok((respkg, Some(version.clone())));
                 }
 
-                println!(
+                trace!(
                     "<---- decision: no versions of {} in range",
                     respkg.borrow()
                 );
@@ -372,14 +372,14 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
         pubgrub::solver::Dependencies<ResPkg, Version>,
         Box<dyn std::error::Error>,
     > {
-        println!("----> pubgrub called get_dependencies {} v{}", pkg, version);
+        trace!("----> pubgrub called get_dependencies {} v{}", pkg, version);
 
         match pkg {
             ResPkg::Root => {
                 let mut dc: DependencyConstraints<ResPkg, Version> =
                     vec![].into_iter().collect();
                 self.requirements_to_pubgrub(self.root_reqs.iter(), &mut dc, None)?;
-                println!("<---- dependencies complete");
+                trace!("<---- dependencies complete");
                 Ok(Dependencies::Known(dc))
             }
             ResPkg::Package(name, extra) => {
@@ -407,7 +407,7 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
                     );
                 }
 
-                println!("<---- dependencies complete");
+                trace!("<---- dependencies complete");
                 Ok(Dependencies::Known(dc))
             }
         }

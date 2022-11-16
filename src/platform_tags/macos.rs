@@ -57,7 +57,6 @@ fn running_under_rosetta_2() -> bool {
             if err.raw_os_error() == Some(ENOENT) {
                 // "sysctl.proc_translated" wasn't recognized -- must be old
                 // macOS without rosetta 2 support.
-                //println!("ENOENT");
                 false
             } else {
                 unreachable!(
@@ -87,13 +86,13 @@ fn version() -> Result<(u32, u32, u32)> {
     // so 50 should give us plenty of headroom :-)
     let product_version_str =
         String::from_utf8(get_sysctl("kern.osproductversion", 50)?)?;
-    println!("product_version_str = {}", product_version_str);
+    debug!("product_version_str = {}", product_version_str);
     let pieces = product_version_str
         .trim_end_matches('\0')
         .split(".")
         .collect::<Vec<&str>>();
     assert!(pieces.len() == 3);
-    println!("{:?}", pieces);
+    debug!("{:?}", pieces);
     Ok((pieces[0].parse()?, pieces[1].parse()?, pieces[2].parse()?))
 }
 

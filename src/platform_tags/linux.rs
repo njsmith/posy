@@ -77,8 +77,7 @@ fn glibc_version(py_arch: &str, detector: &[u8]) -> Result<Option<(u32, u32)>> {
     let output =
         Command::new(format!("/proc/self/fd/{}", f_readonly.as_raw_fd())).output()?;
     if !output.status.success() {
-        // XX log something, but this is not an error
-        println!("non-zero return for {}: {}", py_arch, output.status);
+        debug!("non-zero return for {}: {}", py_arch, output.status);
         Ok(None)
     } else {
         let output_text = String::from_utf8_lossy(&output.stdout);
@@ -133,8 +132,7 @@ pub fn core_platform_tags() -> Result<Vec<String>> {
 
     for (py_arch, detector) in GLIBC_DETECTORS.iter() {
         match glibc_version(py_arch, detector) {
-            // XX use logging instead
-            Err(e) => println!("error checking glibc version on {}: {}", py_arch, e),
+            Err(e) => warn!("error checking glibc version on {}: {}", py_arch, e),
             Ok(None) => {}
             Ok(Some((major, minor))) => {
                 all_tags.push(format!("manylinux_{}_{}_{}", major, minor, py_arch))
@@ -154,7 +152,7 @@ pub fn core_platform_tags() -> Result<Vec<String>> {
                     all_tags.push(format!("musllinux_{}_{}_{}", major, minor, py_arch))
                 }
                 // XX use logging instead
-                Err(e) => println!(
+                Err(e) => warn!(
                     "error fetching musl metadata from {}: {}",
                     loader.display(),
                     e
