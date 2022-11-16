@@ -133,7 +133,7 @@ impl Brief {
         let pybi_ai = resolve_pybi(&db, &self.python, &platform)?;
         let (_, pybi_metadata) = db
             .get_metadata::<Pybi, _>(&[pybi_ai])
-            .with_context(|| format!("fetching metadata for {}", pybi_ai.url))?;
+            .wrap_err_with(|| format!("fetching metadata for {}", pybi_ai.url))?;
         let pybi_name = pybi_ai.name.inner_as::<PybiName>().unwrap();
 
         let mut env_marker_vars = pybi_metadata.environment_marker_variables.clone();

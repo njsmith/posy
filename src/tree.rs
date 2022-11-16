@@ -85,10 +85,10 @@ impl Display for NicePathBuf {
 }
 
 impl TryFrom<&UnixPath> for NicePathBuf {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
-    #[context("validating path {}", value.display())]
     fn try_from(value: &UnixPath) -> Result<Self, Self::Error> {
+        context!("validating path {}", value.display());
         let mut new = NicePathBuf { pieces: vec![] };
         for c in value.components() {
             match c {
@@ -111,7 +111,7 @@ impl TryFrom<&UnixPath> for NicePathBuf {
 }
 
 impl TryFrom<&str> for NicePathBuf {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         value.as_bytes().try_into()
@@ -121,7 +121,7 @@ impl TryFrom<&str> for NicePathBuf {
 try_from_str_boilerplate!(NicePathBuf);
 
 impl TryFrom<&[u8]> for NicePathBuf {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         UnixPath::new(value).try_into()
@@ -141,12 +141,12 @@ pub struct NiceSymlinkPaths {
 }
 
 impl NiceSymlinkPaths {
-    #[context(
-        "validating symlink {} -> {}",
-        source,
-        String::from_utf8_lossy(target_bytes)
-    )]
     pub fn new(source: &NicePathBuf, target_bytes: &[u8]) -> Result<NiceSymlinkPaths> {
+        context!(
+            "validating symlink {} -> {}",
+            source,
+            String::from_utf8_lossy(target_bytes)
+        );
         if source.pieces.is_empty() {
             bail!("symlink source can't be '.'");
         }
@@ -168,7 +168,7 @@ impl NiceSymlinkPaths {
                             sanitized.push("..".into());
                             dotdots = dotdots
                                 .checked_add(1)
-                                .ok_or(anyhow!("too many '..'s"))?;
+                                .ok_or(eyre!("too many '..'s"))?;
                         }
                         Some(_) => {
                             sanitized.pop();
@@ -228,18 +228,18 @@ impl WriteTreeFS {
 }
 
 impl WriteTree for WriteTreeFS {
-    #[context("Creating {path}/")]
     fn mkdir(&mut self, path: &NicePathBuf) -> Result<()> {
+        context!("Creating {path}/");
         Ok(fs::create_dir(self.full_path(&path)?)?)
     }
 
-    #[context("Writing out {path}")]
     fn write_file(
         &mut self,
         path: &NicePathBuf,
         data: &mut dyn Read,
         executable: bool,
     ) -> Result<()> {
+        context!("Writing out {path}");
         println!("{}", path);
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
@@ -254,8 +254,8 @@ impl WriteTree for WriteTreeFS {
         Ok(())
     }
 
-    #[context("Symlinking {} -> {}", symlink.source, symlink.target)]
     fn write_symlink(&mut self, symlink: &NiceSymlinkPaths) -> Result<()> {
+        context!("Symlinking {} -> {}", symlink.source, symlink.target);
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(

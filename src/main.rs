@@ -15,7 +15,6 @@ mod trampolines;
 mod tree;
 mod output;
 
-use anyhow::Result;
 use std::path::Path;
 
 use crate::{brief::Brief, env::EnvForest, prelude::*};

@@ -187,7 +187,7 @@ impl Env {
     ) -> Result<impl IntoIterator<Item = (&'static str, std::ffi::OsString)>> {
         let mut vars = Vec::new();
 
-        let old_path = std::env::var_os("PATH").ok_or(anyhow!("no $PATH?"))?;
+        let old_path = std::env::var_os("PATH").ok_or(eyre!("no $PATH?"))?;
         let mut new_paths = self.bin_dirs.clone();
         new_paths.extend(std::env::split_paths(&old_path));
         let new_path = std::env::join_paths(&new_paths)?;

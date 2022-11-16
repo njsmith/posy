@@ -19,7 +19,7 @@ impl PackageName {
 }
 
 impl TryFrom<&str> for PackageName {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(as_given: &str) -> Result<Self, Self::Error> {
         // https://packaging.python.org/specifications/core-metadata/#name
@@ -31,7 +31,7 @@ impl TryFrom<&str> for PackageName {
             Lazy::new(|| Regex::new(r"[-_.]").unwrap());
 
         if !NAME_VALIDATE.is_match(as_given) {
-            return Err(anyhow!("Invalid package name {:?}", as_given));
+            return Err(eyre!("Invalid package name {:?}", as_given));
         }
         let as_given = as_given.to_owned();
 

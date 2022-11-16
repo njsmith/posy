@@ -4,10 +4,9 @@ pub use std::io::{Read, Seek, Write};
 pub use std::rc::Rc;
 pub use std::str::FromStr;
 
-pub use fn_error_context::context;
 pub use shrinkwraprs::Shrinkwrap;
 
-pub use anyhow::{anyhow, bail, Context, Result};
+pub use eyre::{eyre, bail, Result, WrapErr};
 pub use derivative::Derivative;
 pub use log::{info, trace, warn};
 pub use once_cell::sync::Lazy;
@@ -21,6 +20,8 @@ pub use crate::platform_tags::{PybiPlatform, WheelPlatform, Platform};
 pub use crate::tree::NicePathBuf;
 pub use crate::try_from_str_boilerplate;
 pub use crate::vocab::*;
+
+pub use crate::context;
 
 use directories::ProjectDirs;
 pub static PROJECT_DIRS: Lazy<ProjectDirs> = Lazy::new(|| {

@@ -26,7 +26,7 @@ pub struct PybiCoreMetadata {
 
 impl PybiCoreMetadata {
     pub fn path(&self, key: &str) -> Result<&NicePathBuf> {
-        Ok(self.paths.get(key).ok_or(anyhow!("bad pybi: no '{key}' path"))?)
+        Ok(self.paths.get(key).ok_or(eyre!("bad pybi: no '{key}' path"))?)
     }
 }
 
@@ -67,7 +67,7 @@ fn parse_common(input: &[u8]) -> Result<(PackageName, Version, RFC822ish)> {
 }
 
 impl TryFrom<&[u8]> for WheelCoreMetadata {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         let (name, version, mut parsed) = parse_common(value)?;
@@ -98,7 +98,7 @@ impl TryFrom<&[u8]> for WheelCoreMetadata {
 }
 
 impl TryFrom<&[u8]> for PybiCoreMetadata {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         let (name, version, mut parsed) = parse_common(value)?;

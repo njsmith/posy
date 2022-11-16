@@ -99,7 +99,7 @@ pub fn resolve_wheels(
         env,
         python_full_version: env
             .get("python_full_version")
-            .ok_or(anyhow!(
+            .ok_or(eyre!(
                 "Missing 'python_full_version' environment marker variable"
             ))?
             .parse()?,
@@ -108,7 +108,7 @@ pub fn resolve_wheels(
     };
 
     // XX this error reporting is terrible. It's a hack to work around PubGrubError not
-    // being convertible to anyhow::Error, because anyhow::Error requires Send.
+    // being convertible to eyre::Report, because eyre::Report requires Send.
     let result = pubgrub::solver::resolve(&state, ResPkg::Root, ROOT_VERSION.clone());
 
     use pubgrub::error::PubGrubError::*;
@@ -133,27 +133,29 @@ pub fn resolve_wheels(
                 package,
                 version,
                 source,
-            } => anyhow!("{}", source)
-                .context(format!("fetching dependencies of {} v{}", package, version)),
-            ErrorChoosingPackageVersion(boxed_err) => {
-                anyhow!("{}", boxed_err.to_string())
+            } => {
+                context!("fetching dependencies of {} v{}", package, version);
+                eyre!("{}", source)
             }
-            ErrorInShouldCancel(boxed_err) => anyhow!("{}", boxed_err.to_string()),
-            Failure(s) => anyhow!("{}", s),
+            ErrorChoosingPackageVersion(boxed_err) => {
+                eyre!("{}", boxed_err.to_string())
+            }
+            ErrorInShouldCancel(boxed_err) => eyre!("{}", boxed_err.to_string()),
+            Failure(s) => eyre!("{}", s),
             // XX Maybe the empty-range and self-dependency cases should be filtered out
             // inside our code, for robustness?
             DependencyOnTheEmptySet {
                 package,
                 version,
                 dependent,
-            } => anyhow!(
+            } => eyre!(
                 "{} v{}'s dependency on {} has self-contradictory version ranges",
                 package,
                 version,
                 dependent
             ),
             SelfDependency { package, version } => {
-                anyhow!("{} v{} depends on itself", package, version)
+                eyre!("{} v{} depends on itself", package, version)
             }
 
             NoSolution(mut derivation_tree) => {
@@ -183,7 +185,7 @@ pub fn resolve_wheels(
                 println!("\n-------- derivation tree (collapsed) --------");
                 //println!("{:?}", derivation_tree);
                 dump_tree(&derivation_tree, 0);
-                anyhow!(
+                eyre!(
                     "{}",
                     pubgrub::report::DefaultStringReporter::report(&derivation_tree)
                 )
@@ -343,7 +345,7 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
                         .requires_python
                         .satisfied_by(&self.python_full_version)?
                     {
-                        Err(anyhow!(
+                        Err(eyre!(
                             "{} {}: bad requires-python, but pypi didn't tell us!",
                             name.as_given(),
                             version
@@ -393,7 +395,7 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
 
                 if let Some(inner) = extra {
                     if !metadata.extras.contains(inner) {
-                        Err(anyhow!(
+                        Err(eyre!(
                             "package {} has no extra [{}]",
                             name.as_given(),
                             inner.as_given()

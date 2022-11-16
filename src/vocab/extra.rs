@@ -31,7 +31,7 @@ impl Extra {
 }
 
 impl TryFrom<&str> for Extra {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(s: &str) -> Result<Self> {
         let p: PackageName = s.try_into()?;

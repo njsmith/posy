@@ -100,14 +100,14 @@ impl RFC822ish {
         match values.len() {
             0 => Ok(None),
             1 => Ok(values.pop()),
-            _ => anyhow::bail!("multiple values for singleton key {}", key),
+            _ => bail!("multiple values for singleton key {}", key),
         }
     }
 
     pub fn take_the(&mut self, key: &str) -> Result<String> {
         match self.maybe_take_the(key)? {
             Some(result) => Ok(result),
-            None => anyhow::bail!("can't find required key {}", key),
+            None => bail!("can't find required key {}", key),
         }
     }
 }

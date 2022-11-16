@@ -142,7 +142,7 @@ fn lock(path: &Path, mode: LockMode) -> Result<File> {
     match mode {
         LockMode::Lock => {
             let dir = lock_path.parent().unwrap();
-            fs::create_dir_all(dir).with_context(|| {
+            fs::create_dir_all(dir).wrap_err_with(|| {
                 format!("Failed to create directory {}", dir.display())
             })?;
             open_options.create(true);

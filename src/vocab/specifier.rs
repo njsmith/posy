@@ -56,11 +56,11 @@ impl Display for Specifiers {
 }
 
 impl TryFrom<&str> for Specifiers {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(input: &str) -> Result<Self, Self::Error> {
         let specifiers_or_err = super::reqparse::versionspec(input);
-        specifiers_or_err.with_context(|| {
+        specifiers_or_err.wrap_err_with(|| {
             format!("failed to parse versions specifiers from {:?}", input)
         })
     }
@@ -99,7 +99,7 @@ impl Display for CompareOp {
 }
 
 impl TryFrom<&str> for CompareOp {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         use CompareOp::*;

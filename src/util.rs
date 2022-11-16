@@ -6,7 +6,7 @@
 macro_rules! try_from_str_boilerplate {
     ($name:ident) => {
         impl std::convert::TryFrom<String> for $name {
-            type Error = anyhow::Error;
+            type Error = eyre::Report;
 
             fn try_from(s: String) -> Result<Self, Self::Error> {
                 (&*s).try_into()
@@ -14,7 +14,7 @@ macro_rules! try_from_str_boilerplate {
         }
 
         impl std::str::FromStr for $name {
-            type Err = anyhow::Error;
+            type Err = eyre::Report;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
                 s.try_into()

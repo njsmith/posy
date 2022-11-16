@@ -14,7 +14,7 @@ pub struct SdistName {
 }
 
 impl TryFrom<&str> for SdistName {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         static SDIST_NAME_RE: Lazy<Regex> =
@@ -65,7 +65,7 @@ pub struct DistInfoDirName {
 }
 
 impl TryFrom<&str> for DistInfoDirName {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         static DIST_INFO_NAME_RE: Lazy<Regex> =
@@ -168,7 +168,7 @@ fn generic_parse<'a>(
     }
     let stem = value
         .strip_suffix(suffix)
-        .ok_or_else(|| anyhow!("expected {:?} to end in .{}", value, suffix))?;
+        .ok_or_else(|| eyre!("expected {:?} to end in .{}", value, suffix))?;
 
     let mut pieces: Vec<&str> = stem.split('-').collect();
 
@@ -194,7 +194,7 @@ fn generic_parse<'a>(
     }
 
     if pieces.len() != 2 + tag_parts as usize {
-        anyhow::bail!("can't parse binary name '{value}'");
+        bail!("can't parse binary name '{value}'");
     }
 
     let distribution: PackageName = pieces[0].try_into()?;
@@ -216,7 +216,7 @@ fn format_build_tag(build_number: Option<u32>, build_name: &str) -> String {
 }
 
 impl TryFrom<&str> for WheelName {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let (distribution, version, build_number, build_name, mut tag_sets) =
@@ -239,7 +239,7 @@ impl TryFrom<&str> for WheelName {
 try_from_str_boilerplate!(WheelName);
 
 impl TryFrom<&str> for PybiName {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let (distribution, version, build_number, build_name, mut tag_sets) =
@@ -338,7 +338,7 @@ impl_unwrap!(Wheel, WheelName);
 impl_unwrap!(Pybi, PybiName);
 
 impl TryFrom<&str> for ArtifactName {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         if value.ends_with(".whl") {

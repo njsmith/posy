@@ -66,12 +66,12 @@ impl Version {
 }
 
 impl TryFrom<&str> for Version {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         pep440::Version::parse(value)
             .map(|v| Version(v))
-            .ok_or_else(|| anyhow!("Failed to parse PEP 440 version {}", value))
+            .ok_or_else(|| eyre!("Failed to parse PEP 440 version {}", value))
     }
 }
 

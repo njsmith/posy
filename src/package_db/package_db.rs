@@ -46,11 +46,11 @@ impl PackageDB {
     }
 
     // always sorted from most recent to least recent
-    #[context("Looking up available files for {}", p.as_given())]
     pub fn available_artifacts(
         &self,
         p: &PackageName,
     ) -> Result<&IndexMap<Version, Vec<ArtifactInfo>>> {
+        context!("Looking up available files for {}", p.as_given());
         if let Some(cached) = self.artifacts.get(&p) {
             Ok(cached)
         } else {
@@ -96,7 +96,7 @@ impl PackageDB {
             .name
             .inner_as::<T::Name>()
             .ok_or_else(|| {
-                anyhow!("{} is not a {}", ai.name, std::any::type_name::<T>())
+                eyre!("{} is not a {}", ai.name, std::any::type_name::<T>())
             })?
             .clone();
         Ok(T::new(artifact_name, body)?)

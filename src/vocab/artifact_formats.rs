@@ -57,8 +57,8 @@ impl Artifact for Sdist {
 }
 
 impl Sdist {
-    #[context("Unpacking {}", self.name)]
     pub fn unpack<T: WriteTree>(&self, destination: &mut T) -> Result<()> {
+        context!("Unpacking {}", self.name);
         let mut boxed = self.body.borrow_mut();
         let body = boxed.as_mut();
         match self.name.format {
@@ -151,11 +151,11 @@ fn parse_format_metadata_and_check_version(
     Ok(parsed)
 }
 
-#[context("extracting {name}")]
 fn slurp_from_zip<'a, T: Read + Seek>(
     z: &'a mut ZipArchive<T>,
     name: &str,
 ) -> Result<Vec<u8>> {
+    context!("extracting {name}");
     Ok(slurp(&mut z.by_name(name)?)?)
 }
 
@@ -195,7 +195,7 @@ impl Wheel {
         }
         let captures = DIST_INFO_NAME_RE
             .captures(dist_info.as_str())
-            .ok_or(anyhow!("malformed .dist-info name {dist_info}"))?;
+            .ok_or(eyre!("malformed .dist-info name {dist_info}"))?;
         let dist_str = captures.get(1).unwrap().as_str();
         let version_str = captures.get(2).unwrap().as_str();
         let data = format!("{dist_str}-{version_str}.data/");
@@ -274,8 +274,8 @@ impl BinaryArtifact for Wheel {
         value.try_into()
     }
 
-    #[context("Reading metadata from {}", self.name)]
     fn metadata(&self) -> Result<(Vec<u8>, Self::Metadata)> {
+        context!("Reading metadata from {}", self.name);
         let WheelVitals {
             metadata_blob,
             metadata,
@@ -354,8 +354,8 @@ impl BinaryArtifact for Pybi {
 }
 
 impl Pybi {
-    #[context("Unpacking {}", self.name)]
     pub fn unpack<T: WriteTree>(&self, destination: &mut T) -> Result<()> {
+        context!("Unpacking {}", self.name);
         // XX TODO RECORD?
         unpack_zip_carefully(&mut self.z.borrow_mut(), destination)
     }
@@ -388,13 +388,13 @@ fn script_for_entrypoint(entry: &Entrypoint, script_type: ScriptType) -> Vec<u8>
 
 impl Wheel {
     // XX TODO RECORD?
-    #[context("Unpacking {}", self.name)]
     pub fn unpack<W: WriteTree>(
         &self,
         paths: &HashMap<String, NicePathBuf>,
         trampoline_maker: &TrampolineMaker,
         mut dest: W,
     ) -> Result<()> {
+        context!("Unpacking {}", self.name);
         let vitals = self.get_vitals()?;
         let mut transformer = WheelTreeTransformer {
             paths: &paths,
@@ -478,7 +478,7 @@ where
         let basepath = self
             .paths
             .get(category)
-            .ok_or_else(|| anyhow!("unrecognized wheel file category {category}"))?;
+            .ok_or_else(|| eyre!("unrecognized wheel file category {category}"))?;
         Ok(Some((
             basepath.join(&path.slice(range)),
             category == "scripts",

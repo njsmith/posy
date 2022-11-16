@@ -12,8 +12,8 @@ struct CacheEntry {
     body: String,
 }
 
-#[context("Fetching simple API page at {}", url)]
 pub fn fetch_simple_api(http: &Http, url: &Url) -> Result<Option<ProjectInfo>> {
+    context!("Fetching simple API page at {}", url);
     let request = Request::builder()
         .uri(url.as_str())
         .header("Cache-Control", "max-age=0")

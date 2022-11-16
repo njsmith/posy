@@ -83,7 +83,7 @@ pub mod marker {
                     .get_marker_var(&varname)
                     .map(|s| s.as_ref())
                     .ok_or_else(|| {
-                        anyhow!("no environment marker variable named '{}'", varname)
+                        eyre!("no environment marker variable named '{}'", varname)
                     }),
                 Value::Literal(s) => Ok(s),
             }
@@ -204,7 +204,7 @@ pub struct Requirement {
 impl Requirement {
     pub fn parse(input: &str, parse_extra: ParseExtra) -> Result<Requirement> {
         let req =
-            super::reqparse::requirement(input, parse_extra).with_context(|| {
+            super::reqparse::requirement(input, parse_extra).wrap_err_with(|| {
                 format!("Failed parsing requirement string {:?})", input)
             })?;
         Ok(req)
@@ -248,7 +248,7 @@ impl Display for PackageRequirement {
 }
 
 impl TryFrom<&str> for PackageRequirement {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(PackageRequirement(Requirement::parse(
@@ -272,7 +272,7 @@ impl Display for UserRequirement {
 }
 
 impl TryFrom<&str> for UserRequirement {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(UserRequirement(Requirement::parse(
@@ -296,7 +296,7 @@ impl Display for PythonRequirement {
 }
 
 impl TryFrom<&str> for PythonRequirement {
-    type Error = anyhow::Error;
+    type Error = eyre::Report;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let r = Requirement::parse(value, ParseExtra::NotAllowed)?;

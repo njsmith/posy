@@ -93,7 +93,7 @@ impl<'a> BuildWheelContext<'a> {
     ) -> Result<Pep517Succeeded> {
         let handle = self
             .build_store
-            .lock(ai.hash.as_ref().ok_or(anyhow!("missing hash"))?)?;
+            .lock(ai.hash.as_ref().ok_or(eyre!("missing hash"))?)?;
 
         if !handle.exists() {
             let tempdir = handle.tempdir()?;
