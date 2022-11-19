@@ -50,7 +50,7 @@ fn main() -> Result<()> {
         ],
         allow_pre: AllowPre::Some(HashSet::new()),
     };
-    let blueprint = brief.resolve(&db, &platform)?;
+    let blueprint = brief.resolve(&db, &platform, None)?;
 
     let env_forest = EnvForest::new(Path::new("/tmp/posy-test-forest"))?;
     let env = env_forest.get_env(&db, &blueprint, &platform)?;

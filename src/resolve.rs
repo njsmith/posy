@@ -105,6 +105,30 @@ impl Display for PinnedPackage {
     }
 }
 
+struct VersionHints<'a>(
+    HashMap<&'a PackageName, (&'a Version, HashSet<&'a ArtifactHash>)>,
+);
+
+impl<'a> VersionHints<'a> {
+    fn new() -> VersionHints<'a> {
+        VersionHints(HashMap::new())
+    }
+
+    fn add_pinned(&mut self, pin: &'a PinnedPackage) {
+        self.0
+            .insert(&pin.name, (&pin.version, pin.hashes.iter().collect()));
+    }
+
+    fn from(blueprint: &'a Blueprint) -> VersionHints<'a> {
+        let mut hints = VersionHints::new();
+        hints.add_pinned(&blueprint.pybi);
+        for (wheel, _) in &blueprint.wheels {
+            hints.add_pinned(&wheel);
+        }
+        hints
+    }
+}
+
 /// This is the subset of WheelCoreMetadata that the resolver actually uses.
 ///
 /// As part of resolving a Brief -> a Blueprint, for each package+version, we need to
@@ -187,9 +211,10 @@ fn resolve_pybi<'a>(
     db: &'a PackageDB,
     brief: &Brief,
     platform: &PybiPlatform,
+    hints: &VersionHints,
 ) -> Result<&'a ArtifactInfo> {
     let name = &brief.python.name;
-    let versions = fetch_and_sort_versions(&db, &brief, &name, None)?;
+    let versions = fetch_and_sort_versions(&db, &brief, &name, None, hints)?;
     for version in versions.iter() {
         if brief.python.specifiers.satisfied_by(&version)? {
             let artifact_infos = db.artifacts_for_version(&name, version)?;
@@ -223,8 +248,12 @@ impl Brief {
         &self,
         db: &PackageDB,
         platform: &PybiPlatform,
+        like: Option<&Blueprint>,
     ) -> Result<Blueprint> {
-        let pybi_ai = resolve_pybi(&db, &self, &platform)?;
+        let version_hints = like
+            .map(VersionHints::from)
+            .unwrap_or_else(VersionHints::new);
+        let pybi_ai = resolve_pybi(&db, &self, &platform, &version_hints)?;
         let (_, pybi_metadata) = db
             .get_metadata::<Pybi, _>(&[pybi_ai])
             .wrap_err_with(|| format!("fetching metadata for {}", pybi_ai.url))?;
@@ -240,7 +269,8 @@ impl Brief {
             );
         }
 
-        let resolved_wheels = resolve_wheels(db, &self, &env_marker_vars)?;
+        let resolved_wheels =
+            resolve_wheels(db, &self, &env_marker_vars, &version_hints)?;
         let mut wheels = Vec::<(PinnedPackage, WheelResolveMetadata)>::new();
         for (p, v, em) in resolved_wheels {
             wheels.push((pinned(&db, p, v)?, em));
@@ -262,6 +292,7 @@ struct PubgrubState<'a> {
     db: &'a PackageDB,
     env: &'a HashMap<String, String>,
     brief: &'a Brief,
+    version_hints: &'a VersionHints<'a>,
 
     python_full_version: Version,
     // record of the metadata we used, so we can record it and validate it later when
@@ -293,17 +324,28 @@ fn fetch_and_sort_versions<'a>(
     brief: &Brief,
     package: &PackageName,
     python_version: Option<&Version>,
+    hints: &VersionHints,
 ) -> Result<Vec<&'a Version>> {
     let artifacts = db.available_artifacts(&package)?;
     let mut versions = Vec::new();
     let allow_prerelease = brief.allow_pre.allow_pre_for(&package);
+    let (version_hint, hash_hints) = match hints.0.get(&package) {
+        Some((version, hash)) => (Some(version), Some(hash)),
+        None => (None, None),
+    };
     for (version, ais) in artifacts.iter() {
         if !allow_prerelease && version.is_prerelease() {
             continue;
         }
         for ai in ais {
             if ai.yanked.yanked {
-                continue;
+                let is_pinned = match (&hash_hints, &ai.hash) {
+                    (Some(hints), Some(hash)) => hints.contains(&hash),
+                    _ => false,
+                };
+                if !is_pinned {
+                    continue;
+                }
             }
             if let (Some(python_version), Some(requires_python)) =
                 (python_version, &ai.requires_python)
@@ -320,7 +362,14 @@ fn fetch_and_sort_versions<'a>(
         }
     }
     // sort from highest to lowest
-    versions.sort_unstable_by(|a, b| b.cmp(a));
+    versions.sort_unstable_by_key(|v| {
+        (
+            // false sorts before true, so version_hint = v sorts first
+            version_hint != Some(&v),
+            // and otherwise, high versions come before low versions
+            std::cmp::Reverse(*v),
+        )
+    });
 
     Ok(versions)
 }
@@ -345,20 +394,23 @@ impl<'a> PubgrubState<'a> {
                 &self.brief,
                 &package,
                 Some(&self.python_full_version),
+                &self.version_hints,
             )
         })
     }
 }
 
-pub fn resolve_wheels(
+fn resolve_wheels(
     db: &PackageDB,
     brief: &Brief,
     env: &HashMap<String, String>,
+    version_hints: &VersionHints,
 ) -> Result<Vec<(PackageName, Version, WheelResolveMetadata)>> {
     let state = PubgrubState {
         db,
         brief,
         env,
+        version_hints,
         python_full_version: env
             .get("python_full_version")
             .ok_or(eyre!(
