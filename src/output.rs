@@ -4,11 +4,12 @@ use std::fmt::Debug;
 use console::{Emoji, Style, StyledObject};
 use tracing::{
     field::{Field, Visit},
+    metadata::LevelFilter,
     span::Attributes,
     Event, Id, Level, Subscriber,
 };
 use tracing_subscriber::{
-    filter::{LevelFilter, Targets},
+    filter::{EnvFilter, Targets},
     layer::{Context, Layer},
     prelude::*,
     registry::{LookupSpan, SpanRef},
@@ -118,10 +119,10 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for PosyUILayer {
     }
 
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
-        let leaf = ctx.event_span(&event);
-        for span_render in collect_context(leaf) {
-            eprintln!("span: {}", span_render);
-        }
+        // let leaf = ctx.event_span(&event);
+        // for span_render in collect_context(leaf) {
+        //     eprintln!("span: {}", span_render);
+        // }
         event.record(&mut WithMessage(&|msg| match event.metadata().level() {
             &Level::ERROR => eprintln!("{} {:?}", &*ERROR, msg),
             &Level::WARN => eprintln!("{} {:?}", &*WARNING, msg),
@@ -142,6 +143,14 @@ struct PosyEyreHandler {
     context: Vec<String>,
 }
 
+impl PosyEyreHandler {
+    fn new() -> PosyEyreHandler {
+        PosyEyreHandler {
+            context: current_context(),
+        }
+    }
+}
+
 impl eyre::EyreHandler for PosyEyreHandler {
     fn debug(
         &self,
@@ -153,6 +162,9 @@ impl eyre::EyreHandler for PosyEyreHandler {
 }
 
 pub fn init(args: &OutputArgs) {
+    eyre::set_hook(Box::new(|_| Box::new(PosyEyreHandler::new())))
+        .expect("eyre handler already installed?");
+
     let verbosity = args
         .verbose
         .try_into()
@@ -174,14 +186,15 @@ pub fn init(args: &OutputArgs) {
         ColorChoice::Never => console::set_colors_enabled_stderr(false),
     }
 
-    let s = tracing_subscriber::registry().with(PosyUILayer).with(
-        Targets::new()
-            // html5ever is *very* chatty (events for every character lexed and DOM
-            // node generated)
-            .with_target("html5ever", LevelFilter::OFF)
-            .with_target("posy", global_level)
-            .with_default(global_level),
-    );
-    assert!(s.downcast_ref::<tracing_subscriber::Registry>().is_some());
+    let s = tracing_subscriber::registry()
+        .with(PosyUILayer.with_filter(Targets::new().with_target("posy", global_level)))
+        .with(
+            tracing_subscriber::fmt::layer().with_filter(
+                EnvFilter::builder()
+                    .with_default_directive(LevelFilter::OFF.into())
+                    .with_env_var("POSY_DEBUG")
+                    .from_env_lossy(),
+            ),
+        );
     s.init();
 }

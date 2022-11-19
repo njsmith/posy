@@ -43,9 +43,11 @@ maybe also look at https://docs.rs/ariadne/0.1.5/ariadne/
   - post PEP
 - UI
   - Tracing
-    - for better error reporting
-    - for general messages (warnings/etc.)
-    - progress reporting
+    - better rendering of errors (esp.) and warnings etc.
+    - make verbose mode make sense
+      - maybe: higher levels of -v on their own show *our* debug stuff and also *our* span entry/exit so you can see what's happening, but not other modules
+        and also, some kind of EnvFilter support so can get stuff like TLS handshake traces or HTML parsing traces if we want (with span context)
+    - progress bars
   - Command line parsing
   - Finding pyproject.toml
   - pyproject language for describing environments (steal heavily from Hatch, or even just merge the projects I guess)

@@ -31,10 +31,6 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     output::init(&cli.output_args);
-    context!("foo: {}", "bar");
-    context!("more foo: {}", "more bar");
-    eprintln!("{:?}", crate::output::current_context());
-    tracing::warn!("bad stuff: {}", 0);
 
     let db = package_db::PackageDB::new(
         &vec![
