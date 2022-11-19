@@ -381,28 +381,40 @@ mod test {
                 &fake_metadata,
             )
             .unwrap();
-        assert!(arm_only.compatibility("foo-bar-macosx_11_0_arm64").is_some());
-        assert!(arm_only.compatibility("foo-bar-macosx_11_0_x86_64").is_none());
+        assert!(arm_only
+            .compatibility("foo-bar-macosx_11_0_arm64")
+            .is_some());
+        assert!(arm_only
+            .compatibility("foo-bar-macosx_11_0_x86_64")
+            .is_none());
 
         // also tags are sorted properly
-        assert!(arm_only.compatibility("foo-bar-macosx_11_0_arm64").unwrap()
-                > arm_only.compatibility("foo-bar-macosx_10_0_arm64").unwrap());
-        assert!(arm_only.compatibility("foo-bar-macosx_10_0_arm64").unwrap()
-                > arm_only.compatibility("foo-none-any").unwrap());
-        assert!(arm_only.compatibility("foo-none-any").unwrap()
-                > arm_only.compatibility("foo-baz-macosx_11_0_arm64").unwrap());
+        assert!(
+            arm_only.compatibility("foo-bar-macosx_11_0_arm64").unwrap()
+                > arm_only.compatibility("foo-bar-macosx_10_0_arm64").unwrap()
+        );
+        assert!(
+            arm_only.compatibility("foo-bar-macosx_10_0_arm64").unwrap()
+                > arm_only.compatibility("foo-none-any").unwrap()
+        );
+        assert!(
+            arm_only.compatibility("foo-none-any").unwrap()
+                > arm_only.compatibility("foo-baz-macosx_11_0_arm64").unwrap()
+        );
 
         // but if the pybi only supports one, go with that
         let x86_64_only = pybi_platform
             .wheel_platform_for_pybi(
-                &"cpython-3.11-macosx_10_15_x86_64.pybi"
-                    .try_into()
-                    .unwrap(),
+                &"cpython-3.11-macosx_10_15_x86_64.pybi".try_into().unwrap(),
                 &fake_metadata,
             )
             .unwrap();
-        assert!(x86_64_only.compatibility("foo-bar-macosx_11_0_arm64").is_none());
-        assert!(x86_64_only.compatibility("foo-bar-macosx_11_0_x86_64").is_some());
+        assert!(x86_64_only
+            .compatibility("foo-bar-macosx_11_0_arm64")
+            .is_none());
+        assert!(x86_64_only
+            .compatibility("foo-bar-macosx_11_0_x86_64")
+            .is_some());
     }
 
     #[test]

@@ -16,7 +16,9 @@ pub struct Meta {
 // 1.0.
 impl Default for Meta {
     fn default() -> Self {
-        Self { version: "1.0".into() }
+        Self {
+            version: "1.0".into(),
+        }
     }
 }
 

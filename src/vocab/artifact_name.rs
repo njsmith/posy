@@ -309,8 +309,7 @@ impl ArtifactName {
         }
     }
 
-    pub fn inner_as<T: Clone + UnwrapFromArtifactName>(&self) -> Option<&T>
-    {
+    pub fn inner_as<T: Clone + UnwrapFromArtifactName>(&self) -> Option<&T> {
         T::try_unwrap_from(self)
     }
 }

@@ -47,6 +47,7 @@ maybe also look at https://docs.rs/ariadne/0.1.5/ariadne/
     - make verbose mode make sense
       - maybe: higher levels of -v on their own show *our* debug stuff and also *our* span entry/exit so you can see what's happening, but not other modules
         and also, some kind of EnvFilter support so can get stuff like TLS handshake traces or HTML parsing traces if we want (with span context)
+      - maybe our context! spans should have different priorities, and higher priority ones should be printed as we go to give info on progress?
     - progress bars
   - Command line parsing
   - Finding pyproject.toml

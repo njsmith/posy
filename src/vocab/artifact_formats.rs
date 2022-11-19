@@ -2,7 +2,7 @@ use super::rfc822ish::RFC822ish;
 use crate::package_db::{ArtifactInfo, PackageDB};
 use crate::prelude::*;
 use crate::trampolines::{ScriptType, TrampolineMaker};
-use crate::tree::{unpack_zip_carefully, unpack_tar_gz_carefully, WriteTree};
+use crate::tree::{unpack_tar_gz_carefully, unpack_zip_carefully, WriteTree};
 use std::cell::RefCell;
 use std::io::{BufRead, BufReader};
 use zip::ZipArchive;
@@ -48,7 +48,10 @@ impl Artifact for Sdist {
     type Name = SdistName;
 
     fn new(name: Self::Name, body: Box<dyn ReadPlusSeek>) -> Result<Self> {
-        Ok(Sdist { name, body: body.into() })
+        Ok(Sdist {
+            name,
+            body: body.into(),
+        })
     }
 
     fn name(&self) -> &Self::Name {
@@ -62,13 +65,10 @@ impl Sdist {
         let mut boxed = self.body.borrow_mut();
         let body = boxed.as_mut();
         match self.name.format {
-            SdistFormat::Zip => unpack_zip_carefully(
-                &mut ZipArchive::new(body)?,
-                destination,
-            ),
-            SdistFormat::TarGz => {
-                unpack_tar_gz_carefully(body, destination)
-            },
+            SdistFormat::Zip => {
+                unpack_zip_carefully(&mut ZipArchive::new(body)?, destination)
+            }
+            SdistFormat::TarGz => unpack_tar_gz_carefully(body, destination),
         }
     }
 }

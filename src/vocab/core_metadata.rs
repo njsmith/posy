@@ -26,7 +26,10 @@ pub struct PybiCoreMetadata {
 
 impl PybiCoreMetadata {
     pub fn path(&self, key: &str) -> Result<&NicePathBuf> {
-        Ok(self.paths.get(key).ok_or(eyre!("bad pybi: no '{key}' path"))?)
+        Ok(self
+            .paths
+            .get(key)
+            .ok_or(eyre!("bad pybi: no '{key}' path"))?)
     }
 }
 

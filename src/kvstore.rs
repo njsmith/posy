@@ -1,13 +1,13 @@
 use crate::prelude::*;
+use crate::util::retry_interrupted;
+use auto_impl::auto_impl;
+use fs2::FileExt;
+use ring::digest;
 use std::fs::{self, File};
 use std::io::SeekFrom;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use fs2::FileExt;
-use ring::digest;
-use auto_impl::auto_impl;
-use crate::util::retry_interrupted;
 
 // A simple on-disk key-value store for static blobs of data. Each key maps to a
 // different path on disk. Used for stuff like caches, holding a forest of unpacked
@@ -342,7 +342,11 @@ impl KVDirStore {
     pub fn lock<K: PathKey>(&self, key: &K) -> Result<KVDirLock> {
         let path = self.base.join(key.key());
         let lock = lock(&path, LockMode::Lock)?;
-        Ok(KVDirLock { tmp: self.tmp.clone(), _lock: lock, path })
+        Ok(KVDirLock {
+            tmp: self.tmp.clone(),
+            _lock: lock,
+            path,
+        })
     }
 
     pub fn get_or_set<K, F>(&self, key: &K, f: F) -> Result<PathBuf>
@@ -383,6 +387,5 @@ impl Deref for KVDirLock {
         self.path.deref()
     }
 }
-
 
 // XX TODO: seriously need some tests that validate the locking etc.

@@ -2,12 +2,12 @@ use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::brief::PinnedPackage;
 use crate::kvstore::KVDirStore;
-use crate::package_db::PackageDB;
+use crate::package_db::{ArtifactInfo, PackageDB};
+use crate::resolve::{PinnedPackage, WheelResolveMetadata};
 use crate::trampolines::{FindPython, ScriptPlatform, TrampolineMaker};
 use crate::tree::WriteTreeFS;
-use crate::{brief::Blueprint, platform_tags::PybiPlatform, prelude::*};
+use crate::{platform_tags::PybiPlatform, prelude::*, resolve::Blueprint};
 
 // site.py as $stdlib/site.py
 // imports sitecustomize, which can use site.addsitedir to add directories that will be
@@ -39,7 +39,7 @@ fn pick_pinned<'a, T: BinaryArtifact>(
     db: &'a PackageDB,
     platform: &T::Platform,
     pin: &PinnedPackage,
-) -> Result<(T, &'a ArtifactHash)>
+) -> Result<(T, &'a ArtifactInfo)>
 where
     T::Name: BinaryName,
 {
@@ -63,7 +63,7 @@ where
         } else if !pin.hashes.contains(ai.hash.as_ref().unwrap()) {
             warn!("best scoring artifact {} does not appear in lock file (maybe need to update pins?)", ai.name);
         } else {
-            return Ok((db.get_artifact(ai)?, ai.hash.as_ref().unwrap()));
+            return Ok((db.get_artifact(ai)?, &ai));
         }
     }
     bail!(
@@ -110,10 +110,12 @@ impl EnvForest {
         blueprint: &Blueprint,
         pybi_platform: &PybiPlatform,
     ) -> Result<Env> {
-        let (pybi, pybi_hash) =
+        let (pybi, pybi_ai) =
             pick_pinned::<Pybi>(&db, &pybi_platform, &blueprint.pybi)?;
+        let pybi_hash = pybi_ai.hash.as_ref().ok_or(eyre!("pybi missing hash"))?;
         let (_, pybi_metadata) = pybi.metadata()?;
         let pybi_root = self.store.get_or_set(&pybi_hash, |path| {
+            context!("Unpacking {}", pybi.name());
             pybi.unpack(&mut WriteTreeFS::new(&path))?;
             EnvForest::munge_unpacked_pybi(&path, &pybi_metadata)?;
             Ok(())
@@ -134,10 +136,36 @@ impl EnvForest {
             .wheels
             .iter()
             .map(|(pin, expected_metadata)| {
-                let (wheel, wheel_hash) =
+                let (wheel, wheel_ai) =
                     pick_pinned::<Wheel>(&db, &wheel_platform, &pin)?;
-                let got_metadata = wheel.metadata()?;
-                // XX TODO cross-check metadata
+                let wheel_hash =
+                    wheel_ai.hash.as_ref().ok_or(eyre!("wheel missing hash"))?;
+                let (_, got_metadata) = wheel.metadata()?;
+                let got_metadata = WheelResolveMetadata::from(&wheel_ai, &got_metadata);
+                if got_metadata.inner != expected_metadata.inner {
+                    bail!(
+                        indoc::indoc! {"
+                          When installing {} v{}:
+                            When resolving, we used metadata from {}
+                            Now we're trying to install {}
+                          These wheels should have had the same metadata, but they don't!
+
+                          Metadata from {}:
+                          {}
+
+                          Metadata from {}:
+                          {}
+                    "},
+                        pin.name.as_given(),
+                        pin.version,
+                        expected_metadata.provenance,
+                        got_metadata.provenance,
+                        expected_metadata.provenance,
+                        serde_json::to_string_pretty(&expected_metadata.inner)?,
+                        got_metadata.provenance,
+                        serde_json::to_string_pretty(&got_metadata.inner)?,
+                    );
+                }
                 let wheel_root = self.store.get_or_set(&wheel_hash, |path| {
                     wheel.unpack(&paths, &trampoline_maker, WriteTreeFS::new(&path))?;
                     Ok(())
@@ -193,7 +221,10 @@ impl Env {
         vars.push(("PATH", new_path));
         vars.push(("POSY_PYTHON", self.python.clone().into_os_string()));
         vars.push(("POSY_PYTHONW", self.pythonw.clone().into_os_string()));
-        vars.push(("POSY_PYTHON_PACKAGES", std::env::join_paths(&self.lib_dirs)?));
+        vars.push((
+            "POSY_PYTHON_PACKAGES",
+            std::env::join_paths(&self.lib_dirs)?,
+        ));
 
         Ok(vars)
     }

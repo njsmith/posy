@@ -3,9 +3,9 @@ use elsa::FrozenMap;
 use indexmap::IndexMap;
 use std::path::Path;
 
-use crate::kvstore::KVFileStore;
 use super::http::{CacheMode, Http, NotCached};
 use super::simple_api::{fetch_simple_api, pack_by_version, ArtifactInfo};
+use crate::kvstore::KVFileStore;
 
 static NO_ARTIFACTS: [ArtifactInfo; 0] = [];
 
@@ -79,7 +79,8 @@ impl PackageDB {
 
     fn put_metadata_in_cache(&self, ai: &ArtifactInfo, blob: &[u8]) -> Result<()> {
         if let Some(hash) = &ai.hash {
-            self.metadata_cache.get_or_set(&hash, |w| Ok(w.write_all(&blob)?))?;
+            self.metadata_cache
+                .get_or_set(&hash, |w| Ok(w.write_all(&blob)?))?;
         }
         Ok(())
     }

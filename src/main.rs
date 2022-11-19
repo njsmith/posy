@@ -5,21 +5,21 @@ mod resolve;
 mod util;
 mod vocab;
 
-mod brief;
 mod env;
+mod output;
 mod platform_tags;
 mod seek_slice;
 #[cfg(test)]
 mod test_util;
 mod trampolines;
 mod tree;
-mod output;
 
 use std::path::Path;
 
-use crate::{brief::Brief, env::EnvForest, prelude::*};
+use crate::{env::EnvForest, prelude::*, resolve::Brief};
 
 use clap::Parser;
+use resolve::AllowPre;
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -48,6 +48,7 @@ fn main() -> Result<()> {
             "numpy".try_into().unwrap(),
             "black".try_into().unwrap(),
         ],
+        allow_pre: AllowPre::Some(Vec::new()),
     };
     let blueprint = brief.resolve(&db, &platform)?;
 

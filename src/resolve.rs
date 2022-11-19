@@ -4,16 +4,246 @@ use pubgrub::range::Range;
 use pubgrub::report::DerivationTree;
 use pubgrub::report::Reporter;
 use pubgrub::solver::{Dependencies, DependencyConstraints};
-
-use crate::package_db::PackageDB;
 use std::borrow::Borrow;
 
-#[derive(Debug, Clone)]
-pub struct ExpectedMetadata {
-    pub provenance: Url,
+use crate::package_db::{ArtifactInfo, PackageDB};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "AllowPreSerdeHelper", into = "AllowPreSerdeHelper")]
+pub enum AllowPre {
+    Some(Vec<PackageName>),
+    All,
+}
+
+impl Default for AllowPre {
+    fn default() -> Self {
+        AllowPre::Some(Vec::new())
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum AllowPreSerdeHelper<'a> {
+    Some(Vec<PackageName>),
+    Other(&'a str),
+}
+
+impl<'a> TryFrom<AllowPreSerdeHelper<'a>> for AllowPre {
+    type Error = eyre::Report;
+
+    fn try_from(value: AllowPreSerdeHelper) -> Result<Self, Self::Error> {
+        match value {
+            AllowPreSerdeHelper::Some(pkgs) => Ok(AllowPre::Some(pkgs)),
+            AllowPreSerdeHelper::Other(value) => {
+                if value == ":all:" {
+                    Ok(AllowPre::All)
+                } else {
+                    bail!("expected a list of packages or the magic string ':all:'")
+                }
+            }
+        }
+    }
+}
+
+impl<'a> From<AllowPre> for AllowPreSerdeHelper<'a> {
+    fn from(value: AllowPre) -> Self {
+        match value {
+            AllowPre::Some(pkgs) => AllowPreSerdeHelper::Some(pkgs),
+            AllowPre::All => AllowPreSerdeHelper::Other(":all:"),
+        }
+    }
+}
+
+fn allow_pre_is_empty(value: &AllowPre) -> bool {
+    if let AllowPre::Some(pkgs) = value {
+        pkgs.is_empty()
+    } else {
+        false
+    }
+}
+
+/// A high-level description of an environment that a user would like to be able to
+/// build. Doesn't necessarily have to be what the user types in exactly, but has to
+/// represent their intentions, and *not* anything that requires looking at a package
+/// index.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Brief {
+    pub python: PythonRequirement,
+    // don't need python_constraints because we always install exactly one python
+    pub requirements: Vec<UserRequirement>,
+    #[serde(skip_serializing_if = "allow_pre_is_empty")]
+    pub allow_pre: AllowPre,
+    // XX TODO
+    //pub constraints: Vec<UserRequirement>,
+}
+
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PinnedPackage {
+    pub name: PackageName,
+    pub version: Version,
+    pub hashes: Vec<ArtifactHash>,
+}
+
+impl Display for PinnedPackage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} (with {} known hashes)",
+            self.name.as_given(),
+            self.version,
+            self.hashes.len()
+        )
+    }
+}
+
+/// This is the subset of WheelCoreMetadata that the resolver actually uses.
+///
+/// As part of resolving a Brief -> a Blueprint, for each package+version, we need to
+/// get the core metadata, which we get from a wheel. But when we do this, we have to
+/// pick a *specific* wheel to get the metadata from. But we want our Blueprint to be
+/// usable across multiple platforms. So when we go to install it, we might decide to
+/// install a different wheel for that package+version. And that different wheel *might*
+/// have different core metadata in it! And if it does, then our Blueprint might no
+/// longer generate a valid environment!
+///
+/// Hopefully this never happens – all wheels for a given package+version *should* have
+/// the same metadata (or at least, the parts of the metadata that actually feed into
+/// the resolution algorithm). But if it does happen, we want to detect it and give a
+/// diagnostic, not just blithely create an invalid environment. So we pull out the
+/// resolver-relevant metadata here, so we can store it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WheelResolveMetadata {
+    pub provenance: String,
+    pub inner: WheelResolveMetadataInner,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WheelResolveMetadataInner {
     pub requires_dist: Vec<PackageRequirement>,
     pub requires_python: Specifiers,
     pub extras: HashSet<Extra>,
+}
+
+impl WheelResolveMetadata {
+    pub fn from(ai: &ArtifactInfo, m: &WheelCoreMetadata) -> WheelResolveMetadata {
+        let provenance = ai.url.to_string();
+        let inner = WheelResolveMetadataInner {
+            requires_dist: m.requires_dist.clone(),
+            requires_python: m.requires_python.clone(),
+            extras: m.extras.clone(),
+        };
+        WheelResolveMetadata { provenance, inner }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Blueprint {
+    pub pybi: PinnedPackage,
+    // XX TODO: all marker settings relied on when computing this
+    pub wheels: Vec<(PinnedPackage, WheelResolveMetadata)>,
+}
+
+impl Display for Blueprint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "pybi: {}\n", self.pybi)?;
+        for (wheel, em) in &self.wheels {
+            write!(f, "wheel: {} (metadata from {})\n", wheel, em.provenance)?;
+        }
+        Ok(())
+    }
+}
+
+fn pick_best_pybi<'a>(
+    artifact_infos: &'a Vec<ArtifactInfo>,
+    platform: &PybiPlatform,
+) -> Option<&'a ArtifactInfo> {
+    artifact_infos
+        .iter()
+        .filter_map(|ai| {
+            if let ArtifactName::Pybi(name) = &ai.name {
+                platform
+                    .max_compatibility(name.arch_tags.iter())
+                    .map(|score| (ai, score))
+            } else {
+                None
+            }
+        })
+        .max_by_key(|(_, score)| *score)
+        .map(|(ai, _)| ai)
+}
+
+// XX TODO: merge with version preference logic in resolve.rs, b/c this should have
+// similar handling of prereleases, yanks, previous-blueprint-hints, etc.
+fn resolve_pybi<'a>(
+    db: &'a PackageDB,
+    req: &PythonRequirement,
+    platform: &PybiPlatform,
+) -> Result<&'a ArtifactInfo> {
+    let available = db.available_artifacts(&req.name)?;
+    for (version, artifact_infos) in available.iter() {
+        if req.specifiers.satisfied_by(&version)? {
+            if let Some(ai) = pick_best_pybi(&artifact_infos, platform) {
+                return Ok(ai);
+            }
+        }
+    }
+    bail!("no compatible pybis found for requirement and platform");
+}
+
+fn pinned(
+    db: &PackageDB,
+    name: PackageName,
+    version: Version,
+) -> Result<PinnedPackage> {
+    let hashes = db
+        .artifacts_for_release(&name, &version)?
+        .iter()
+        .filter_map(|ai| ai.hash.clone())
+        .collect::<Vec<_>>();
+    Ok(PinnedPackage {
+        name,
+        version,
+        hashes,
+    })
+}
+
+impl Brief {
+    pub fn resolve(
+        &self,
+        db: &PackageDB,
+        platform: &PybiPlatform,
+    ) -> Result<Blueprint> {
+        let pybi_ai = resolve_pybi(&db, &self.python, &platform)?;
+        let (_, pybi_metadata) = db
+            .get_metadata::<Pybi, _>(&[pybi_ai])
+            .wrap_err_with(|| format!("fetching metadata for {}", pybi_ai.url))?;
+        let pybi_name = pybi_ai.name.inner_as::<PybiName>().unwrap();
+
+        let mut env_marker_vars = pybi_metadata.environment_marker_variables.clone();
+        if !env_marker_vars.contains_key("platform_machine") {
+            let wheel_platform =
+                platform.wheel_platform_for_pybi(&pybi_name, &pybi_metadata)?;
+            env_marker_vars.insert(
+                "platform_machine".to_string(),
+                wheel_platform.infer_platform_machine()?.to_string(),
+            );
+        }
+
+        let resolved_wheels = resolve_wheels(db, &self.requirements, &env_marker_vars)?;
+        let mut wheels = Vec::<(PinnedPackage, WheelResolveMetadata)>::new();
+        for (p, v, em) in resolved_wheels {
+            wheels.push((pinned(&db, p, v)?, em));
+        }
+
+        Ok(Blueprint {
+            pybi: pinned(
+                &db,
+                pybi_name.distribution.to_owned(),
+                pybi_name.version.to_owned(),
+            )?,
+            wheels,
+        })
+    }
 }
 
 struct PubgrubState<'a> {
@@ -25,7 +255,7 @@ struct PubgrubState<'a> {
     python_full_version: Version,
     // record of the metadata we used, so we can record it and validate it later when
     // using the pins
-    expected_metadata: FrozenMap<(PackageName, Version), Box<ExpectedMetadata>>,
+    expected_metadata: FrozenMap<(PackageName, Version), Box<WheelResolveMetadata>>,
     // These are sorted with most-preferred first.
     versions: FrozenMap<PackageName, Vec<&'a Version>>,
 }
@@ -48,17 +278,16 @@ where
 }
 
 impl<'a> PubgrubState<'a> {
-    fn metadata(&self, release: &(PackageName, Version)) -> Result<&ExpectedMetadata> {
-        get_or_fill(&self.expected_metadata, release, || {
+    fn metadata(
+        &self,
+        release: &(PackageName, Version),
+    ) -> Result<&WheelResolveMetadataInner> {
+        Ok(&get_or_fill(&self.expected_metadata, release, || {
             let ais = self.db.artifacts_for_release(&release.0, &release.1)?;
             let (ai, wheel_metadata) = self.db.get_metadata::<Wheel, _>(ais)?;
-            Ok(Box::new(ExpectedMetadata {
-                provenance: ai.url.clone(),
-                requires_dist: wheel_metadata.requires_dist,
-                requires_python: wheel_metadata.requires_python,
-                extras: wheel_metadata.extras,
-            }))
-        })
+            Ok(Box::new(WheelResolveMetadata::from(&ai, &wheel_metadata)))
+        })?
+        .inner)
     }
 
     fn versions(&self, package: &PackageName) -> Result<&[&Version]> {
@@ -92,7 +321,7 @@ pub fn resolve_wheels(
     db: &PackageDB,
     requirements: &Vec<UserRequirement>,
     env: &HashMap<String, String>,
-) -> Result<Vec<(PackageName, Version, ExpectedMetadata)>> {
+) -> Result<Vec<(PackageName, Version, WheelResolveMetadata)>> {
     let state = PubgrubState {
         db,
         root_reqs: requirements,

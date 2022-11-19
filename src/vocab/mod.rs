@@ -13,12 +13,10 @@ mod version;
 
 // All this stuff is also re-exported from crate::prelude::*
 
-pub use self::artifact_formats::{
-    Artifact, BinaryArtifact, Pybi, Sdist, Wheel,
-};
+pub use self::artifact_formats::{Artifact, BinaryArtifact, Pybi, Sdist, Wheel};
 pub use self::artifact_hash::ArtifactHash;
 pub use self::artifact_name::{
-    ArtifactName, BinaryName, DistInfoDirName, PybiName, SdistName, SdistFormat,
+    ArtifactName, BinaryName, DistInfoDirName, PybiName, SdistFormat, SdistName,
     UnwrapFromArtifactName, WheelName,
 };
 pub use self::core_metadata::{PybiCoreMetadata, WheelCoreMetadata};

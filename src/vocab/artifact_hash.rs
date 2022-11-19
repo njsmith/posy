@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, SerializeDisplay)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, SerializeDisplay, DeserializeFromStr)]
 pub struct ArtifactHash {
     pub mode: String,
     pub raw_data: Vec<u8>,
@@ -38,6 +38,19 @@ impl Display for ArtifactHash {
         )
     }
 }
+
+impl TryFrom<&str> for ArtifactHash {
+    type Error = eyre::Report;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let (mode, data) = value
+            .split_once('=')
+            .ok_or(eyre!("expected = in hash string {:?}", value))?;
+        Ok(ArtifactHash::from_hex(mode, data)?)
+    }
+}
+
+try_from_str_boilerplate!(ArtifactHash);
 
 pub struct HashChecker<'a, T: Write> {
     inner: T,
@@ -82,6 +95,10 @@ mod test {
             value.to_string(),
             "sha256=c27c231e66336183c484fbfe080fa6cc954149366c15dc21db8b7290081ec7b8"
         );
+
+        let json = serde_json::to_string(&value).unwrap();
+        let new_value: ArtifactHash = serde_json::from_str(&json).unwrap();
+        assert_eq!(value, new_value);
     }
 
     #[test]

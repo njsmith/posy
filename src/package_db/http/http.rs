@@ -7,7 +7,7 @@ use std::time::SystemTime;
 
 use super::ureq_glue::{do_request_ureq, new_ureq_agent};
 use super::LazyRemoteFile;
-use crate::kvstore::{KVFileStore, KVFileLock};
+use crate::kvstore::{KVFileLock, KVFileStore};
 
 const MAX_REDIRECTS: u16 = 5;
 const REDIRECT_STATUSES: &[u16] = &[301, 302, 303, 307, 308];
