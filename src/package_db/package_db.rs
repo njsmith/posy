@@ -33,7 +33,7 @@ impl PackageDB {
         })
     }
 
-    pub fn artifacts_for_release(
+    pub fn artifacts_for_version(
         &self,
         p: &PackageName,
         v: &Version,

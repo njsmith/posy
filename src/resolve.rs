@@ -11,20 +11,29 @@ use crate::package_db::{ArtifactInfo, PackageDB};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "AllowPreSerdeHelper", into = "AllowPreSerdeHelper")]
 pub enum AllowPre {
-    Some(Vec<PackageName>),
+    Some(HashSet<PackageName>),
     All,
+}
+
+impl AllowPre {
+    pub fn allow_pre_for(&self, package: &PackageName) -> bool {
+        match &self {
+            AllowPre::Some(pkgs) => pkgs.contains(&package),
+            AllowPre::All => true,
+        }
+    }
 }
 
 impl Default for AllowPre {
     fn default() -> Self {
-        AllowPre::Some(Vec::new())
+        AllowPre::Some(HashSet::new())
     }
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum AllowPreSerdeHelper<'a> {
-    Some(Vec<PackageName>),
+    Some(HashSet<PackageName>),
     Other(&'a str),
 }
 
@@ -154,7 +163,7 @@ impl Display for Blueprint {
 }
 
 fn pick_best_pybi<'a>(
-    artifact_infos: &'a Vec<ArtifactInfo>,
+    artifact_infos: &'a [ArtifactInfo],
     platform: &PybiPlatform,
 ) -> Option<&'a ArtifactInfo> {
     artifact_infos
@@ -176,12 +185,14 @@ fn pick_best_pybi<'a>(
 // similar handling of prereleases, yanks, previous-blueprint-hints, etc.
 fn resolve_pybi<'a>(
     db: &'a PackageDB,
-    req: &PythonRequirement,
+    brief: &Brief,
     platform: &PybiPlatform,
 ) -> Result<&'a ArtifactInfo> {
-    let available = db.available_artifacts(&req.name)?;
-    for (version, artifact_infos) in available.iter() {
-        if req.specifiers.satisfied_by(&version)? {
+    let name = &brief.python.name;
+    let versions = fetch_and_sort_versions(&db, &brief, &name, None)?;
+    for version in versions.iter() {
+        if brief.python.specifiers.satisfied_by(&version)? {
+            let artifact_infos = db.artifacts_for_version(&name, version)?;
             if let Some(ai) = pick_best_pybi(&artifact_infos, platform) {
                 return Ok(ai);
             }
@@ -196,7 +207,7 @@ fn pinned(
     version: Version,
 ) -> Result<PinnedPackage> {
     let hashes = db
-        .artifacts_for_release(&name, &version)?
+        .artifacts_for_version(&name, &version)?
         .iter()
         .filter_map(|ai| ai.hash.clone())
         .collect::<Vec<_>>();
@@ -213,7 +224,7 @@ impl Brief {
         db: &PackageDB,
         platform: &PybiPlatform,
     ) -> Result<Blueprint> {
-        let pybi_ai = resolve_pybi(&db, &self.python, &platform)?;
+        let pybi_ai = resolve_pybi(&db, &self, &platform)?;
         let (_, pybi_metadata) = db
             .get_metadata::<Pybi, _>(&[pybi_ai])
             .wrap_err_with(|| format!("fetching metadata for {}", pybi_ai.url))?;
@@ -229,7 +240,7 @@ impl Brief {
             );
         }
 
-        let resolved_wheels = resolve_wheels(db, &self.requirements, &env_marker_vars)?;
+        let resolved_wheels = resolve_wheels(db, &self, &env_marker_vars)?;
         let mut wheels = Vec::<(PinnedPackage, WheelResolveMetadata)>::new();
         for (p, v, em) in resolved_wheels {
             wheels.push((pinned(&db, p, v)?, em));
@@ -249,8 +260,8 @@ impl Brief {
 struct PubgrubState<'a> {
     // These are inputs to the resolve process
     db: &'a PackageDB,
-    root_reqs: &'a Vec<UserRequirement>,
     env: &'a HashMap<String, String>,
+    brief: &'a Brief,
 
     python_full_version: Version,
     // record of the metadata we used, so we can record it and validate it later when
@@ -277,13 +288,50 @@ where
     }
 }
 
+fn fetch_and_sort_versions<'a>(
+    db: &'a PackageDB,
+    brief: &Brief,
+    package: &PackageName,
+    python_version: Option<&Version>,
+) -> Result<Vec<&'a Version>> {
+    let artifacts = db.available_artifacts(&package)?;
+    let mut versions = Vec::new();
+    let allow_prerelease = brief.allow_pre.allow_pre_for(&package);
+    for (version, ais) in artifacts.iter() {
+        if !allow_prerelease && version.is_prerelease() {
+            continue;
+        }
+        for ai in ais {
+            if ai.yanked.yanked {
+                continue;
+            }
+            if let (Some(python_version), Some(requires_python)) =
+                (python_version, &ai.requires_python)
+            {
+                let requires_python: Specifiers = requires_python.parse()?;
+                if !requires_python.satisfied_by(&python_version)? {
+                    continue;
+                }
+            }
+            // we found a valid artifact for this version. So this version is valid, and
+            // we can save it and move on to the next.
+            versions.push(version);
+            break;
+        }
+    }
+    // sort from highest to lowest
+    versions.sort_unstable_by(|a, b| b.cmp(a));
+
+    Ok(versions)
+}
+
 impl<'a> PubgrubState<'a> {
     fn metadata(
         &self,
         release: &(PackageName, Version),
     ) -> Result<&WheelResolveMetadataInner> {
         Ok(&get_or_fill(&self.expected_metadata, release, || {
-            let ais = self.db.artifacts_for_release(&release.0, &release.1)?;
+            let ais = self.db.artifacts_for_version(&release.0, &release.1)?;
             let (ai, wheel_metadata) = self.db.get_metadata::<Wheel, _>(ais)?;
             Ok(Box::new(WheelResolveMetadata::from(&ai, &wheel_metadata)))
         })?
@@ -292,39 +340,24 @@ impl<'a> PubgrubState<'a> {
 
     fn versions(&self, package: &PackageName) -> Result<&[&Version]> {
         get_or_fill(&self.versions, &package, || {
-            let artifacts = self.db.available_artifacts(&package)?;
-            let mut versions = Vec::<&Version>::new();
-            for (version, ais) in artifacts.iter() {
-                if version.is_prerelease() {
-                    continue;
-                }
-                for ai in ais {
-                    if ai.yanked.yanked {
-                        continue;
-                    }
-                    if let Some(requires_python) = &ai.requires_python {
-                        let requires_python: Specifiers = requires_python.parse()?;
-                        if !requires_python.satisfied_by(&self.python_full_version)? {
-                            continue;
-                        }
-                    }
-                    versions.push(version);
-                }
-            }
-            versions.sort_unstable();
-            Ok(versions)
+            fetch_and_sort_versions(
+                &self.db,
+                &self.brief,
+                &package,
+                Some(&self.python_full_version),
+            )
         })
     }
 }
 
 pub fn resolve_wheels(
     db: &PackageDB,
-    requirements: &Vec<UserRequirement>,
+    brief: &Brief,
     env: &HashMap<String, String>,
 ) -> Result<Vec<(PackageName, Version, WheelResolveMetadata)>> {
     let state = PubgrubState {
         db,
-        root_reqs: requirements,
+        brief,
         env,
         python_full_version: env
             .get("python_full_version")
@@ -563,7 +596,7 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
                 Ok((respkg, Some(ROOT_VERSION.clone())))
             }
             ResPkg::Package(name, _) => {
-                for &version in self.versions(&name)?.iter().rev() {
+                for &version in self.versions(&name)?.iter() {
                     if !range.borrow().contains(version) {
                         trace!("Version {} is out of range", version);
                         continue;
@@ -607,7 +640,11 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
             ResPkg::Root => {
                 let mut dc: DependencyConstraints<ResPkg, Version> =
                     vec![].into_iter().collect();
-                self.requirements_to_pubgrub(self.root_reqs.iter(), &mut dc, None)?;
+                self.requirements_to_pubgrub(
+                    self.brief.requirements.iter(),
+                    &mut dc,
+                    None,
+                )?;
                 trace!("<---- dependencies complete");
                 Ok(Dependencies::Known(dc))
             }

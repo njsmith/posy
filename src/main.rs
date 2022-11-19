@@ -48,7 +48,7 @@ fn main() -> Result<()> {
             "numpy".try_into().unwrap(),
             "black".try_into().unwrap(),
         ],
-        allow_pre: AllowPre::Some(Vec::new()),
+        allow_pre: AllowPre::Some(HashSet::new()),
     };
     let blueprint = brief.resolve(&db, &platform)?;
 

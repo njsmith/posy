@@ -44,7 +44,7 @@ where
     T::Name: BinaryName,
 {
     let mut scored_candidates = db
-        .artifacts_for_release(&pin.name, &pin.version)?
+        .artifacts_for_version(&pin.name, &pin.version)?
         .iter()
         .filter_map(|ai| {
             if let Some(name) = ai.name.inner_as::<T::Name>() {
