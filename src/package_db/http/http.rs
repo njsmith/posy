@@ -337,7 +337,9 @@ impl HttpInner {
                 Ok(self.hash_cache.get_or_set(&hash, |mut w| {
                     let mut body =
                         self.request(request, CacheMode::NoStore)?.into_body();
-                    std::io::copy(&mut body, &mut w)?;
+                    let mut checker = hash.checker(&mut w)?;
+                    std::io::copy(&mut body, &mut checker)?;
+                    checker.finish()?;
                     Ok(())
                 })?)
             }
