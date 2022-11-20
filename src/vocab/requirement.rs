@@ -45,20 +45,20 @@ use crate::prelude::*;
 pub mod marker {
     use super::*;
 
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub enum Value {
         Variable(String),
         Literal(String),
     }
 
-    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     pub enum Op {
         Compare(CompareOp),
         In,
         NotIn,
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub enum EnvMarkerExpr {
         And(Box<EnvMarkerExpr>, Box<EnvMarkerExpr>),
         Or(Box<EnvMarkerExpr>, Box<EnvMarkerExpr>),
@@ -88,6 +88,13 @@ pub mod marker {
                 Value::Literal(s) => Ok(s),
             }
         }
+
+        pub fn is_extra(&self) -> bool {
+            match self {
+                Value::Variable(varname) => varname == "extra",
+                Value::Literal(_) => false,
+            }
+        }
     }
 
     impl Display for Value {
@@ -111,22 +118,19 @@ pub mod marker {
                 EnvMarkerExpr::And(lhs, rhs) => lhs.eval(env)? && rhs.eval(env)?,
                 EnvMarkerExpr::Or(lhs, rhs) => lhs.eval(env)? || rhs.eval(env)?,
                 EnvMarkerExpr::Operator { op, lhs, rhs } => {
-                    static EXTRA: Lazy<marker::Value> =
-                        Lazy::new(|| marker::Value::Variable("extra".to_string()));
-
                     let mut lhs_val = lhs.eval(env)?;
                     let mut rhs_val = rhs.eval(env)?;
                     // special hack for comparisons involving the magic 'extra'
                     // variable: always normalize both sides (see PEP 685)
                     let lhs_holder: String;
                     let rhs_holder: String;
-                    if lhs == &*EXTRA {
+                    if lhs.is_extra() {
                         if let Ok(extra) = Extra::try_from(rhs_val) {
                             rhs_holder = extra.normalized().to_string();
                             rhs_val = rhs_holder.as_str();
                         }
                     }
-                    if rhs == &*EXTRA {
+                    if rhs.is_extra() {
                         if let Ok(extra) = Extra::try_from(lhs_val) {
                             lhs_holder = extra.normalized().to_string();
                             lhs_val = lhs_holder.as_str();

@@ -68,7 +68,7 @@ impl TryFrom<&str> for Specifiers {
 
 try_from_str_boilerplate!(Specifiers);
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum CompareOp {
     LessThanEqual,
     StrictlyLessThan,
