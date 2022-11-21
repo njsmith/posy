@@ -66,7 +66,11 @@ impl PackageDB {
                 }
             }
 
-            for artifact_infos in packed.values_mut() {}
+            // sort artifact-infos (arbitrarily) by name, just to have a consistent
+            // order from run-to-run (and make resolution output more consistent)
+            for artifact_infos in packed.values_mut() {
+                artifact_infos.sort_by(|a, b| a.name.cmp(&b.name));
+            }
             // sort into descending order by version
             packed.sort_unstable_by(|v1, _, v2, _| v2.cmp(v1));
 
