@@ -66,6 +66,7 @@ impl PackageDB {
                 }
             }
 
+            for artifact_infos in packed.values_mut() {}
             // sort into descending order by version
             packed.sort_unstable_by(|v1, _, v2, _| v2.cmp(v1));
 

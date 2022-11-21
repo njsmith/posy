@@ -1,12 +1,12 @@
 use crate::prelude::*;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum SdistFormat {
     Zip,
     TarGz,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct SdistName {
     pub distribution: PackageName,
     pub version: Version,
@@ -89,7 +89,7 @@ impl TryFrom<&str> for DistInfoDirName {
 try_from_str_boilerplate!(DistInfoDirName);
 
 // https://packaging.python.org/specifications/binary-distribution-format/#file-name-convention
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct WheelName {
     pub distribution: PackageName,
     pub version: Version,
@@ -134,7 +134,7 @@ impl BinaryName for WheelName {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct PybiName {
     pub distribution: PackageName,
     pub version: Version,
@@ -285,7 +285,7 @@ impl Display for PybiName {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, SerializeDisplay)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, SerializeDisplay)]
 pub enum ArtifactName {
     Sdist(SdistName),
     Wheel(WheelName),

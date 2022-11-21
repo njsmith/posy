@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-pub use self::parser::{requirement, versionspec};
+pub use self::parser::{marker, requirement, versionspec};
 use super::requirement::ParseExtra;
 
 peg::parser! {
@@ -140,7 +140,7 @@ peg::parser! {
                  { marker::EnvMarkerExpr::Or(Box::new(lhs), Box::new(rhs)) }
               / marker_and(parse_extra)
 
-        rule marker(parse_extra: ParseExtra) -> marker::EnvMarkerExpr
+        pub rule marker(parse_extra: ParseExtra) -> marker::EnvMarkerExpr
             = marker_or(parse_extra)
 
         rule quoted_marker(parse_extra: ParseExtra) -> marker::EnvMarkerExpr

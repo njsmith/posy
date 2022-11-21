@@ -1,9 +1,9 @@
 use crate::prelude::*;
 
 #[derive(Debug, Clone, DeserializeFromStr, Derivative)]
-#[derivative(Hash, PartialEq, Eq)]
+#[derivative(Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PackageName {
-    #[derivative(Hash = "ignore", PartialEq = "ignore")]
+    #[derivative(Hash = "ignore", PartialEq = "ignore", PartialOrd = "ignore")]
     as_given: String,
     normalized: String,
 }

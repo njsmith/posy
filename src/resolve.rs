@@ -5,6 +5,7 @@ use pubgrub::report::DerivationTree;
 use pubgrub::report::Reporter;
 use pubgrub::solver::{Dependencies, DependencyConstraints};
 use std::borrow::Borrow;
+use std::cell::RefCell;
 
 use crate::package_db::{ArtifactInfo, PackageDB};
 
@@ -147,10 +148,12 @@ impl<'a> VersionHints<'a> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WheelResolveMetadata {
     pub provenance: String,
+    #[serde(flatten)]
     pub inner: WheelResolveMetadataInner,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct WheelResolveMetadataInner {
     pub requires_dist: Vec<PackageRequirement>,
     pub requires_python: Specifiers,
@@ -170,10 +173,27 @@ impl WheelResolveMetadata {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct Blueprint {
     pub pybi: PinnedPackage,
-    // XX TODO: all marker settings relied on when computing this
     pub wheels: Vec<(PinnedPackage, WheelResolveMetadata)>,
+    #[serde(serialize_with = "serialize_marker_exprs")]
+    pub marker_expressions: HashMap<StandaloneMarkerExpr, bool>,
+}
+
+fn serialize_marker_exprs<S>(
+    marker_exprs: &HashMap<StandaloneMarkerExpr, bool>,
+    s: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let mut stringized = marker_exprs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect::<Vec<_>>();
+    stringized.sort_unstable();
+    s.collect_map(stringized.into_iter())
 }
 
 impl Display for Blueprint {
@@ -269,12 +289,8 @@ impl Brief {
             );
         }
 
-        let resolved_wheels =
+        let (wheels, marker_exprs) =
             resolve_wheels(db, &self, &env_marker_vars, &version_hints)?;
-        let mut wheels = Vec::<(PinnedPackage, WheelResolveMetadata)>::new();
-        for (p, v, em) in resolved_wheels {
-            wheels.push((pinned(&db, p, v)?, em));
-        }
 
         Ok(Blueprint {
             pybi: pinned(
@@ -283,6 +299,7 @@ impl Brief {
                 pybi_name.version.to_owned(),
             )?,
             wheels,
+            marker_expressions: marker_exprs,
         })
     }
 }
@@ -294,6 +311,7 @@ struct PubgrubState<'a> {
     brief: &'a Brief,
     version_hints: &'a VersionHints<'a>,
 
+    marker_exprs: RefCell<HashMap<StandaloneMarkerExpr, bool>>,
     python_full_version: Version,
     // record of the metadata we used, so we can record it and validate it later when
     // using the pins
@@ -405,12 +423,16 @@ fn resolve_wheels(
     brief: &Brief,
     env: &HashMap<String, String>,
     version_hints: &VersionHints,
-) -> Result<Vec<(PackageName, Version, WheelResolveMetadata)>> {
+) -> Result<(
+    Vec<(PinnedPackage, WheelResolveMetadata)>,
+    HashMap<StandaloneMarkerExpr, bool>,
+)> {
     let state = PubgrubState {
         db,
-        brief,
         env,
+        brief,
         version_hints,
+        marker_exprs: Default::default(),
         python_full_version: env
             .get("python_full_version")
             .ok_or(eyre!(
@@ -428,20 +450,19 @@ fn resolve_wheels(
     use pubgrub::error::PubGrubError::*;
 
     match result {
-        Ok(solution) => Ok(solution
-            .into_iter()
-            .filter_map(|(pkg, v)| match pkg {
-                ResPkg::Root => None,
-                ResPkg::Package(_, Some(_)) => None,
-                ResPkg::Package(name, None) => Some({
-                    (
-                        name.clone(),
-                        v.clone(),
+        Ok(solution) => {
+            let mut pins = Vec::new();
+            for (pkg, v) in solution {
+                match pkg {
+                    ResPkg::Package(name, None) => pins.push((
+                        pinned(&db, name.clone(), v.clone())?,
                         state.expected_metadata.get(&(name, v)).unwrap().clone(),
-                    )
-                }),
-            })
-            .collect()),
+                    )),
+                    _ => (),
+                }
+            }
+            Ok((pins, state.marker_exprs.into_inner()))
+        }
         Err(err) => Err(match err {
             ErrorRetrievingDependencies {
                 package,
@@ -508,21 +529,82 @@ fn resolve_wheels(
     }
 }
 
-struct HashMapEnv<'a> {
-    basic_env: &'a HashMap<String, String>,
+struct ExtraEnv<'a> {
     extra: Option<&'a str>,
 }
 
-impl<'a> marker::Env for HashMapEnv<'a> {
+impl<'a> marker::Env for ExtraEnv<'a> {
     fn get_marker_var(&self, var: &str) -> Option<&str> {
-        match var {
-            // we want 'extra' to have some value, because looking it up shouldn't be an
-            // error. But we want that value to be something that will never match a
-            // real extra. We use an empty string.
-            "extra" => Some(self.extra.unwrap_or("")),
-            _ => self.basic_env.get(var).map(|s| s.as_str()),
+        if var == "extra" {
+            self.extra.or(Some(""))
+        } else {
+            None
         }
     }
+}
+
+enum Simplified {
+    True,
+    False,
+    Expr(marker::EnvMarkerExpr),
+}
+
+impl Simplified {
+    fn eval(&self, env: &dyn marker::Env) -> Result<bool> {
+        match self {
+            Simplified::True => Ok(true),
+            Simplified::False => Ok(false),
+            Simplified::Expr(expr) => expr.eval(env),
+        }
+    }
+}
+
+fn simplify_out_extra(
+    expr: &marker::EnvMarkerExpr,
+    extra: Option<&str>,
+) -> Result<Simplified> {
+    Ok(match expr {
+        marker::EnvMarkerExpr::And(lhs, rhs) => {
+            let lhs = simplify_out_extra(&lhs, extra)?;
+            let rhs = simplify_out_extra(&rhs, extra)?;
+            match (lhs, rhs) {
+                (Simplified::True, Simplified::True) => Simplified::True,
+                (_, Simplified::False) => Simplified::False,
+                (Simplified::False, _) => Simplified::False,
+                (Simplified::Expr(lhs), Simplified::True) => Simplified::Expr(lhs),
+                (Simplified::True, Simplified::Expr(rhs)) => Simplified::Expr(rhs),
+                (Simplified::Expr(lhs), Simplified::Expr(rhs)) => Simplified::Expr(
+                    marker::EnvMarkerExpr::And(Box::new(lhs), Box::new(rhs)),
+                ),
+            }
+        }
+        marker::EnvMarkerExpr::Or(lhs, rhs) => {
+            let lhs = simplify_out_extra(&lhs, extra)?;
+            let rhs = simplify_out_extra(&rhs, extra)?;
+            match (lhs, rhs) {
+                (Simplified::False, Simplified::False) => Simplified::False,
+                (_, Simplified::True) => Simplified::True,
+                (Simplified::True, _) => Simplified::True,
+                (Simplified::Expr(lhs), Simplified::False) => Simplified::Expr(lhs),
+                (Simplified::False, Simplified::Expr(rhs)) => Simplified::Expr(rhs),
+                (Simplified::Expr(lhs), Simplified::Expr(rhs)) => Simplified::Expr(
+                    marker::EnvMarkerExpr::Or(Box::new(lhs), Box::new(rhs)),
+                ),
+            }
+        }
+        marker::EnvMarkerExpr::Operator { op: _, lhs, rhs } => {
+            match expr.eval(&ExtraEnv { extra }) {
+                Ok(true) => Simplified::True,
+                Ok(false) => Simplified::False,
+                Err(_) => {
+                    if rhs.is_extra() || lhs.is_extra() {
+                        bail!("anomalous 'extra' expression: {}", expr);
+                    }
+                    Simplified::Expr(expr.clone())
+                }
+            }
+        }
+    })
 }
 
 // A "package" for purposes of resolving. This is an extended version of what PyPI
@@ -582,14 +664,17 @@ impl<'a> PubgrubState<'a> {
         R: std::ops::Deref<Target = Requirement> + 'r,
         I: Iterator<Item = &'r R>,
     {
-        let env = HashMapEnv {
-            basic_env: &self.env,
-            extra: extra.map(|e| e.normalized()),
-        };
-
         for req in reqs {
             if let Some(expr) = &req.env_marker_expr {
-                if !expr.eval(&env)? {
+                let simplified =
+                    simplify_out_extra(expr, extra.map(|e| e.normalized()))?;
+                let value = simplified.eval(self.env)?;
+                if let Simplified::Expr(expr) = simplified {
+                    self.marker_exprs
+                        .borrow_mut()
+                        .insert(StandaloneMarkerExpr(expr), value);
+                }
+                if !value {
                     continue;
                 }
             }
@@ -729,5 +814,66 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
                 Ok(Dependencies::Known(dc))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    impl Display for Simplified {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Simplified::True => write!(f, "true"),
+                Simplified::False => write!(f, "false"),
+                Simplified::Expr(e) => write!(f, "{}", e),
+            }
+        }
+    }
+
+    #[test]
+    fn test_marker_simplify() {
+        fn doit(req: &str, extra: Option<&str>) -> String {
+            let req: PackageRequirement = req.parse().unwrap();
+            let simplified =
+                simplify_out_extra(req.env_marker_expr.as_ref().unwrap(), extra)
+                    .unwrap();
+            format!("{}", simplified)
+        }
+
+        insta::assert_snapshot!(
+            doit("x; python_version < '3'", None),
+            @r###"python_version < "3""###
+        );
+        insta::assert_snapshot!(
+            doit("x; python_version < '3' and extra == 'foo'", None),
+            @"false"
+        );
+        insta::assert_snapshot!(
+            doit("x; python_version < '3' and extra == 'foo'", Some("foo")),
+            @r###"python_version < "3""###
+        );
+        insta::assert_snapshot!(
+            doit("x; python_version < '3' and extra == 'foo'", Some("bar")),
+            @"false"
+        );
+        insta::assert_snapshot!(
+            doit("x; extra == 'foo'", Some("foo")),
+            @"true"
+        );
+        insta::assert_snapshot!(
+            doit("x; python_version < '3' or 'foo' == extra", Some("foo")),
+            @"true"
+        );
+        insta::assert_snapshot!(
+            doit("x; python_version < '3' or 'foo' == extra", Some("bar")),
+            @r###"python_version < "3""###
+        );
+
+        // error b/c can't simplify out extra
+        let req: PackageRequirement = "x; extra == python_version".parse().unwrap();
+        assert!(
+            simplify_out_extra(req.env_marker_expr.as_ref().unwrap(), None).is_err()
+        );
     }
 }

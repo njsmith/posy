@@ -24,7 +24,8 @@ pub use self::entry_points::{parse_entry_points, Entrypoint};
 pub use self::extra::Extra;
 pub use self::package_name::PackageName;
 pub use self::requirement::{
-    marker, PackageRequirement, PythonRequirement, Requirement, UserRequirement,
+    marker, PackageRequirement, PythonRequirement, Requirement, StandaloneMarkerExpr,
+    UserRequirement,
 };
 pub use self::specifier::{CompareOp, Specifier, Specifiers};
 pub use self::version::{Version, VERSION_INFINITY, VERSION_ZERO};

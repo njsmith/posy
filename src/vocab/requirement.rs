@@ -43,6 +43,8 @@ use crate::prelude::*;
 // versions.
 
 pub mod marker {
+    use std::{borrow::Borrow, hash::Hash};
+
     use super::*;
 
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -69,10 +71,9 @@ pub mod marker {
         fn get_marker_var(&self, var: &str) -> Option<&str>;
     }
 
-    // for testing
-    impl Env for HashMap<&'static str, &'static str> {
+    impl<T: Borrow<str> + Eq + Hash> Env for HashMap<T, T> {
         fn get_marker_var(&self, var: &str) -> Option<&str> {
-            self.get(var).map(|s| *s)
+            self.get(var).map(|s| s.borrow())
         }
     }
 
@@ -190,6 +191,29 @@ pub mod marker {
         }
     }
 }
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash, SerializeDisplay, DeserializeFromStr)]
+pub struct StandaloneMarkerExpr(pub marker::EnvMarkerExpr);
+
+impl Display for StandaloneMarkerExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<&str> for StandaloneMarkerExpr {
+    type Error = eyre::Report;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let expr = super::reqparse::marker(value, ParseExtra::NotAllowed)
+            .wrap_err_with(|| {
+                format!("Failed parsing env marker expression {:?}", value)
+            })?;
+        Ok(StandaloneMarkerExpr(expr))
+    }
+}
+
+try_from_str_boilerplate!(StandaloneMarkerExpr);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ParseExtra {

@@ -58,10 +58,10 @@ maybe also look at https://docs.rs/ariadne/0.1.5/ariadne/
 - storage
   - GC
 - installer
-  - provenance/metadata validation on install
-  - record env markers (&simplify?) and use to pick between multiple blueprints
-  - serialize/deserialize blueprints
+  - use saved env markers to pick between multiple blueprints
   - figure out what to do with RECORD
+  - environment export
+    - factor out common blueprint installation logic
 - sdist handling
   - get metadata during resolution
   - build during install
@@ -91,6 +91,7 @@ maybe also look at https://docs.rs/ariadne/0.1.5/ariadne/
   - maybe remove link to shell32.dll? [[https://randomascii.wordpress.com/2018/12/03/a-not-called-function-can-cause-a-5x-slowdown/][ref]]
 - 'posy self upgrade' (or 'up' or 'update' or whatever we pick)
 - 'posy self info' -> version, license, detected platform, paths, ...?
+- Add #[serde(deny_unknown_fields)] on most structs?
 
 * sdist support
 given sdist AI + envmaker, get metadata / wheel
