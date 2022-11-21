@@ -166,16 +166,18 @@ impl PybiPlatform {
 
 impl WheelPlatform {
     pub fn infer_platform_machine(&self) -> Result<&'static str> {
-        for tag in &self.0.tags {
-            for compat_group in compat_groups(&tag).unwrap_or(vec![]) {
-                match compat_group.as_str() {
-                    "macos-x86_64" => {
-                        return Ok("x86_64");
+        for full_tag in &self.0.tags {
+            if let Some((_, platform_tag)) = full_tag.rsplit_once("-") {
+                for compat_group in compat_groups(&platform_tag).unwrap_or(vec![]) {
+                    match compat_group.as_str() {
+                        "macos-x86_64" => {
+                            return Ok("x86_64");
+                        }
+                        "macos-arm64" => {
+                            return Ok("arm64");
+                        }
+                        _ => (),
                     }
-                    "macos-arm64" => {
-                        return Ok("arm64");
-                    }
-                    _ => (),
                 }
             }
         }

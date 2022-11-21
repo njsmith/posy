@@ -72,9 +72,9 @@ fn running_under_rosetta_2() -> bool {
 fn arches() -> &'static [&'static str] {
     // all in-support macs support x86-64, either natively or emulated
     if cfg!(target_arch = "aarch64") || running_under_rosetta_2() {
-        ["arm64", "x86_64"]
+        &["arm64", "x86_64"]
     } else {
-        ["x86_64"]
+        &["x86_64"]
     }
 }
 
@@ -104,6 +104,7 @@ pub fn core_platform_tags() -> Result<Vec<String>> {
         minor = 0;
     }
     Ok(arches
+        .iter()
         .map(|arch| format!("macosx_{}_{}_{}", major, minor, arch))
         .collect())
 }
