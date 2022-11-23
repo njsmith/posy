@@ -201,6 +201,19 @@ ideally:
 - some way to pass in config settings
 - some way to hold onto unpacked sdists and .dist-info directories, so if the same process both gets metadata and then builds a wheel we can reuse that part
 
+* thinking about more interpreter types
+probably simpler to model universal2 pybis as a special type of artifact
+it's *2* pybis, maybe even just generate 2 separate ArtifactInfos (or rename to ArtifactRef?)
+each with an extra hint for which platform it is
+and then during install create two separate sets of arch-specific trampolines, because they share a hash
+but the two ArtifactInfos report a different bin/ directory, for adding to PATH and setting POSY_PYTHON
+
+@ dependencies: also a special kind of ArtifactInfo I guess?
+  git urls: have a hash, act as an sdist
+  binary urls: might have a #sha256=... style hash, might not. I guess might be able to use HTTP cache info to decide whether to re-fetch? idk. need to see what people want I guess.
+
+adopting an external python:
+maybe compute a "hash" based on interpreter file fingerprint (last-changed, inode, etc.), and "unpack" it by creating a venv?
 
 * artifact types
 

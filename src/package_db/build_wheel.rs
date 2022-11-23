@@ -12,12 +12,9 @@ use super::ArtifactInfo;
 
 #[derive(Clone)]
 pub struct BuildWheelContext<'a> {
-    // not sure if we need db here, b/c I think it's already being passed through
-    // everywhere that this will be? when we create a child context, that always happens
-    // inside a db method...
-    db: &'a PackageDB,
     env_forest: &'a EnvForest,
     build_store: &'a KVDirStore,
+    target: &'a PybiPlatform,
     // XX TODO
     //build_constraints: Vec<UserRequirement>,
     in_flight: Vec<&'a PackageName>,
@@ -84,6 +81,77 @@ impl<'a> BuildWheelContext<'a> {
         child.in_flight.push(&package);
         Ok(child)
     }
+
+    // conceptually, fetching metadata from an sdist shouldn't require a specific
+    // pybi... but realistically it does, esp. b/c of unpredictable python version
+    // support
+    // so we need to at least pass in a pybi (package, version) to metadata resolution
+    //
+    // for building the wheel itself, need at least (package, version), but beyond that
+    // it's helpful to have exact pybi, and even target platform (for universal2 case)
+    //
+    // universal2 environments:
+    // - if exporting, might want to export universal2 i.e. everything supports both.
+    //   might be fine? platform_arch is a significant complication though
+    // - when resolving against PybiPlatform::current_platform(), everything's fine
+    // - if want to resolve or install an x86-64 environment on arm64 (or an arm64
+    //   environment on arm64 from an x86-64 binary), then need to use `arch` or
+    //   `posix_spawnattr_setarchpref_np` to override the child process arch.
+    //
+    //   this is the source of the `arch` command and demonstrates how to do an exec
+    //   while switching arches:
+    //   https://github.com/apple-oss-distributions/system_cmds/blob/system_cmds-950/arch.tproj/arch.c#L222
+    //
+    //   ...but also this is messy b/c a single unpacked pybi might have both, and might
+    //   need separate bin/ dir trampolines to reliably select one or the other?
+    //
+    // maybe upgrade VersionHints to a first-class/public concept, and add "platform
+    // hint" as a third kind of hint?
+    // is this useful anywhere besides implicit sdist building?
+    // ...or maybe an optional target platform in the brief?
+    // eh. Brief::resolve takes a PybiPlatform so we have that info. maybe put
+    // PybiPlatform into BuildWheelContext?
+    // and PackageDB methods take a Option<&BuildWheelContext>?
+    // ...oh but we want Brief::resolve to also take a BuildWheelContext, so we can
+    // share the env_forset and build_store across separate invocations.
+    // OH! but the PybiPlatform *does* change as you recurse -- for a second-order wheel
+    // build, you want to get a wheel that can run on the first-order interpreter.
+    //
+    //
+    // start at Brief::resolve -> pass in env_forest and build_store and real target
+    //   pybiplatform
+    // it picks pybi (based on Brief + platform)
+    // then fetches metadata, passing in access to env_forest/build_store
+    //     + chosen pybi version
+    //     + platform
+    //   db decides to get metadata from sdist:
+    //     pushes into context stack for loop detection
+    //     creates Brief with pybi set to contextual pybi package-name, no version
+    //       constraint
+    //       and resolves with pybi version hint
+    //       + if platform is compatible with current platform, use that (or
+    //         intersection?)
+    //       otherwise use current_platform
+    //
+
+    //
+    // "closest" version to 3.9.12rc3:
+    // - 3.9.12rc3
+    // - 3.9.12*
+    // - 3.9.* (from highest to lowest)
+    // - 3.*.* (from highest to lowest)
+    //
+    // so: first priority ==, then by number of matching [epoch]+version segments
+    // probably this is the best bet anyway when hinting, so we can make it a general
+    // thing
+    //
+    // (also if we currently have a pre-release, this should probably only enable other
+    // pre-releases *of the same version*, in general?)
+
+    // realistically, carefully choosing the platform/hints/pybi requirement will work
+    // fine
+    // so would passing in an explicit ArtifactInfo to resolve
+    // just a question which is cleaner to imnplement probably
 
     fn pep517(
         &self,
