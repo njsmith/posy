@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use once_cell::sync::OnceCell;
+
 use crate::prelude::*;
 
 static LINUX_RE: Lazy<Regex> = Lazy::new(|| {
@@ -14,32 +16,23 @@ static MACOSX_RE: Lazy<Regex> =
 
 #[derive(Debug, Clone)]
 struct PlatformImpl {
-    // smaller number = more preferred
-    tag_map: HashMap<String, i32>,
-    // earlier = more preferred
-    tags: Vec<String>,
-    counter: i32,
+    // earlier entries are more-preferred
+    tags: indexmap::IndexSet<String>,
 }
 
 impl PlatformImpl {
     fn empty() -> PlatformImpl {
         PlatformImpl {
-            tag_map: Default::default(),
             tags: Default::default(),
-            counter: 0,
         }
     }
 
     fn push(&mut self, tag: String) {
-        if !self.tag_map.contains_key(&tag) {
-            self.tag_map.insert(tag.clone(), self.counter);
-            self.tags.push(tag);
-            self.counter -= 1;
-        }
+        self.tags.insert(tag);
     }
 
     fn compatibility(&self, tag: &str) -> Option<i32> {
-        self.tag_map.get(tag).map(|score| *score)
+        self.tags.get_index_of(tag).map(|score| -(score as i32))
     }
 }
 
@@ -50,7 +43,7 @@ pub struct PybiPlatform(PlatformImpl);
 pub struct WheelPlatform(PlatformImpl);
 
 pub trait Platform {
-    fn tags(&self) -> &[String];
+    fn tags(&self) -> indexmap::set::Iter<'_, String>;
 
     fn compatibility(&self, tag: &str) -> Option<i32>;
 
@@ -66,8 +59,8 @@ pub trait Platform {
 }
 
 impl Platform for PybiPlatform {
-    fn tags(&self) -> &[String] {
-        self.0.tags.as_slice()
+    fn tags(&self) -> indexmap::set::Iter<'_, String> {
+        self.0.tags.iter()
     }
 
     fn compatibility(&self, tag: &str) -> Option<i32> {
@@ -76,14 +69,16 @@ impl Platform for PybiPlatform {
 }
 
 impl Platform for WheelPlatform {
-    fn tags(&self) -> &[String] {
-        self.0.tags.as_slice()
+    fn tags(&self) -> indexmap::set::Iter<'_, String> {
+        self.0.tags.iter()
     }
 
     fn compatibility(&self, tag: &str) -> Option<i32> {
         self.0.compatibility(tag)
     }
 }
+
+static CURRENT_PLATFORM: OnceCell<PybiPlatform> = OnceCell::new();
 
 impl PybiPlatform {
     pub fn from_core_tag(tag: &str) -> PybiPlatform {
@@ -105,8 +100,17 @@ impl PybiPlatform {
         PybiPlatform(p)
     }
 
-    pub fn current_platform() -> Result<PybiPlatform> {
-        Ok(PybiPlatform::from_core_tags(super::core_platform_tags()?))
+    pub fn current_platform() -> Result<&'static PybiPlatform> {
+        Ok(
+            CURRENT_PLATFORM.get_or_try_init(|| -> Result<PybiPlatform> {
+                Ok(PybiPlatform::from_core_tags(super::core_platform_tags()?))
+            })?,
+        )
+    }
+
+    pub fn is_native(&self) -> Result<bool> {
+        let current = PybiPlatform::current_platform()?;
+        Ok(self.0.tags.iter().all(|t| current.0.tags.contains(t)))
     }
 
     pub fn wheel_platform_for_pybi(
@@ -309,13 +313,6 @@ pub fn expand_platform_tag(tag: &str) -> Vec<String> {
 
     // fallback/passthrough
     vec![tag.to_string()]
-}
-
-pub fn current_platform_tags() -> Result<Vec<String>> {
-    Ok(super::core_platform_tags()?
-        .drain(..)
-        .flat_map(|t| expand_platform_tag(&t))
-        .collect())
 }
 
 #[cfg(test)]

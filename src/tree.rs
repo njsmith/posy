@@ -315,7 +315,7 @@ pub fn unpack_zip_carefully<T: Read + Seek, W: WriteTree>(
 }
 
 pub fn unpack_tar_gz_carefully<T: Read + Seek, W: WriteTree>(
-    mut body: T,
+    body: T,
     mut dest: W,
 ) -> Result<()> {
     let ungz = flate2::read::MultiGzDecoder::new(body);

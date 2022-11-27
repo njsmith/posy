@@ -213,7 +213,8 @@ but the two ArtifactInfos report a different bin/ directory, for adding to PATH 
   binary urls: might have a #sha256=... style hash, might not. I guess might be able to use HTTP cache info to decide whether to re-fetch? idk. need to see what people want I guess.
 
 adopting an external python:
-maybe compute a "hash" based on interpreter file fingerprint (last-changed, inode, etc.), and "unpack" it by creating a venv?
+maybe compute a "hash" based on interpreter file fingerprint (last-changed, inode, etc.), and "unpack" it by creating a venv under that hash?
+probably need to `import packaging` to generate metadata, so that needs an envforest... I guess can use the sdist one. PackageDB can import it as a usable python if configured to do so, cache its metadata
 
 * artifact types
 

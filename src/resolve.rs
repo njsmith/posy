@@ -198,9 +198,9 @@ where
 
 impl Display for Blueprint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "pybi: {}\n", self.pybi)?;
+        writeln!(f, "pybi: {}", self.pybi)?;
         for (wheel, em) in &self.wheels {
-            write!(f, "wheel: {} (metadata from {})\n", wheel, em.provenance)?;
+            writeln!(f, "wheel: {} (metadata from {})", wheel, em.provenance)?;
         }
         Ok(())
     }
@@ -225,8 +225,10 @@ fn pick_best_pybi<'a>(
         .map(|(ai, _)| ai)
 }
 
-// XX TODO: merge with version preference logic in resolve.rs, b/c this should have
-// similar handling of prereleases, yanks, previous-blueprint-hints, etc.
+#[derive(thiserror::Error, Debug)]
+#[error("no compatible pybis found for requirement and platform")]
+pub struct NoPybiFound;
+
 fn resolve_pybi<'a>(
     db: &'a PackageDB,
     brief: &Brief,
@@ -243,7 +245,7 @@ fn resolve_pybi<'a>(
             }
         }
     }
-    bail!("no compatible pybis found for requirement and platform");
+    Err(NoPybiFound)?
 }
 
 fn pinned(
@@ -346,11 +348,13 @@ fn fetch_and_sort_versions<'a>(
 ) -> Result<Vec<&'a Version>> {
     let artifacts = db.available_artifacts(&package)?;
     let mut versions = Vec::new();
-    let allow_prerelease = brief.allow_pre.allow_pre_for(&package);
+    let all_pre = artifacts.iter().all(|(version, _)| version.is_prerelease());
+    let allow_prerelease = all_pre || brief.allow_pre.allow_pre_for(&package);
     let (version_hint, hash_hints) = match hints.0.get(&package) {
         Some((version, hash)) => (Some(version), Some(hash)),
         None => (None, None),
     };
+
     for (version, ais) in artifacts.iter() {
         if !allow_prerelease && version.is_prerelease() {
             continue;
@@ -379,6 +383,24 @@ fn fetch_and_sort_versions<'a>(
             break;
         }
     }
+    if let Some(version_hint) = version_hint {
+        // if we have a version hint, then our preference ordering is:
+        // - the hinted version
+        // - the versions greater than the hinted version, in order from smallest to
+        //   largest (so if our hint is 1.1, we prefer 1.2 over 1.3)
+        // - the versions smaller than our hinted version, from largest to smallest (so
+        //   if our hint is 1.1, we prefer 1.0 over 0.9).
+        versions.sort_unstable_by_key(|v| {
+            if v >= version_hint {
+                (None, Some(*v))
+            } else {
+                (Some(std::cmp::Reverse(*v)), None)
+            }
+        });
+    } else {
+        versions.sort_unstable_by_key(|v| std::cmp::Reverse(*v));
+    }
+
     // sort from highest to lowest
     versions.sort_unstable_by_key(|v| {
         (

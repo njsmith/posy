@@ -323,21 +323,29 @@ impl Display for PythonRequirement {
     }
 }
 
+impl TryFrom<Requirement> for PythonRequirement {
+    type Error = eyre::Report;
+
+    fn try_from(r: Requirement) -> Result<Self, Self::Error> {
+        if !r.extras.is_empty() {
+            bail!("can't have extras on python requirement {}", r);
+        }
+        if r.env_marker_expr.is_some() {
+            bail!(
+                "can't have env marker restrictions on python requirement {}",
+                r
+            );
+        }
+        Ok(PythonRequirement(r))
+    }
+}
+
 impl TryFrom<&str> for PythonRequirement {
     type Error = eyre::Report;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let r = Requirement::parse(value, ParseExtra::NotAllowed)?;
-        if !r.extras.is_empty() {
-            bail!("can't have extras on python requirement {}", value);
-        }
-        if r.env_marker_expr.is_some() {
-            bail!(
-                "can't have env marker restrictions on python requirement {}",
-                value
-            );
-        }
-        Ok(PythonRequirement(r))
+        r.try_into()
     }
 }
 

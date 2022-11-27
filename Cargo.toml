@@ -60,6 +60,8 @@ clap = { version = "*", features = ["derive", "wrap_help", "unicode"] }
 concolor-clap = "0.0.12"
 console = "0.15.2"
 indenter = "0.3.3"
+thiserror = "1.0.37"
+toml_edit = { version = "0.15.0", features = ["serde"] }
 
 [dev-dependencies]
 fastrand = "1.4.1"
