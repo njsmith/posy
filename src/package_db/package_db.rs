@@ -1,3 +1,4 @@
+use crate::env::EnvForest;
 use crate::prelude::*;
 use elsa::FrozenMap;
 use indexmap::IndexMap;
@@ -5,23 +6,31 @@ use std::path::Path;
 
 use super::http::{CacheMode, Http, NotCached};
 use super::simple_api::{fetch_simple_api, pack_by_version, ArtifactInfo};
-use crate::kvstore::KVFileStore;
+use crate::kvstore::{KVDirStore, KVFileStore};
 
 static NO_ARTIFACTS: [ArtifactInfo; 0] = [];
 
-pub struct PackageDB {
+pub struct PackageDB<'a> {
     http: Http,
     metadata_cache: KVFileStore,
-    wheel_cache: KVFileStore,
     index_urls: Vec<Url>,
+
+    pub(super) wheel_cache: KVFileStore,
+    pub(super) build_forest: &'a EnvForest,
+    pub(super) build_store: &'a KVDirStore,
 
     // memo table to make sure we're internally consistent within a single invocation,
     // and to let us return references instead of copying everything everywhere
     artifacts: FrozenMap<PackageName, Box<IndexMap<Version, Vec<ArtifactInfo>>>>,
 }
 
-impl PackageDB {
-    pub fn new(index_urls: &[Url], cache_path: &Path) -> Result<PackageDB> {
+impl<'db> PackageDB<'db> {
+    pub fn new(
+        index_urls: &[Url],
+        cache_path: &Path,
+        build_forest: &'db EnvForest,
+        build_store: &'db KVDirStore,
+    ) -> Result<PackageDB<'db>> {
         let http_cache = KVFileStore::new(&cache_path.join("http"))?;
         let hash_cache = KVFileStore::new(&cache_path.join("by-hash"))?;
         Ok(PackageDB {
@@ -29,6 +38,8 @@ impl PackageDB {
             metadata_cache: KVFileStore::new(&cache_path.join("metadata"))?,
             wheel_cache: KVFileStore::new(&cache_path.join("local-wheels"))?,
             index_urls: index_urls.into(),
+            build_forest,
+            build_store,
             artifacts: Default::default(),
         })
     }

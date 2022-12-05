@@ -19,6 +19,7 @@ use std::path::Path;
 use crate::{env::EnvForest, prelude::*, resolve::Brief};
 
 use clap::Parser;
+use kvstore::KVDirStore;
 use resolve::AllowPre;
 
 #[derive(Parser)]
@@ -32,12 +33,18 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     output::init(&cli.output_args);
 
+    let env_forest = EnvForest::new(Path::new("/tmp/posy-test-forest"))?;
+    let build_tmp = tempfile::TempDir::new()?;
+    let build_store = KVDirStore::new(build_tmp.path())?;
+
     let db = package_db::PackageDB::new(
         &vec![
             Url::parse("https://pybi.vorpus.org")?,
             Url::parse("https://pypi.org/simple/")?,
         ],
         PROJECT_DIRS.cache_dir(),
+        &env_forest,
+        &build_store,
     )?;
     let platform = PybiPlatform::current_platform()?;
 
@@ -50,9 +57,8 @@ fn main() -> Result<()> {
         ],
         allow_pre: AllowPre::Some(HashSet::new()),
     };
-    let blueprint = brief.resolve(&db, &platform, None)?;
+    let blueprint = brief.resolve(&db, &platform, None, &[])?;
 
-    let env_forest = EnvForest::new(Path::new("/tmp/posy-test-forest"))?;
     let env = env_forest.get_env(&db, &blueprint, &platform)?;
 
     let mut cmd = std::process::Command::new("python");

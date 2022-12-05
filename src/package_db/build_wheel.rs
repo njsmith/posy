@@ -1,8 +1,8 @@
 use std::{ffi::OsString, fs, io, path::PathBuf};
 
 use crate::{
-    env::{Env, EnvForest},
-    kvstore::{KVDirLock, KVDirStore},
+    env::Env,
+    kvstore::{KVDirLock, PathKey},
     package_db::PackageDB,
     prelude::*,
     resolve::{AllowPre, Blueprint, Brief, NoPybiFound},
@@ -11,17 +11,42 @@ use crate::{
 
 use super::ArtifactInfo;
 
+// Wheel build context lifecycle:
+//
+// Top-level call to Brief::resolve or Blueprint::make_env:
+// - need to pass in env_forest, build_store: persistent state (or I guess these could
+//   live on the db?)
+// - in general, stack of in_flight builds
+//
+// These call db.metadata/db.artifact, passing in the above + target python + target
+// platform
+// - that's what you need to do the actual build.
+// - for caching: don't need to worry about finding metadata in cache, b/c we have the
+// metadata cache
+// - but do want to be able to find an already-built wheel. for this want... to know the
+// target wheel platform, I guess?
+
 #[derive(Clone)]
-pub struct BuildWheelContext<'a> {
-    env_forest: &'a EnvForest,
-    build_store: &'a KVDirStore,
+pub struct WheelBuilder<'a> {
+    db: &'a PackageDB<'a>,
     target_python: &'a PackageName,
     target_python_version: &'a Version,
     target_platform: &'a PybiPlatform,
-    // XX TODO
-    //build_constraints: Vec<UserRequirement>,
-    //allow_pre?
-    in_flight: Vec<&'a PackageName>,
+    build_platform: &'a PybiPlatform,
+    build_stack: Vec<&'a PackageName>,
+}
+
+struct BuiltWheelKey<'a> {
+    sdist_hash: &'a ArtifactHash,
+    abi: &'a str,
+}
+
+impl PathKey for BuiltWheelKey<'_> {
+    fn key(&self) -> PathBuf {
+        let mut buf = self.sdist_hash.key();
+        buf.push(self.abi);
+        buf
+    }
 }
 
 #[derive(Deserialize, Debug, Serialize)]
@@ -70,56 +95,44 @@ enum Pep517Succeeded {
     },
 }
 
-impl<'a> BuildWheelContext<'a> {
+impl<'a> WheelBuilder<'a> {
     pub fn new(
-        env_forest: &'a EnvForest,
-        build_store: &'a KVDirStore,
+        db: &'a PackageDB,
         target_python: &'a PackageName,
         target_python_version: &'a Version,
         target_platform: &'a PybiPlatform,
-    ) -> BuildWheelContext<'a> {
-        BuildWheelContext {
-            env_forest,
-            build_store,
-            target_python,
-            target_python_version,
-            target_platform,
-            in_flight: Vec::new(),
-        }
-    }
-
-    pub fn child_context<'name, 'result>(
-        &'a self,
-        package: &'name PackageName,
-    ) -> Result<BuildWheelContext<'result>>
-    where
-        'a: 'result,
-        'name: 'result,
-    {
-        if let Some(idx) = self.in_flight.iter().position(|p| p == &package) {
-            let bad = self.in_flight[idx..]
+        old_build_stack: &'a [&'a PackageName],
+        package: &'a PackageName,
+    ) -> Result<WheelBuilder<'a>> {
+        let build_platform = if target_platform.is_native()? {
+            target_platform
+        } else {
+            PybiPlatform::current_platform()?
+        };
+        if let Some(idx) = old_build_stack.iter().position(|p| p == &package) {
+            let bad = old_build_stack[idx..]
                 .iter()
                 .map(|p| format!("{} -> ", p.as_given()))
                 .collect::<String>();
             bail!("build dependency loop: {bad}{}", package.as_given());
         }
-        let mut child = self.clone();
-        child.in_flight.push(&package);
-        Ok(child)
+        let mut new_build_stack = Vec::from(old_build_stack);
+        new_build_stack.push(package);
+        Ok(WheelBuilder {
+            db,
+            target_python,
+            target_python_version,
+            target_platform,
+            build_platform,
+            build_stack: new_build_stack,
+        })
     }
 
     fn get_env_for_build(
         &self,
-        db: &PackageDB,
         reqs: &[UserRequirement],
         like: Option<&Blueprint>,
     ) -> Result<(Blueprint, Env)> {
-        let build_platform = if self.target_platform.is_native()? {
-            self.target_platform
-        } else {
-            PybiPlatform::current_platform()?
-        };
-
         // if we've already resolved a version of this environment, then we can skip
         // over the tricky stuff and just re-use the pybi + any matching wheels
         if like.is_some() {
@@ -134,8 +147,17 @@ impl<'a> BuildWheelContext<'a> {
                 requirements: reqs.into(),
                 allow_pre: Default::default(),
             }
-            .resolve(&db, &build_platform, like)?;
-            let env = self.env_forest.get_env(&db, &blueprint, &build_platform)?;
+            .resolve(
+                &self.db,
+                &self.build_platform,
+                like,
+                &self.build_stack,
+            )?;
+            let env = self.db.build_forest.get_env(
+                &self.db,
+                &blueprint,
+                &self.build_platform,
+            )?;
             return Ok((blueprint, env));
         }
 
@@ -198,7 +220,8 @@ impl<'a> BuildWheelContext<'a> {
                 requirements: Vec::new(),
                 allow_pre,
             };
-            let result = brief.resolve(&db, &build_platform, None);
+            let result =
+                brief.resolve(&self.db, &self.build_platform, None, &self.build_stack);
             match result {
                 Ok(blueprint) => {
                     found_python = Some((brief.python, blueprint));
@@ -217,7 +240,7 @@ impl<'a> BuildWheelContext<'a> {
         let (pyreq, pybi_like) = found_python.ok_or(eyre!(
             "couldn't find any pybis similar to {} {} to build wheels with",
             self.target_python.as_given(),
-            self.target_python_version
+            self.target_python_version,
         ))?;
 
         let brief = Brief {
@@ -225,24 +248,36 @@ impl<'a> BuildWheelContext<'a> {
             requirements: reqs.into(),
             allow_pre: Default::default(),
         };
-        let blueprint = brief.resolve(&db, &build_platform, Some(&pybi_like))?;
-        let env = self.env_forest.get_env(&db, &blueprint, &build_platform)?;
+        let blueprint = brief.resolve(
+            &self.db,
+            &self.build_platform,
+            Some(&pybi_like),
+            &self.build_stack,
+        )?;
+        let env =
+            self.db
+                .build_forest
+                .get_env(&self.db, &blueprint, &self.build_platform)?;
         Ok((blueprint, env))
     }
 
-    fn pep517(
-        &self,
-        db: &PackageDB,
-        ai: &ArtifactInfo,
-        goal: Pep517Goal,
-    ) -> Result<Pep517Succeeded> {
-        let handle = self
-            .build_store
-            .lock(ai.hash.as_ref().ok_or(eyre!("missing hash"))?)?;
+    fn pep517(&self, ai: &ArtifactInfo, goal: Pep517Goal) -> Result<Pep517Succeeded> {
+        let hash = ai.hash.as_ref().ok_or(eyre!("missing sdist hash"))?;
+
+        // check if we have a wheel built already
+        // wheel cache: kvdirstore by sdist hash, wheels organized by
+        for abi_group in ["any".to_string(), self.build_platform.abi_group()?] {
+            if let Some(cached) = self.db.wheel_cache.get(&BuiltWheelKey {
+                sdist_hash: hash,
+                abi: "any",
+            }) {}
+        }
+
+        let handle = self.db.build_store.lock(hash)?;
 
         if !handle.exists() {
             let tempdir = handle.tempdir()?;
-            let sdist = db.get_artifact::<Sdist>(&ai)?;
+            let sdist = self.db.get_artifact::<Sdist>(&ai)?;
             let unpack_path = tempdir.path().join("sdist");
             sdist.unpack(&mut WriteTreeFS::new(&unpack_path))?;
             const BUILD_FRONTEND_PY: &[u8] =
@@ -277,16 +312,11 @@ impl<'a> BuildWheelContext<'a> {
                 });
             }
             // OK, we're not done. Turn the crank again.
-            self.pep517_step(&db, &handle, goal)?;
+            self.pep517_step(&handle, goal)?;
         }
     }
 
-    fn pep517_step(
-        &self,
-        db: &PackageDB,
-        handle: &KVDirLock,
-        goal: Pep517Goal,
-    ) -> Result<()> {
+    fn pep517_step(&self, handle: &KVDirLock, goal: Pep517Goal) -> Result<()> {
         let mut sdist_entries = fs::read_dir(&handle.join("sdist"))?
             .collect::<Result<Vec<_>, io::Error>>()?;
         if sdist_entries.len() != 1 {
@@ -327,7 +357,7 @@ impl<'a> BuildWheelContext<'a> {
             .collect::<Result<Vec<_>>>()?;
 
         let (blueprint, env) =
-            self.get_env_for_build(&db, &build_requires, saved_blueprint.as_ref())?;
+            self.get_env_for_build(&build_requires, saved_blueprint.as_ref())?;
 
         serde_json::to_writer(fs::File::create(&saved_blueprint_path)?, &blueprint)?;
 
@@ -352,7 +382,6 @@ impl<'a> BuildWheelContext<'a> {
 
     pub fn build_metadata(
         &self,
-        db: &PackageDB,
         ai: &ArtifactInfo,
     ) -> Result<Option<WheelCoreMetadata>> {
         let name = match ai.name.inner_as::<SdistName>() {
@@ -360,8 +389,9 @@ impl<'a> BuildWheelContext<'a> {
             None => return Ok(None),
         };
 
-        let context = self.child_context(&name.distribution)?;
-        match context.pep517(&db, ai, Pep517Goal::WheelMetadata)? {
+        // XXX TODO this makes no sense
+        let context = self; //self.for_child(&name.distribution)?;
+        match context.pep517(ai, Pep517Goal::WheelMetadata)? {
             Pep517Succeeded::WheelMetadata {
                 handle: _handle,
                 dist_info,
@@ -412,11 +442,7 @@ impl<'a> BuildWheelContext<'a> {
         }
     }
 
-    pub fn build_wheel(
-        &self,
-        db: &PackageDB,
-        ai: &ArtifactInfo,
-    ) -> Result<Option<Wheel>> {
+    pub fn build_wheel(&self, ai: &ArtifactInfo) -> Result<Option<Wheel>> {
         todo!();
     }
 }

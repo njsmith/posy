@@ -271,6 +271,7 @@ impl Brief {
         db: &PackageDB,
         platform: &PybiPlatform,
         like: Option<&Blueprint>,
+        build_stack: &[&PackageName],
     ) -> Result<Blueprint> {
         let version_hints = like
             .map(VersionHints::from)
@@ -308,7 +309,7 @@ impl Brief {
 
 struct PubgrubState<'a> {
     // These are inputs to the resolve process
-    db: &'a PackageDB,
+    db: &'a PackageDB<'a>,
     env: &'a HashMap<String, String>,
     brief: &'a Brief,
     version_hints: &'a VersionHints<'a>,

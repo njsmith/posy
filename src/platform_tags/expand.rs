@@ -113,6 +113,11 @@ impl PybiPlatform {
         Ok(self.0.tags.iter().all(|t| current.0.tags.contains(t)))
     }
 
+    // XX FIXME this needs to be reworked along with all the compat_group-related stuff
+    pub fn abi_group(&self) -> Result<String> {
+        Ok(compat_groups(&self.0.tags[0])?.pop().unwrap())
+    }
+
     pub fn wheel_platform_for_pybi(
         &self,
         name: &PybiName,

@@ -201,6 +201,19 @@ ideally:
 - some way to pass in config settings
 - some way to hold onto unpacked sdists and .dist-info directories, so if the same process both gets metadata and then builds a wheel we can reuse that part
 
+-----
+
+resolution:
+- need to know target pybi + platform, pass into db.metadata
+ideally can also check for built wheels? which means "find all wheels from this sdist" operation, which is tricky if they have unique ids... could also just unconditionally cache metadata when creating, which seems easier
+
+install:
+- given sdist + target info, want an id and maybe a wheel
+  ...yeah I think we always fetch id+wheel. if we already have the wheel unpacked in the forest, then fetching the wheel itself is a bit of overhead (substantial if it's not cached anymore, minor but non-zero if it is). but realistically we can't figure out which id is correct without consulting some version of the wheel cache, and if we really care about optimizing time-to-enter-cached-environment then we'll want another layer of whole environment caching anyway.
+
+- in env.rs will want to tweak pick_pinned and WheelResolveMetadata::from. right now pick_pinned returns wheel (cool) and wheel_ai, which is needed for hash (okay) and also for attaching provenance to the wheel metadata for error reporting (ugh)
+  maybe move provenance into the Wheel object itself?
+
 * thinking about more interpreter types
 probably simpler to model universal2 pybis as a special type of artifact
 it's *2* pybis, maybe even just generate 2 separate ArtifactInfos (or rename to ArtifactRef?)
@@ -214,6 +227,7 @@ but the two ArtifactInfos report a different bin/ directory, for adding to PATH 
 
 adopting an external python:
 maybe compute a "hash" based on interpreter file fingerprint (last-changed, inode, etc.), and "unpack" it by creating a venv under that hash?
+https://apenwarr.ca/log/20181113
 probably need to `import packaging` to generate metadata, so that needs an envforest... I guess can use the sdist one. PackageDB can import it as a usable python if configured to do so, cache its metadata
 
 * artifact types

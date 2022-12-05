@@ -284,14 +284,14 @@ impl BinaryArtifact for Wheel {
         Ok((metadata_blob, metadata))
     }
 
-    type BuildContext<'a> = crate::package_db::BuildWheelContext<'a>;
+    type BuildContext<'a> = crate::package_db::WheelBuilder<'a>;
 
     fn build_metadata<'a>(
         db: &PackageDB,
         ctx: &Self::BuildContext<'a>,
         ai: &ArtifactInfo,
     ) -> Result<Option<Self::Metadata>> {
-        ctx.build_metadata(&db, &ai)
+        ctx.build_metadata(&ai)
     }
 
     fn build<'a>(
@@ -299,7 +299,7 @@ impl BinaryArtifact for Wheel {
         ctx: &Self::BuildContext<'a>,
         ai: &ArtifactInfo,
     ) -> Result<Option<Self>> {
-        ctx.build_wheel(&db, &ai)
+        ctx.build_wheel(&ai)
     }
 }
 
