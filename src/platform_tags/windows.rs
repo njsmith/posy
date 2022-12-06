@@ -3,6 +3,7 @@ use crate::prelude::*;
 // https://docs.microsoft.com/en-us/windows/win32/sysinfo/image-file-machine-constants
 const IMAGE_FILE_MACHINE_I386: u16 = 0x014c;
 const IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
+const IMAGE_FILE_MACHINE_ARM64: u16 = 0xAA64;
 
 #[link(name = "kernel32")]
 #[allow(non_snake_case)]
@@ -14,12 +15,10 @@ extern "system" {
     fn IsWow64GuestMachineSupported(machine: u16, out: *mut u8) -> u32;
 
     // ...this function. Together, we can get the full list of supported platforms.
-    // (This is actually somewhat overkill right now since python packaging hasn't
-    // defined a platform tag yet for ARM Windows wheels. But it's coming soon.)
     #[must_use]
-    fn IsWowProcess2(
+    fn IsWow64Process2(
         hProcess: *const std::ffi::c_void,
-        process_type: *mut u16,
+        _process_type: *mut u16,
         system_type: *mut u16,
     ) -> u32;
 }
@@ -36,36 +35,49 @@ fn is_wow64_guest_machine_supported(machine: u16) -> Result<bool> {
 }
 
 fn system_type() -> Result<u16> {
-    let mut process_type: u16 = 0;
+    let mut _process_type: u16 = 0;
     let mut system_type: u16 = 0;
     let result = unsafe {
-        IsWowProcess2(
+        IsWow64Process2(
             // the magic handle -1 means "the current process"
             -1 as *const std::ffi::c_void,
-            &mut process_type as *mut u16,
+            &mut _process_type as *mut u16,
             &mut system_type as *mut u16,
         )
     };
     if result != 0 {
         Err(std::io::Error::last_os_error())?
     } else {
-        Ok((process_type, system_type))
+        Ok(system_type)
+    }
+}
+
+const MACHINES: &[u16] = &[
+    IMAGE_FILE_MACHINE_I386,
+    IMAGE_FILE_MACHINE_AMD64,
+    IMAGE_FILE_MACHINE_ARM64,
+];
+
+fn map(machine: u16) -> Result<&'static str> {
+    match machine {
+        IMAGE_FILE_MACHINE_I386 => "win32",
+        IMAGE_FILE_MACHINE_AMD64 => "win_amd64",
+        IMAGE_FILE_MACHINE_ARM64 => "win_arm64",
+        _ => bail!("unknown machine constant {:#x}", machine),
     }
 }
 
 pub fn core_platform_tags() -> Result<Vec<String>> {
     let mut tags: Vec<String> = vec![];
-    if cfg!(target_arch = "x86_64")
-        || is_wow64_guest_machine_supported(IMAGE_FILE_MACHINE_AMD64)?
-        || system_type()? == IMAGE_FILE_MACHINE_AMD64
-    {
-        tags.push("win_amd64".into());
+
+    let native = system_type()?;
+    tags.push(map(native)?);
+
+    for machine in MACHINES {
+        if machine != native && is_wow64_guest_machine_supported(machine)? {
+            tags.push(map(machine)?);
+        }
     }
-    if cfg!(target_arch = "x86")
-        || is_wow64_guest_machine_supported(IMAGE_FILE_MACHINE_I386)?
-        || system_type()? == IMAGE_FILE_MACHINE_I386
-    {
-        tags.push("win32".into());
-    }
+
     Ok(tags)
 }
