@@ -81,9 +81,10 @@ impl Sink {
         &self,
         url_str: &str,
         attrs: &Vec<Attribute>,
-    ) -> Option<ArtifactInfo> {
+    ) -> Option<Vec<ArtifactInfo>> {
         let url = self.base.join(url_str).ok()?;
         let name: ArtifactName = url.path_segments()?.next_back()?.try_into().ok()?;
+        let names = name.split_multiplatform_pybis();
         // We found a valid link
         let hash = url.fragment().and_then(parse_hash);
         let requires_python =
@@ -114,14 +115,23 @@ impl Sink {
                 reason: Some(reason.into()),
             },
         };
-        Some(ArtifactInfo {
+        let template = ArtifactInfo {
             name,
             url,
             hash,
             requires_python,
             dist_info_metadata,
             yanked,
-        })
+        };
+        Some(
+            names
+                .into_iter()
+                .map(|name| ArtifactInfo {
+                    name,
+                    ..template.clone()
+                })
+                .collect(),
+        )
     }
 }
 
@@ -159,8 +169,8 @@ impl TreeSink for Sink {
 
         if name.expanded() == A_TAG {
             if let Some(url_str) = get_attr(&HREF_ATTR, &attrs) {
-                if let Some(artifact_info) = self.try_parse_link(&url_str, &attrs) {
-                    self.project_info.artifacts.push(artifact_info);
+                if let Some(artifact_infos) = self.try_parse_link(&url_str, &attrs) {
+                    self.project_info.artifacts.extend(artifact_infos);
                 }
             }
         }

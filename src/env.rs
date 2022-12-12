@@ -35,35 +35,38 @@ pub struct EnvForest {
     store: KVDirStore,
 }
 
-fn pick_pinned<'a, T: BinaryArtifact>(
+fn pick_pinned<'a, 'b, T: BinaryArtifact>(
     db: &'a PackageDB,
-    platform: &T::Platform,
+    platforms: &[&'b T::Platform],
     pin: &PinnedPackage,
-) -> Result<(T, &'a ArtifactInfo)>
+) -> Result<(T, &'a ArtifactInfo, &'b T::Platform)>
 where
     T::Name: BinaryName,
 {
-    let mut scored_candidates = db
-        .artifacts_for_version(&pin.name, &pin.version)?
-        .iter()
-        .filter_map(|ai| {
-            if let Some(name) = ai.name.inner_as::<T::Name>() {
-                if let Some(score) = platform.max_compatibility(name.all_tags().iter())
-                {
-                    return Some((ai, score));
+    for platform in platforms {
+        let mut scored_candidates = db
+            .artifacts_for_version(&pin.name, &pin.version)?
+            .iter()
+            .filter_map(|ai| {
+                if let Some(name) = ai.name.inner_as::<T::Name>() {
+                    if let Some(score) =
+                        platform.max_compatibility(name.all_tags().iter())
+                    {
+                        return Some((ai, score));
+                    }
                 }
+                None
+            })
+            .collect::<Vec<_>>();
+        scored_candidates.sort_unstable_by_key(|(_, score)| *score);
+        for (ai, _) in scored_candidates {
+            if ai.hash.is_none() {
+                warn!("best scoring artifact {} has no hash", ai.name);
+            } else if !pin.hashes.contains(ai.hash.as_ref().unwrap()) {
+                warn!("best scoring artifact {} does not appear in lock file (maybe need to update pins?)", ai.name);
+            } else {
+                return Ok((db.get_artifact(ai)?, &ai, platform));
             }
-            None
-        })
-        .collect::<Vec<_>>();
-    scored_candidates.sort_unstable_by_key(|(_, score)| *score);
-    for (ai, _) in scored_candidates {
-        if ai.hash.is_none() {
-            warn!("best scoring artifact {} has no hash", ai.name);
-        } else if !pin.hashes.contains(ai.hash.as_ref().unwrap()) {
-            warn!("best scoring artifact {} does not appear in lock file (maybe need to update pins?)", ai.name);
-        } else {
-            return Ok((db.get_artifact(ai)?, &ai));
         }
     }
     bail!(
@@ -108,10 +111,10 @@ impl EnvForest {
         &self,
         db: &PackageDB,
         blueprint: &Blueprint,
-        pybi_platform: &PybiPlatform,
+        pybi_platforms: &[&PybiPlatform],
     ) -> Result<Env> {
-        let (pybi, pybi_ai) =
-            pick_pinned::<Pybi>(&db, &pybi_platform, &blueprint.pybi)?;
+        let (pybi, pybi_ai, pybi_platform) =
+            pick_pinned::<Pybi>(&db, &pybi_platforms, &blueprint.pybi)?;
         let pybi_hash = pybi_ai.hash.as_ref().ok_or(eyre!("pybi missing hash"))?;
         let (_, pybi_metadata) = pybi.metadata()?;
         let pybi_root = self.store.get_or_set(&pybi_hash, |path| {
@@ -136,8 +139,8 @@ impl EnvForest {
             .wheels
             .iter()
             .map(|(pin, expected_metadata)| {
-                let (wheel, wheel_ai) =
-                    pick_pinned::<Wheel>(&db, &wheel_platform, &pin)?;
+                let (wheel, wheel_ai, _) =
+                    pick_pinned::<Wheel>(&db, &[&wheel_platform], &pin)?;
                 let wheel_hash =
                     wheel_ai.hash.as_ref().ok_or(eyre!("wheel missing hash"))?;
                 let (_, got_metadata) = wheel.metadata()?;

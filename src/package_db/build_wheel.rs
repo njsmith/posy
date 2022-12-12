@@ -32,7 +32,7 @@ pub struct WheelBuilder<'a> {
     target_python: &'a PackageName,
     target_python_version: &'a Version,
     target_platform: &'a PybiPlatform,
-    build_platform: &'a PybiPlatform,
+    build_platforms: Vec<&'a PybiPlatform>,
     build_stack: Vec<&'a PackageName>,
 }
 
@@ -104,10 +104,10 @@ impl<'a> WheelBuilder<'a> {
         old_build_stack: &'a [&'a PackageName],
         package: &'a PackageName,
     ) -> Result<WheelBuilder<'a>> {
-        let build_platform = if target_platform.is_native()? {
-            target_platform
+        let build_platforms = if target_platform.is_native()? {
+            vec![target_platform]
         } else {
-            PybiPlatform::current_platform()?
+            PybiPlatform::native_platforms()?.to_vec()
         };
         if let Some(idx) = old_build_stack.iter().position(|p| p == &package) {
             let bad = old_build_stack[idx..]
@@ -123,7 +123,7 @@ impl<'a> WheelBuilder<'a> {
             target_python,
             target_python_version,
             target_platform,
-            build_platform,
+            build_platforms,
             build_stack: new_build_stack,
         })
     }
@@ -149,14 +149,14 @@ impl<'a> WheelBuilder<'a> {
             }
             .resolve(
                 &self.db,
-                &self.build_platform,
+                &self.build_platforms,
                 like,
                 &self.build_stack,
             )?;
             let env = self.db.build_forest.get_env(
                 &self.db,
                 &blueprint,
-                &self.build_platform,
+                &self.build_platforms,
             )?;
             return Ok((blueprint, env));
         }
@@ -221,7 +221,7 @@ impl<'a> WheelBuilder<'a> {
                 allow_pre,
             };
             let result =
-                brief.resolve(&self.db, &self.build_platform, None, &self.build_stack);
+                brief.resolve(&self.db, &self.build_platforms, None, &self.build_stack);
             match result {
                 Ok(blueprint) => {
                     found_python = Some((brief.python, blueprint));
@@ -250,14 +250,15 @@ impl<'a> WheelBuilder<'a> {
         };
         let blueprint = brief.resolve(
             &self.db,
-            &self.build_platform,
+            &self.build_platforms,
             Some(&pybi_like),
             &self.build_stack,
         )?;
-        let env =
-            self.db
-                .build_forest
-                .get_env(&self.db, &blueprint, &self.build_platform)?;
+        let env = self.db.build_forest.get_env(
+            &self.db,
+            &blueprint,
+            &self.build_platforms,
+        )?;
         Ok((blueprint, env))
     }
 
@@ -266,12 +267,12 @@ impl<'a> WheelBuilder<'a> {
 
         // check if we have a wheel built already
         // wheel cache: kvdirstore by sdist hash, wheels organized by
-        for abi_group in ["any".to_string(), self.build_platform.abi_group()?] {
-            if let Some(cached) = self.db.wheel_cache.get(&BuiltWheelKey {
-                sdist_hash: hash,
-                abi: "any",
-            }) {}
-        }
+        // for abi_group in ["any".to_string(), self.build_platforms.abi_group()?] {
+        //     if let Some(cached) = self.db.wheel_cache.get(&BuiltWheelKey {
+        //         sdist_hash: hash,
+        //         abi: "any",
+        //     }) {}
+        // }
 
         let handle = self.db.build_store.lock(hash)?;
 

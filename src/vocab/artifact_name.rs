@@ -312,6 +312,42 @@ impl ArtifactName {
     pub fn inner_as<T: Clone + UnwrapFromArtifactName>(&self) -> Option<&T> {
         T::try_unwrap_from(self)
     }
+
+    // A pybi with multiple tags, or with a multi-platform tag like universal2, can be
+    // treated as multiple single-platform pybis that we select between. This expands a
+    // single multi-platform pybi name into multiple single-platform pybi names.
+    pub fn split_multiplatform_pybis(&self) -> Vec<ArtifactName> {
+        match self {
+            ArtifactName::Pybi(name) => {
+                name.arch_tags
+                    .iter()
+                    .flat_map(
+                        // expand universal2 into individual tags
+                        |tag| {
+                            if tag.starts_with("macosx_")
+                                && tag.ends_with("_universal2")
+                            {
+                                let prefix = tag.strip_suffix("_universal2").unwrap();
+                                vec![
+                                    format!("{prefix}_arm64"),
+                                    format!("{prefix}_x86_64"),
+                                ]
+                            } else {
+                                vec![tag.to_string()]
+                            }
+                        },
+                    )
+                    .map(|tag| {
+                        ArtifactName::Pybi(PybiName {
+                            arch_tags: vec![tag],
+                            ..name.clone()
+                        })
+                    })
+                    .collect()
+            }
+            _ => vec![self.clone()],
+        }
+    }
 }
 
 pub trait UnwrapFromArtifactName {

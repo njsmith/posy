@@ -46,7 +46,7 @@ fn main() -> Result<()> {
         &env_forest,
         &build_store,
     )?;
-    let platform = PybiPlatform::current_platform()?;
+    let platforms = PybiPlatform::native_platforms()?;
 
     let brief = Brief {
         python: "cpython_unofficial >= 3".try_into().unwrap(),
@@ -57,9 +57,9 @@ fn main() -> Result<()> {
         ],
         allow_pre: AllowPre::Some(HashSet::new()),
     };
-    let blueprint = brief.resolve(&db, &platform, None, &[])?;
+    let blueprint = brief.resolve(&db, &platforms, None, &[])?;
 
-    let env = env_forest.get_env(&db, &blueprint, &platform)?;
+    let env = env_forest.get_env(&db, &blueprint, &platforms)?;
 
     let mut cmd = std::process::Command::new("python");
     cmd.envs(env.env_vars()?);

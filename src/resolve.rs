@@ -206,42 +206,50 @@ impl Display for Blueprint {
     }
 }
 
-fn pick_best_pybi<'a>(
+fn pick_best_pybi<'a, 'b>(
     artifact_infos: &'a [ArtifactInfo],
-    platform: &PybiPlatform,
-) -> Option<&'a ArtifactInfo> {
-    artifact_infos
-        .iter()
-        .filter_map(|ai| {
-            if let ArtifactName::Pybi(name) = &ai.name {
-                platform
-                    .max_compatibility(name.arch_tags.iter())
-                    .map(|score| (ai, score))
-            } else {
-                None
-            }
-        })
-        .max_by_key(|(_, score)| *score)
-        .map(|(ai, _)| ai)
+    platforms: &[&'b PybiPlatform],
+) -> Option<(&'a ArtifactInfo, &'b PybiPlatform)> {
+    // We prefer any pybi that's compatible with our first platform, over any pybi
+    // that's compatible with our second platform, etc.
+    for platform in platforms {
+        if let Some(ai) = artifact_infos
+            .iter()
+            .filter_map(|ai| {
+                if let ArtifactName::Pybi(name) = &ai.name {
+                    platform
+                        .max_compatibility(name.arch_tags.iter())
+                        .map(|score| (ai, score))
+                } else {
+                    None
+                }
+            })
+            .max_by_key(|(_, score)| *score)
+            .map(|(ai, _)| ai)
+        {
+            return Some((ai, platform));
+        }
+    }
+    None
 }
 
 #[derive(thiserror::Error, Debug)]
 #[error("no compatible pybis found for requirement and platform")]
 pub struct NoPybiFound;
 
-fn resolve_pybi<'a>(
+fn resolve_pybi<'a, 'b>(
     db: &'a PackageDB,
     brief: &Brief,
-    platform: &PybiPlatform,
+    platforms: &[&'b PybiPlatform],
     hints: &VersionHints,
-) -> Result<&'a ArtifactInfo> {
+) -> Result<(&'a ArtifactInfo, &'b PybiPlatform)> {
     let name = &brief.python.name;
     let versions = fetch_and_sort_versions(&db, &brief, &name, None, hints)?;
     for version in versions.iter() {
         if brief.python.specifiers.satisfied_by(&version)? {
             let artifact_infos = db.artifacts_for_version(&name, version)?;
-            if let Some(ai) = pick_best_pybi(&artifact_infos, platform) {
-                return Ok(ai);
+            if let Some((ai, platform)) = pick_best_pybi(&artifact_infos, platforms) {
+                return Ok((ai, platform));
             }
         }
     }
@@ -269,14 +277,14 @@ impl Brief {
     pub fn resolve(
         &self,
         db: &PackageDB,
-        platform: &PybiPlatform,
+        platforms: &[&PybiPlatform],
         like: Option<&Blueprint>,
         build_stack: &[&PackageName],
     ) -> Result<Blueprint> {
         let version_hints = like
             .map(VersionHints::from)
             .unwrap_or_else(VersionHints::new);
-        let pybi_ai = resolve_pybi(&db, &self, &platform, &version_hints)?;
+        let (pybi_ai, platform) = resolve_pybi(&db, &self, &platforms, &version_hints)?;
         let (_, pybi_metadata) = db
             .get_metadata::<Pybi, _>(&[pybi_ai])
             .wrap_err_with(|| format!("fetching metadata for {}", pybi_ai.url))?;
@@ -284,12 +292,17 @@ impl Brief {
 
         let mut env_marker_vars = pybi_metadata.environment_marker_variables.clone();
         if !env_marker_vars.contains_key("platform_machine") {
-            let wheel_platform =
-                platform.wheel_platform_for_pybi(&pybi_name, &pybi_metadata)?;
-            env_marker_vars.insert(
-                "platform_machine".to_string(),
-                wheel_platform.infer_platform_machine()?.to_string(),
-            );
+            let is_arm64 = platform.compatibility("macosx_10_0_arm64").is_some();
+            let is_x86_64 = platform.compatibility("macosx_10_0_x86_64").is_some();
+            match (is_arm64, is_x86_64) {
+                (true, false) => {
+                    env_marker_vars.insert("platform_machine".into(), "arm64".into());
+                }
+                (false, true) => {
+                    env_marker_vars.insert("platform_machine".into(), "x86_64".into());
+                }
+                _ => (),
+            };
         }
 
         let (wheels, marker_exprs) =
