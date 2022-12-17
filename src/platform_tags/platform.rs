@@ -57,18 +57,32 @@ static NATIVE_PLATFORMS: OnceCell<Vec<PybiPlatform>> = OnceCell::new();
 
 static NATIVE_PLATFORM_REFS: OnceCell<Vec<&'static PybiPlatform>> = OnceCell::new();
 
+/// A PybiPlatform represents a family of mutually-consistent ABIs; e.g. "win32" or
+/// "x86-64 manylinux 2.20 or less".
+///
+/// Each platform object has a "core tag", which is the most restrictive tag it supports
+/// (e.g. manylinux_2_20_x86_64), and then zero or more secondary tags that are implied
+/// by the core tag (e.g. manylinux_2_19_x86_64, manylinux_2_18_x86_64, ...).
+///
+/// A PybiPlatform is "native" if all the ABIs it represents can be run on the local
+/// system (the one that posy is running on). `native_platforms` returns (our best
+/// attempt to figure out) all the ABIs that can be run on the current system.
 impl PybiPlatform {
-    pub fn from_core_tag(tag: &str) -> PybiPlatform {
+    pub fn new(core_tag: &str) -> PybiPlatform {
         PybiPlatform {
-            tags: expand_platform_tag(tag.as_ref()).into_iter().collect(),
+            tags: expand_platform_tag(core_tag.as_ref()).into_iter().collect(),
         }
+    }
+
+    pub fn core_tag(&self) -> &str {
+        &self.tags[0]
     }
 
     pub fn native_platforms() -> Result<&'static [&'static PybiPlatform]> {
         let platforms = NATIVE_PLATFORMS.get_or_try_init(|| -> Result<_> {
             let tags = super::core_platform_tags()?
                 .iter()
-                .map(|s| PybiPlatform::from_core_tag(&s))
+                .map(|s| PybiPlatform::new(&s))
                 .collect();
 
             Ok(tags)
@@ -79,17 +93,12 @@ impl PybiPlatform {
 
     pub fn is_native(&self) -> Result<bool> {
         let natives = PybiPlatform::native_platforms()?;
-        let core = &self.tags[0];
         Ok(natives
             .iter()
-            .any(|native| native.compatibility(core).is_some()))
+            .any(|native| native.compatibility(self.core_tag()).is_some()))
     }
 
-    pub fn wheel_platform_for_pybi(
-        &self,
-        name: &PybiName,
-        metadata: &PybiCoreMetadata,
-    ) -> Result<WheelPlatform> {
+    pub fn wheel_platform(&self, metadata: &PybiCoreMetadata) -> Result<WheelPlatform> {
         let mut wheel_tags = IndexSet::new();
         for wheel_tag_template in &metadata.tags {
             if let Some(prefix) = wheel_tag_template.strip_suffix("-PLATFORM") {
@@ -112,7 +121,7 @@ mod test {
 
     #[test]
     fn test_pybi_platform() {
-        let platform = PybiPlatform::from_core_tag("manylinux2014_x86_64");
+        let platform = PybiPlatform::new("manylinux2014_x86_64");
         println!("{:#?}", platform);
 
         assert!(platform.compatibility("manylinux_2_17_x86_64").is_some());
@@ -127,7 +136,7 @@ mod test {
 
     #[test]
     fn test_pybi_platform_to_wheel_platform() {
-        let pybi_platform = PybiPlatform::from_core_tag("macosx_11_0_arm64");
+        let pybi_platform = PybiPlatform::new("macosx_11_0_arm64");
 
         let fake_metadata: PybiCoreMetadata = indoc! {b"
             Metadata-Version: 2.1
@@ -145,14 +154,7 @@ mod test {
 
         // given a pybi that can handle both, on a platform that can handle both, pick
         // the preferred platform and restrict to it.
-        let wheel_platform = pybi_platform
-            .wheel_platform_for_pybi(
-                &"cpython-3.11-macosx_10_15_universal2.pybi"
-                    .try_into()
-                    .unwrap(),
-                &fake_metadata,
-            )
-            .unwrap();
+        let wheel_platform = pybi_platform.wheel_platform(&fake_metadata).unwrap();
         assert!(wheel_platform
             .compatibility("foo-bar-macosx_11_0_arm64")
             .is_some());
