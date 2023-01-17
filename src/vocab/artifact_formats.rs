@@ -20,7 +20,7 @@ use zip::ZipArchive;
 // generation/#!python fixing.
 //
 // ...oh yeah there are also direct URL references, which might point to source trees. I
-// guess that's a 4th artifact type?
+// guess that's a 4th artifact type? Or a variant on Sdist? not sure.
 
 pub struct Sdist {
     name: SdistName,
@@ -109,7 +109,7 @@ impl Artifact for Pybi {
 pub trait BinaryArtifact: Artifact {
     type Metadata;
     type Platform: Platform;
-    type BuildContext<'a>;
+    type Builder<'a>;
 
     // used to parse standalone METADATA files, like we might have cached or get from
     // PEP 658 (once it's implemented). Eventually we might want to split this off into
@@ -124,16 +124,27 @@ pub trait BinaryArtifact: Artifact {
     // whole thing, and also cache the core metadata locally for next time.
     fn metadata(&self) -> Result<(Vec<u8>, Self::Metadata)>;
 
-    fn build_metadata<'a>(
+    // These are only meaningful for Wheel, because only Wheel has an sdist format. But
+    // we want to call these from PackageDB methods that are generic over arbitrary
+    // BinaryArtifacts, and don't know even know how to recognize an Sdist ArtifactInfo
+    // from our index. So our trick is that the generic methods just call these on every
+    // ArtifactInfo, and the Wheel version recognizes Sdists and builds them, and for
+    // every other case they return Ok(None).
+    //
+    // (Also, if we ever get an sdist format for pybis, then we'll be set!)
+
+    fn locally_built_metadata<'a>(
         db: &PackageDB,
-        ctx: &Self::BuildContext<'a>,
+        ctx: &Self::Builder<'a>,
         ai: &ArtifactInfo,
-    ) -> Result<Option<Self::Metadata>>;
-    fn build<'a>(
+    ) -> Option<Result<(Vec<u8>, Self::Metadata)>>;
+
+    fn locally_built_binary<'a>(
         db: &PackageDB,
-        ctx: &Self::BuildContext<'a>,
+        ctx: &Self::Builder<'a>,
         ai: &ArtifactInfo,
-    ) -> Result<Option<Self>>;
+        platform: &Self::Platform,
+    ) -> Option<Result<Self>>;
 }
 
 fn parse_format_metadata_and_check_version(
@@ -284,22 +295,31 @@ impl BinaryArtifact for Wheel {
         Ok((metadata_blob, metadata))
     }
 
-    type BuildContext<'a> = crate::package_db::WheelBuilder<'a>;
+    type Builder<'a> = crate::package_db::WheelBuilder<'a>;
 
-    fn build_metadata<'a>(
+    fn locally_built_metadata<'a>(
         db: &PackageDB,
-        ctx: &Self::BuildContext<'a>,
+        builder: &Self::Builder<'a>,
         ai: &ArtifactInfo,
-    ) -> Result<Option<Self::Metadata>> {
-        ctx.build_metadata(&ai)
+    ) -> Option<Result<(Vec<u8>, Self::Metadata)>> {
+        if ai.name.inner_as::<SdistName>().is_some() {
+            Some(builder.locally_built_metadata(&ai))
+        } else {
+            None
+        }
     }
 
-    fn build<'a>(
+    fn locally_built_binary<'a>(
         db: &PackageDB,
-        ctx: &Self::BuildContext<'a>,
+        builder: &Self::Builder<'a>,
         ai: &ArtifactInfo,
-    ) -> Result<Option<Self>> {
-        ctx.build_wheel(&ai)
+        platform: &Self::Platform,
+    ) -> Option<Result<Self>> {
+        if ai.name.inner_as::<SdistName>().is_some() {
+            Some(builder.locally_built_wheel(&ai, &platform))
+        } else {
+            None
+        }
     }
 }
 
@@ -307,7 +327,7 @@ impl BinaryArtifact for Pybi {
     type Metadata = PybiCoreMetadata;
     type Platform = PybiPlatform;
     // Pybis can't be built from source (at least for now)
-    type BuildContext<'a> = ();
+    type Builder<'a> = ();
 
     fn parse_metadata(value: &[u8]) -> Result<Self::Metadata> {
         value.try_into()
@@ -336,20 +356,21 @@ impl BinaryArtifact for Pybi {
         Ok((metadata_blob, metadata))
     }
 
-    fn build_metadata<'a>(
+    fn locally_built_metadata<'a>(
         _db: &PackageDB,
-        _ctx: &Self::BuildContext<'a>,
+        _ctx: &Self::Builder<'a>,
         _ai: &ArtifactInfo,
-    ) -> Result<Option<Self::Metadata>> {
-        Ok(None)
+    ) -> Option<Result<(Vec<u8>, Self::Metadata)>> {
+        None
     }
 
-    fn build<'a>(
+    fn locally_built_binary<'a>(
         db: &PackageDB,
-        ctx: &Self::BuildContext<'a>,
+        ctx: &Self::Builder<'a>,
         ai: &ArtifactInfo,
-    ) -> Result<Option<Self>> {
-        Ok(None)
+        platform: &Self::Platform,
+    ) -> Option<Result<Self>> {
+        None
     }
 }
 

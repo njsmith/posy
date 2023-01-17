@@ -107,6 +107,14 @@ pub struct ArtifactInfo {
     pub yanked: Yanked,
 }
 
+impl ArtifactInfo {
+    pub fn require_hash(&self) -> Result<&ArtifactHash> {
+        self.hash
+            .as_ref()
+            .ok_or_else(|| eyre!("artifact {} has no hash", self.name))
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct ProjectInfo {
     pub meta: Meta,

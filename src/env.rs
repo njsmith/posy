@@ -193,6 +193,7 @@ impl EnvForest {
 
         Ok(Env {
             platform_core_tag: pybi_platform.core_tag().into(),
+            wheel_platform,
             python,
             pythonw,
             bin_dirs,
@@ -205,6 +206,7 @@ pub struct Env {
     // XX TODO for GC support: hold a lock to prevent anything from being GC'ed out from
     // under us
     pub platform_core_tag: String,
+    pub wheel_platform: WheelPlatform,
     pub python: PathBuf,
     pub pythonw: PathBuf,
     pub bin_dirs: Vec<PathBuf>,

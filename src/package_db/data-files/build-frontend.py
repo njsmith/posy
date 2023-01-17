@@ -7,7 +7,7 @@ from importlib import import_module
 from sys import exit
 from json import loads, dumps
 
-(work_dir, goal) = sys.argv[1:]
+(work_dir, goal, binary_wheel_tag) = sys.argv[1:]
 
 work_dir = Path(work_dir)
 build_system = loads((work_dir / "build-system.json").read_text("utf-8"))
@@ -50,9 +50,11 @@ if goal == "WheelMetadata" and hasattr(backend, "prepare_metadata_for_build_whee
 
 wheel_dir = work_dir / "build_wheel"
 wheel_dir.mkdir()
-dist_info = backend.build_wheel(
+wheel_basename = backend.build_wheel(
     str(wheel_dir),
     metadata_directory=str(metadata_dir) if metadata_dir.exists() else None,
 )
-(work_dir / "build_wheel.out").write_text(dist_info, "utf-8")
+
+(work_dir / "build_wheel.out").write_text(wheel_basename, "utf-8")
+(work_dir / "build_wheel.binary_wheel_tag").write_text(binary_wheel_tag, "utf-8")
 exit(0)

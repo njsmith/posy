@@ -2,7 +2,7 @@ use std::{ffi::OsString, fs, io, path::PathBuf};
 
 use crate::{
     env::Env,
-    kvstore::{KVDirLock, PathKey},
+    kvstore::KVDirLock,
     package_db::PackageDB,
     prelude::*,
     resolve::{AllowPre, Blueprint, Brief, NoPybiFound},
@@ -14,68 +14,41 @@ use super::ArtifactInfo;
 // Wheel build context lifecycle:
 //
 // Top-level call to Brief::resolve or Blueprint::make_env:
-// - need to pass in env_forest, build_store: persistent state (or I guess these could
-//   live on the db?)
-// - in general, stack of in_flight builds
+// - need to pass in stack of in_flight builds
 //
 // These call db.metadata/db.artifact, passing in the above + target python + target
-// platform
+// pybi platform
 // - that's what you need to do the actual build.
 // - for caching: don't need to worry about finding metadata in cache, b/c we have the
 // metadata cache
 // - but do want to be able to find an already-built wheel. for this want... to know the
-// target wheel platform, I guess?
+// target *wheel* platform, I guess?
+
+// for metadata: don't care about wheel tag; if we have anything cached that's good
+// enough (or could skip checking the cache entirely, dunno if that's useful or not)
+// if we get a wheel, need to add it to the cache properly, which requires knowing the
+// build platform to set the proper name, and maybe some other metadata like the
+// blueprint we used
+// python version + target PybiPlatform useful as a hint to something that will most
+// likely build the wheel, but not too important
+// resolve() does have a specific pybi and platform to resolve against though; could
+// pass in the ai, and that has the full name
+//
+// for wheel:
+// - we have a specific desired WheelPlatform, and either we match it or we fail
+// and we know which pybi generated the wheel platform; if we can build with that it's
+// ideal; otherwise try to maximize chances of getting something abi-compatible
+
+// maybe make WheelPlatform an arg to build_wheel? and have the db::get_wheel impl also
+// take it, and be responsible for finding the appropriate wheel?
 
 #[derive(Clone)]
 pub struct WheelBuilder<'a> {
     db: &'a PackageDB<'a>,
     target_python: &'a PackageName,
     target_python_version: &'a Version,
-    target_platform: &'a PybiPlatform,
     build_platforms: Vec<&'a PybiPlatform>,
     build_stack: Vec<&'a PackageName>,
-}
-
-struct BuiltWheelKey<'a> {
-    sdist_hash: &'a ArtifactHash,
-    abi: &'a str,
-}
-
-impl PathKey for BuiltWheelKey<'_> {
-    fn key(&self) -> PathBuf {
-        let mut buf = self.sdist_hash.key();
-        buf.push(self.abi);
-        buf
-    }
-}
-
-#[derive(Deserialize, Debug, Serialize)]
-#[serde(rename_all = "kebab-case", default)]
-struct PyprojectBuildSystem {
-    requires: Vec<String>,
-    build_backend: String,
-    backend_path: Vec<String>,
-}
-
-impl Default for PyprojectBuildSystem {
-    fn default() -> Self {
-        Self {
-            requires: vec!["setuptools".into(), "wheel".into()],
-            build_backend: "setuptools.build_meta:__legacy__".into(),
-            backend_path: Vec::new(),
-        }
-    }
-}
-
-impl PyprojectBuildSystem {
-    fn parse_from(s: &str) -> Result<PyprojectBuildSystem> {
-        let mut d = s.parse::<toml_edit::Document>()?;
-        if let Some(table) = d.remove("build-system") {
-            Ok(toml_edit::de::from_item(table)?)
-        } else {
-            Ok(Default::default())
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,8 +63,7 @@ enum Pep517Succeeded {
         dist_info: PathBuf,
     },
     Wheel {
-        handle: KVDirLock,
-        wheel: PathBuf,
+        wheel: Wheel,
     },
 }
 
@@ -122,10 +94,80 @@ impl<'a> WheelBuilder<'a> {
             db,
             target_python,
             target_python_version,
-            target_platform,
             build_platforms,
             build_stack: new_build_stack,
         })
+    }
+
+    pub fn locally_built_wheel(
+        &self,
+        sdist_ai: &ArtifactInfo,
+        wheel_platform: &WheelPlatform,
+    ) -> Result<Wheel> {
+        // check if we already have a usable wheel cached; and if so, find the best one
+        let handle = self.db.wheel_cache.lock(sdist_ai.require_hash()?)?;
+        fs::create_dir_all(&handle)?;
+
+        let mut best: Option<(i32, OsString, WheelName)> = None;
+
+        for entry in fs::read_dir(&handle)? {
+            let entry = entry?;
+            let os_name = entry.file_name();
+            let str_name = os_name.to_str().ok_or_else(|| {
+                eyre!(
+                    "invalid unicode in wheel cache entry name {}",
+                    os_name.to_string_lossy()
+                )
+            })?;
+            if !str_name.ends_with(".whl") {
+                continue;
+            }
+            let name: WheelName = str_name.parse()?;
+            let maybe_score = wheel_platform.max_compatibility(name.all_tags());
+            if let Some(score) = maybe_score {
+                if best.is_none() || best.as_ref().unwrap().0 < score {
+                    best = Some((score, os_name, name))
+                }
+            }
+        }
+
+        if let Some((_, os_name, name)) = best {
+            let path = handle.join(os_name);
+            return Ok(Wheel::new(name, Box::new(fs::File::open(path)?))?);
+        }
+
+        // nothing in cache -- we'll have to build it ourselves (which will implicitly
+        // add to the cache)
+        match self.pep517(&sdist_ai, Pep517Goal::Wheel, Some(handle))? {
+            Pep517Succeeded::Wheel { wheel } => {
+                if wheel_platform
+                    .max_compatibility(wheel.name().all_tags())
+                    .is_some()
+                {
+                    Ok(wheel)
+                } else {
+                    bail!("built wheel is not compatible with target environment");
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn locally_built_metadata(
+        &self,
+        sdist_ai: &ArtifactInfo,
+    ) -> Result<(Vec<u8>, WheelCoreMetadata)> {
+        match self.pep517(&sdist_ai, Pep517Goal::WheelMetadata, None)? {
+            Pep517Succeeded::WheelMetadata {
+                handle: _handle,
+                dist_info,
+            } => {
+                let metadata_buf = fs::read(dist_info.join("METADATA"))?;
+                let metadata = metadata_buf.as_slice().try_into()?;
+                Ok((metadata_buf, metadata))
+            }
+            Pep517Succeeded::Wheel { wheel } => Ok(wheel.metadata()?),
+        }
     }
 
     fn get_env_for_build(
@@ -262,23 +304,18 @@ impl<'a> WheelBuilder<'a> {
         Ok((blueprint, env))
     }
 
-    fn pep517(&self, ai: &ArtifactInfo, goal: Pep517Goal) -> Result<Pep517Succeeded> {
-        let hash = ai.hash.as_ref().ok_or(eyre!("missing sdist hash"))?;
-
-        // check if we have a wheel built already
-        // wheel cache: kvdirstore by sdist hash, wheels organized by
-        // for abi_group in ["any".to_string(), self.build_platforms.abi_group()?] {
-        //     if let Some(cached) = self.db.wheel_cache.get(&BuiltWheelKey {
-        //         sdist_hash: hash,
-        //         abi: "any",
-        //     }) {}
-        // }
-
-        let handle = self.db.build_store.lock(hash)?;
+    fn pep517(
+        &self,
+        sdist_ai: &ArtifactInfo,
+        goal: Pep517Goal,
+        wheel_cache_handle: Option<KVDirLock>,
+    ) -> Result<Pep517Succeeded> {
+        let sdist_hash = sdist_ai.require_hash()?;
+        let handle = self.db.build_store.lock(&sdist_hash)?;
 
         if !handle.exists() {
             let tempdir = handle.tempdir()?;
-            let sdist = self.db.get_artifact::<Sdist>(&ai)?;
+            let sdist = self.db.get_artifact::<Sdist>(&sdist_ai)?;
             let unpack_path = tempdir.path().join("sdist");
             sdist.unpack(&mut WriteTreeFS::new(&unpack_path))?;
             const BUILD_FRONTEND_PY: &[u8] =
@@ -293,13 +330,37 @@ impl<'a> WheelBuilder<'a> {
         loop {
             // If we have a wheel, we're definitely done, no matter what our goal was
             if build_wheel.exists() {
+                // Get the name the build backend returned
                 let name =
                     String::from_utf8(fs::read(handle.join("build_wheel.out"))?)?;
-                return Ok(Pep517Succeeded::Wheel {
-                    handle,
-                    wheel: build_wheel.join(name),
-                });
+                let mut wheel_name: WheelName = name.parse()?;
+                let wheel_path = build_wheel.join(&name);
+                // Get the most-restrictive wheel tag compatible with the build
+                // environment.
+                let build_env_tag = String::from_utf8(fs::read(
+                    handle.join("build_wheel.binary_wheel_tag"),
+                )?)?;
+                // If this is a binary wheel, then tag it with the platform we built on
+                // (so e.g. "linux_x86_64" might become "manylinux_2_32_x86_64")
+                let (_, build_arch) = build_env_tag.rsplit_once('-').unwrap();
+                if !wheel_name.arch_tags.iter().all(|t| t == "any") {
+                    wheel_name.arch_tags = vec![build_arch.into()]
+                }
+                // Store the wheel in the wheel cache
+                let wheel_cache_handle = match wheel_cache_handle {
+                    Some(h) => h,
+                    None => self.db.wheel_cache.lock(&sdist_hash)?,
+                };
+                fs::create_dir_all(&wheel_cache_handle)?;
+                let target_path = wheel_cache_handle.join(wheel_name.to_string());
+                if fs::rename(&wheel_path, &target_path).is_err() {
+                    fs::copy(&wheel_path, &target_path)?;
+                }
+                let opened = fs::File::open(target_path)?;
+                let wheel = Wheel::new(wheel_name, Box::new(opened))?;
+                return Ok(Pep517Succeeded::Wheel { wheel });
             }
+
             // Or if our goal is metadata and we have it, we're done
             if goal == Pep517Goal::WheelMetadata
                 && prepare_metadata_for_build_wheel.exists()
@@ -312,7 +373,7 @@ impl<'a> WheelBuilder<'a> {
                     dist_info: prepare_metadata_for_build_wheel.join(name),
                 });
             }
-            // OK, we're not done. Turn the crank again.
+            // Otherwise, we're not done. Turn the crank again.
             self.pep517_step(&handle, goal)?;
         }
     }
@@ -329,7 +390,7 @@ impl<'a> WheelBuilder<'a> {
             Ok(pyproject_bytes) => {
                 context!("parsing pyproject.toml");
                 let pyproject_str = String::from_utf8(pyproject_bytes)?;
-                PyprojectBuildSystem::parse_from(&pyproject_str)?
+                PyprojectBuildSystemStanza::parse_from(&pyproject_str)?
             }
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => Default::default(),
             Err(e) => Err(e)?,
@@ -360,6 +421,12 @@ impl<'a> WheelBuilder<'a> {
         let (blueprint, env) =
             self.get_env_for_build(&build_requires, saved_blueprint.as_ref())?;
 
+        let binary_wheel_tag = env
+            .wheel_platform
+            .tags()
+            .next()
+            .ok_or_else(|| eyre!("no wheel tags?"))?;
+
         serde_json::to_writer(fs::File::create(&saved_blueprint_path)?, &blueprint)?;
 
         let mut child = std::process::Command::new("python")
@@ -367,6 +434,7 @@ impl<'a> WheelBuilder<'a> {
                 handle.join("build-frontend.py").as_os_str(),
                 handle.as_os_str(),
                 OsString::from(format!("{:?}", goal)).as_ref(),
+                OsString::from(binary_wheel_tag).as_ref(),
             ])
             .stdin(std::process::Stdio::null())
             .current_dir(&sdist_root)
@@ -380,70 +448,34 @@ impl<'a> WheelBuilder<'a> {
 
         Ok(())
     }
+}
 
-    pub fn build_metadata(
-        &self,
-        ai: &ArtifactInfo,
-    ) -> Result<Option<WheelCoreMetadata>> {
-        let name = match ai.name.inner_as::<SdistName>() {
-            Some(value) => value,
-            None => return Ok(None),
-        };
+/// Used to parse the `[build-system]` table in pyproject.toml.
+#[derive(Deserialize, Debug, Serialize)]
+#[serde(rename_all = "kebab-case", default)]
+struct PyprojectBuildSystemStanza {
+    requires: Vec<String>,
+    build_backend: String,
+    backend_path: Vec<String>,
+}
 
-        // XXX TODO this makes no sense
-        let context = self; //self.for_child(&name.distribution)?;
-        match context.pep517(ai, Pep517Goal::WheelMetadata)? {
-            Pep517Succeeded::WheelMetadata {
-                handle: _handle,
-                dist_info,
-            } => Ok(Some(
-                fs::read(dist_info.join("METADATA"))?
-                    .as_slice()
-                    .try_into()?,
-            )),
-            Pep517Succeeded::Wheel {
-                handle: _handle,
-                wheel,
-            } => {
-                let f = fs::File::open(&wheel)?;
-                let name = wheel
-                    .file_name()
-                    .ok_or(eyre!("no wheel filename?"))?
-                    .to_str()
-                    .ok_or(eyre!("wheel name is invalid utf-8?"))?;
-                let wheel = Wheel::new(name.try_into()?, Box::new(f))?;
-                // XX TODO: stash in cache
-                // alongside platform + blueprint
-                // lookup: for metadata, no constraints
-                //
-                // for wheels: build-constraints are the only reason need blueprint, and
-                // that's fine whatever
-                // for platform: I guess really only want to use these if we are
-                // building for a native platform? and then only need to distinguish
-                // between which native platform it was built for.
-                // (and only if the wheel has native code)
-                // (maybe compute an "effective" name for wheel, e.g. linux->manylinux?)
-                //
-                // realistically, for a given cache, the current platform is not going
-                // to change much, and when it does it will change by adding new
-                // versions to the supported list, not removing them. and in the rare
-                // exceptions it's fine to rebuild.
-                //
-                // ...but really we want a unique name for the wheel so we have a single
-                // place to put it in the EnvForest.
-                // So maybe: two places to look. platform-independent wheels go under
-                // sdist hash + "any" or similar, and non-platform-independent wheels go
-                // under
-                //  sdist hash
-                //  + compat-group from expand.rs
-                //  + highest tag from pybi (e.g. cp310-cp310-PLATFORM)
-                //  (+ eventually, any build config like constraints/allow-pre)
-                Ok(Some(wheel.metadata()?.1))
-            }
+impl Default for PyprojectBuildSystemStanza {
+    fn default() -> Self {
+        Self {
+            requires: vec!["setuptools".into(), "wheel".into()],
+            build_backend: "setuptools.build_meta:__legacy__".into(),
+            backend_path: Vec::new(),
         }
     }
+}
 
-    pub fn build_wheel(&self, ai: &ArtifactInfo) -> Result<Option<Wheel>> {
-        todo!();
+impl PyprojectBuildSystemStanza {
+    fn parse_from(s: &str) -> Result<PyprojectBuildSystemStanza> {
+        let mut d = s.parse::<toml_edit::Document>()?;
+        if let Some(table) = d.remove("build-system") {
+            Ok(toml_edit::de::from_item(table)?)
+        } else {
+            Ok(Default::default())
+        }
     }
 }

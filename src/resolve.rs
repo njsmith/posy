@@ -74,8 +74,8 @@ fn allow_pre_is_empty(value: &AllowPre) -> bool {
 
 /// A high-level description of an environment that a user would like to be able to
 /// build. Doesn't necessarily have to be what the user types in exactly, but has to
-/// represent their intentions, and *not* anything that requires looking at a package
-/// index.
+/// represent their intentions, and you have to be able to build the whole structure
+/// without looking at a package index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Brief {
     pub python: PythonRequirement,

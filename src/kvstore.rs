@@ -388,4 +388,10 @@ impl Deref for KVDirLock {
     }
 }
 
+impl AsRef<Path> for KVDirLock {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+
 // XX TODO: seriously need some tests that validate the locking etc.

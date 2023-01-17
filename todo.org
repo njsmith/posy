@@ -36,10 +36,9 @@ maybe also look at https://docs.rs/ariadne/0.1.5/ariadne/
 * Actual todo/planning list
 
 - Pybis
-  - Build macOS
-  - Build Windows
-  - more Linux
+  - build latest patch releases
   - clean up build tooling
+  - set up GHA or similar automation
   - post PEP
 - UI
   - Tracing
@@ -93,6 +92,12 @@ maybe also look at https://docs.rs/ariadne/0.1.5/ariadne/
 - 'posy self info' -> version, license, detected platform, paths, ...?
 - Add #[serde(deny_unknown_fields)] on most structs?
 
+when examining saved blueprints to create env for brief:
+- probably want a copy of that brief
+- not clear to me whether we should save the marker exprs + revalidate them, or save the original requirements + revalidate *them*. latter seems maybe simpler?
+- probably want a version of resolve() that returns a consolidated bundle of blueprints? maybe take either Any([&PybiPlatform) or All([&PybiPlatform])
+  and consolidate the massively overlapping stuff, like hashes + wheel metadata
+  (might also want to record which platforms each sub-blueprint was resolved for, just for documentation, and maybe short-circuit validation. And so we can detect when the user has changed the set of desired platforms, so we need to re-resolve.)
 * sdist support
 given sdist AI + envmaker, get metadata / wheel
 

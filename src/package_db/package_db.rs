@@ -15,7 +15,7 @@ pub struct PackageDB<'a> {
     metadata_cache: KVFileStore,
     index_urls: Vec<Url>,
 
-    pub(super) wheel_cache: KVFileStore,
+    pub(super) wheel_cache: KVDirStore,
     pub(super) build_forest: &'a EnvForest,
     pub(super) build_store: &'a KVDirStore,
 
@@ -36,7 +36,7 @@ impl<'db> PackageDB<'db> {
         Ok(PackageDB {
             http: Http::new(http_cache, hash_cache),
             metadata_cache: KVFileStore::new(&cache_path.join("metadata"))?,
-            wheel_cache: KVFileStore::new(&cache_path.join("local-wheels"))?,
+            wheel_cache: KVDirStore::new(&cache_path.join("local-wheels"))?,
             index_urls: index_urls.into(),
             build_forest,
             build_store,
