@@ -58,36 +58,6 @@ impl Display for SdistName {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct DistInfoDirName {
-    pub distribution: PackageName,
-    pub version: Version,
-}
-
-impl TryFrom<&str> for DistInfoDirName {
-    type Error = eyre::Report;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        static DIST_INFO_NAME_RE: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^([^/]*)-([^-/]*)\.dist-info$").unwrap());
-
-        match DIST_INFO_NAME_RE.captures(&value) {
-            None => bail!("invalid sdist name"),
-            Some(captures) => {
-                let distribution: PackageName =
-                    captures.get(1).unwrap().as_str().parse()?;
-                let version: Version = captures.get(2).unwrap().as_str().parse()?;
-                Ok(DistInfoDirName {
-                    distribution,
-                    version,
-                })
-            }
-        }
-    }
-}
-
-try_from_str_boilerplate!(DistInfoDirName);
-
 // https://packaging.python.org/specifications/binary-distribution-format/#file-name-convention
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct WheelName {

@@ -72,31 +72,41 @@ impl<'a> WheelBuilder<'a> {
         db: &'a PackageDB,
         target_python: &'a PackageName,
         target_python_version: &'a Version,
-        target_platform: &'a PybiPlatform,
-        old_build_stack: &'a [&'a PackageName],
-        package: &'a PackageName,
+        target_platforms: &'a [&'a PybiPlatform],
+        build_stack: &'a [&'a PackageName],
     ) -> Result<WheelBuilder<'a>> {
-        let build_platforms = if target_platform.is_native()? {
-            vec![target_platform]
-        } else {
-            PybiPlatform::native_platforms()?.to_vec()
-        };
-        if let Some(idx) = old_build_stack.iter().position(|p| p == &package) {
-            let bad = old_build_stack[idx..]
-                .iter()
-                .map(|p| format!("{} -> ", p.as_given()))
-                .collect::<String>();
-            bail!("build dependency loop: {bad}{}", package.as_given());
+        let mut build_platforms = Vec::new();
+        for p in target_platforms {
+            if p.is_native()? {
+                build_platforms.push(*p);
+            }
         }
-        let mut new_build_stack = Vec::from(old_build_stack);
-        new_build_stack.push(package);
+        if build_platforms.is_empty() {
+            build_platforms.extend(PybiPlatform::native_platforms()?)
+        }
         Ok(WheelBuilder {
             db,
             target_python,
             target_python_version,
             build_platforms,
-            build_stack: new_build_stack,
+            build_stack: build_stack.into(),
         })
+    }
+
+    fn new_build_stack(
+        &'a self,
+        package: &'a PackageName,
+    ) -> Result<Vec<&'a PackageName>> {
+        if let Some(idx) = self.build_stack.iter().position(|p| p == &package) {
+            let bad = self.build_stack[idx..]
+                .iter()
+                .map(|p| format!("{} -> ", p.as_given()))
+                .collect::<String>();
+            bail!("build dependency loop: {bad}{}", package.as_given());
+        }
+        let mut new_build_stack = self.build_stack.clone();
+        new_build_stack.push(package);
+        Ok(new_build_stack)
     }
 
     pub fn locally_built_wheel(
@@ -104,6 +114,8 @@ impl<'a> WheelBuilder<'a> {
         sdist_ai: &ArtifactInfo,
         wheel_platform: &WheelPlatform,
     ) -> Result<Wheel> {
+        let new_build_stack = self.new_build_stack(sdist_ai.name.distribution())?;
+
         // check if we already have a usable wheel cached; and if so, find the best one
         let handle = self.db.wheel_cache.lock(sdist_ai.require_hash()?)?;
         fs::create_dir_all(&handle)?;
@@ -138,7 +150,12 @@ impl<'a> WheelBuilder<'a> {
 
         // nothing in cache -- we'll have to build it ourselves (which will implicitly
         // add to the cache)
-        match self.pep517(&sdist_ai, Pep517Goal::Wheel, Some(handle))? {
+        match self.pep517(
+            &sdist_ai,
+            Pep517Goal::Wheel,
+            Some(handle),
+            &new_build_stack,
+        )? {
             Pep517Succeeded::Wheel { wheel } => {
                 if wheel_platform
                     .max_compatibility(wheel.name().all_tags())
@@ -157,7 +174,14 @@ impl<'a> WheelBuilder<'a> {
         &self,
         sdist_ai: &ArtifactInfo,
     ) -> Result<(Vec<u8>, WheelCoreMetadata)> {
-        match self.pep517(&sdist_ai, Pep517Goal::WheelMetadata, None)? {
+        let new_build_stack = self.new_build_stack(sdist_ai.name.distribution())?;
+
+        match self.pep517(
+            &sdist_ai,
+            Pep517Goal::WheelMetadata,
+            None,
+            &new_build_stack,
+        )? {
             Pep517Succeeded::WheelMetadata {
                 handle: _handle,
                 dist_info,
@@ -174,6 +198,7 @@ impl<'a> WheelBuilder<'a> {
         &self,
         reqs: &[UserRequirement],
         like: Option<&Blueprint>,
+        new_build_stack: &[&PackageName],
     ) -> Result<(Blueprint, Env)> {
         // if we've already resolved a version of this environment, then we can skip
         // over the tricky stuff and just re-use the pybi + any matching wheels
@@ -193,12 +218,13 @@ impl<'a> WheelBuilder<'a> {
                 &self.db,
                 &self.build_platforms,
                 like,
-                &self.build_stack,
+                new_build_stack,
             )?;
             let env = self.db.build_forest.get_env(
                 &self.db,
                 &blueprint,
                 &self.build_platforms,
+                new_build_stack,
             )?;
             return Ok((blueprint, env));
         }
@@ -263,7 +289,7 @@ impl<'a> WheelBuilder<'a> {
                 allow_pre,
             };
             let result =
-                brief.resolve(&self.db, &self.build_platforms, None, &self.build_stack);
+                brief.resolve(&self.db, &self.build_platforms, None, new_build_stack);
             match result {
                 Ok(blueprint) => {
                     found_python = Some((brief.python, blueprint));
@@ -294,12 +320,13 @@ impl<'a> WheelBuilder<'a> {
             &self.db,
             &self.build_platforms,
             Some(&pybi_like),
-            &self.build_stack,
+            new_build_stack,
         )?;
         let env = self.db.build_forest.get_env(
             &self.db,
             &blueprint,
             &self.build_platforms,
+            new_build_stack,
         )?;
         Ok((blueprint, env))
     }
@@ -309,6 +336,7 @@ impl<'a> WheelBuilder<'a> {
         sdist_ai: &ArtifactInfo,
         goal: Pep517Goal,
         wheel_cache_handle: Option<KVDirLock>,
+        new_build_stack: &[&PackageName],
     ) -> Result<Pep517Succeeded> {
         let sdist_hash = sdist_ai.require_hash()?;
         let handle = self.db.build_store.lock(&sdist_hash)?;
@@ -374,11 +402,16 @@ impl<'a> WheelBuilder<'a> {
                 });
             }
             // Otherwise, we're not done. Turn the crank again.
-            self.pep517_step(&handle, goal)?;
+            self.pep517_step(&handle, goal, new_build_stack)?;
         }
     }
 
-    fn pep517_step(&self, handle: &KVDirLock, goal: Pep517Goal) -> Result<()> {
+    fn pep517_step(
+        &self,
+        handle: &KVDirLock,
+        goal: Pep517Goal,
+        new_build_stack: &[&PackageName],
+    ) -> Result<()> {
         let mut sdist_entries = fs::read_dir(&handle.join("sdist"))?
             .collect::<Result<Vec<_>, io::Error>>()?;
         if sdist_entries.len() != 1 {
@@ -418,8 +451,11 @@ impl<'a> WheelBuilder<'a> {
             .map(|s| s.parse())
             .collect::<Result<Vec<_>>>()?;
 
-        let (blueprint, env) =
-            self.get_env_for_build(&build_requires, saved_blueprint.as_ref())?;
+        let (blueprint, env) = self.get_env_for_build(
+            &build_requires,
+            saved_blueprint.as_ref(),
+            new_build_stack,
+        )?;
 
         let binary_wheel_tag = env
             .wheel_platform

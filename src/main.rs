@@ -59,7 +59,7 @@ fn main() -> Result<()> {
     };
     let blueprint = brief.resolve(&db, &platforms, None, &[])?;
 
-    let env = env_forest.get_env(&db, &blueprint, &platforms)?;
+    let env = env_forest.get_env(&db, &blueprint, &platforms, &[])?;
 
     let mut cmd = std::process::Command::new("python");
     cmd.envs(env.env_vars()?);

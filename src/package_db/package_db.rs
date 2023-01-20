@@ -122,6 +122,7 @@ impl<'db> PackageDB<'db> {
     pub fn get_metadata<'a, T, B>(
         &self,
         artifacts: &'a [B],
+        builder: Option<&T::Builder<'_>>,
     ) -> Result<(&'a ArtifactInfo, T::Metadata)>
     where
         B: std::borrow::Borrow<ArtifactInfo>,
@@ -130,8 +131,8 @@ impl<'db> PackageDB<'db> {
         let matching = || {
             artifacts
                 .iter()
-                .filter(|ai| ai.borrow().name.inner_as::<T::Name>().is_some())
                 .map(|ai| ai.borrow())
+                .filter(|ai| ai.is::<T>())
         };
 
         // have we cached any of these artifacts' metadata before?
@@ -156,8 +157,6 @@ impl<'db> PackageDB<'db> {
                 },
             }
         }
-
-        // XX TODO: sdist support: check for already-built wheels
 
         // okay, we don't have it locally; gotta actually hit the network.
 
@@ -189,7 +188,18 @@ impl<'db> PackageDB<'db> {
             return Ok((ai, metadata));
         }
 
-        // XX TODO: sdist support: fetch an sdist and build a wheel
+        // Finally, if all else fails, see if we can fetch an sdist and built it
+        if let Some(builder) = builder {
+            // don't use matching() here because that filters for binary artifacts
+            for ai in artifacts.iter().map(|b| b.borrow()) {
+                if let Some(result) = T::locally_built_metadata(&builder, &ai) {
+                    let (blob, metadata) = result?;
+                    self.put_metadata_in_cache(ai, &blob)?;
+                    return Ok((ai, metadata));
+                }
+            }
+        }
+
         bail!(
             "couldn't find any {} metadata for {:#?}",
             std::any::type_name::<T>(),
@@ -212,5 +222,14 @@ impl<'db> PackageDB<'db> {
         T: Artifact,
     {
         self._get_artifact(ai, CacheMode::Default)
+    }
+
+    pub fn get_locally_built_binary<T: BinaryArtifact>(
+        &self,
+        ai: &ArtifactInfo,
+        builder: &T::Builder<'_>,
+        platform: &T::Platform,
+    ) -> Option<Result<T>> {
+        T::locally_built_binary(&builder, &ai, &platform)
     }
 }

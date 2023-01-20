@@ -118,7 +118,7 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for PosyUILayer {
         }
     }
 
-    fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
+    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         // let leaf = ctx.event_span(&event);
         // for span_render in collect_context(leaf) {
         //     eprintln!("span: {}", span_render);

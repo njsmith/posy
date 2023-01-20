@@ -1,3 +1,4 @@
+use crate::package_db::WheelBuilder;
 use crate::prelude::*;
 use elsa::FrozenMap;
 use pubgrub::range::Range;
@@ -285,8 +286,15 @@ impl Brief {
             .map(VersionHints::from)
             .unwrap_or_else(VersionHints::new);
         let (pybi_ai, platform) = resolve_pybi(&db, &self, &platforms, &version_hints)?;
+        let wheel_builder = WheelBuilder::new(
+            db,
+            &pybi_ai.name.distribution(),
+            &pybi_ai.name.version(),
+            PybiPlatform::native_platforms()?,
+            build_stack,
+        )?;
         let (_, pybi_metadata) = db
-            .get_metadata::<Pybi, _>(&[pybi_ai])
+            .get_metadata::<Pybi, _>(&[pybi_ai], None)
             .wrap_err_with(|| format!("fetching metadata for {}", pybi_ai.url))?;
         let pybi_name = pybi_ai.name.inner_as::<PybiName>().unwrap();
 
@@ -305,8 +313,13 @@ impl Brief {
             };
         }
 
-        let (wheels, marker_exprs) =
-            resolve_wheels(db, &self, &env_marker_vars, &version_hints)?;
+        let (wheels, marker_exprs) = resolve_wheels(
+            db,
+            &self,
+            &env_marker_vars,
+            &version_hints,
+            &wheel_builder,
+        )?;
 
         Ok(Blueprint {
             pybi: pinned(
@@ -326,6 +339,7 @@ struct PubgrubState<'a> {
     env: &'a HashMap<String, String>,
     brief: &'a Brief,
     version_hints: &'a VersionHints<'a>,
+    wheel_builder: &'a WheelBuilder<'a>,
 
     marker_exprs: RefCell<HashMap<StandaloneMarkerExpr, bool>>,
     python_full_version: Version,
@@ -435,7 +449,9 @@ impl<'a> PubgrubState<'a> {
     ) -> Result<&WheelResolveMetadataInner> {
         Ok(&get_or_fill(&self.expected_metadata, release, || {
             let ais = self.db.artifacts_for_version(&release.0, &release.1)?;
-            let (ai, wheel_metadata) = self.db.get_metadata::<Wheel, _>(ais)?;
+            let (ai, wheel_metadata) = self
+                .db
+                .get_metadata::<Wheel, _>(ais, Some(&self.wheel_builder))?;
             Ok(Box::new(WheelResolveMetadata::from(&ai, &wheel_metadata)))
         })?
         .inner)
@@ -459,6 +475,7 @@ fn resolve_wheels(
     brief: &Brief,
     env: &HashMap<String, String>,
     version_hints: &VersionHints,
+    wheel_builder: &WheelBuilder,
 ) -> Result<(
     Vec<(PinnedPackage, WheelResolveMetadata)>,
     HashMap<StandaloneMarkerExpr, bool>,
@@ -468,6 +485,7 @@ fn resolve_wheels(
         env,
         brief,
         version_hints,
+        wheel_builder,
         marker_exprs: Default::default(),
         python_full_version: env
             .get("python_full_version")

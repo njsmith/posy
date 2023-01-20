@@ -1,5 +1,5 @@
 use super::rfc822ish::RFC822ish;
-use crate::package_db::{ArtifactInfo, PackageDB};
+use crate::package_db::ArtifactInfo;
 use crate::prelude::*;
 use crate::trampolines::{ScriptType, TrampolineMaker};
 use crate::tree::{unpack_tar_gz_carefully, unpack_zip_carefully, WriteTree};
@@ -131,16 +131,14 @@ pub trait BinaryArtifact: Artifact {
     // ArtifactInfo, and the Wheel version recognizes Sdists and builds them, and for
     // every other case they return Ok(None).
     //
-    // (Also, if we ever get an sdist format for pybis, then we'll be set!)
+    // (Also, if we ever get an sdist format for pybis, then we're prepared!)
 
     fn locally_built_metadata<'a>(
-        db: &PackageDB,
         ctx: &Self::Builder<'a>,
         ai: &ArtifactInfo,
     ) -> Option<Result<(Vec<u8>, Self::Metadata)>>;
 
     fn locally_built_binary<'a>(
-        db: &PackageDB,
         ctx: &Self::Builder<'a>,
         ai: &ArtifactInfo,
         platform: &Self::Platform,
@@ -179,59 +177,95 @@ struct WheelVitals {
 }
 
 impl Wheel {
-    fn get_vitals(&self) -> Result<WheelVitals> {
-        static DIST_INFO_NAME_RE: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^([^/]*)-([^-/]*)\.dist-info/").unwrap());
-        static DATA_NAME_RE: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^([^/]*)-([^-/]*)\.data/").unwrap());
+    /// Little helper for picking out the .dist-info or .data directory from an
+    /// iterator.
+    pub fn find_special_wheel_dir<'a, I, S>(
+        names: I,
+        name: &PackageName,
+        version: &Version,
+        suffix: &str,
+    ) -> Result<S>
+    where
+        I: IntoIterator<Item = S>,
+        S: 'a + AsRef<str>,
+    {
+        static SPECIAL_WHEEL_DIR_RE: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"^([^/\]*)-([^-/\]*)\..*").unwrap());
 
+        assert!(suffix.starts_with("."));
+
+        let mut candidates = names
+            .into_iter()
+            .filter(|n| n.as_ref().ends_with(suffix))
+            .collect::<Vec<_>>();
+
+        let candidate = match candidates.pop() {
+            Some(c) => c,
+            None => bail!("no {suffix}/ directory found in wheel"),
+        };
+        if !candidates.is_empty() {
+            bail!("found multiple {suffix}/ directories in wheel");
+        }
+        let candidate_str = candidate.as_ref();
+        context!("parsing wheel directory {candidate_str}");
+        match SPECIAL_WHEEL_DIR_RE.captures(&candidate_str) {
+            None => bail!("invalid {suffix} name: couldn't find name/version"),
+            Some(captures) => {
+                let got_name: PackageName =
+                    captures.get(1).unwrap().as_str().try_into()?;
+                if name != &got_name {
+                    bail!(
+                        "wrong name in {candidate_str}: expected {}",
+                        name.as_given()
+                    );
+                }
+                let got_version: Version =
+                    captures.get(2).unwrap().as_str().try_into()?;
+                if version != &got_version {
+                    bail!("wrong version in {candidate_str}: expected {version}");
+                }
+                Ok(candidate)
+            }
+        }
+    }
+
+    fn get_vitals(&self) -> Result<WheelVitals> {
         let mut z = self.z.borrow_mut();
 
         let dist_info;
+        let data;
         {
-            let mut dist_infos = z
+            let top_levels = z
                 .file_names()
-                .filter_map(|n| DIST_INFO_NAME_RE.find(n).map(|m| m.as_str()))
+                .map(|n| {
+                    if let Some((base, _rest)) = n.split_once(['/', '\\']) {
+                        base
+                    } else {
+                        n
+                    }
+                })
                 .collect::<HashSet<_>>()
                 .into_iter()
                 .collect::<Vec<_>>();
 
-            dist_info = match dist_infos.pop() {
-                Some(d) => d.to_owned(),
-                None => bail!("no .dist-info/ directory found in wheel"),
-            };
-            if !dist_infos.is_empty() {
-                bail!("found multiple .dist-info/ directories in wheel");
-            }
-        }
-        let captures = DIST_INFO_NAME_RE
-            .captures(dist_info.as_str())
-            .ok_or(eyre!("malformed .dist-info name {dist_info}"))?;
-        let dist_str = captures.get(1).unwrap().as_str();
-        let version_str = captures.get(2).unwrap().as_str();
-        let data = format!("{dist_str}-{version_str}.data/");
-        let dist: PackageName = dist_str.try_into()?;
-        let version: Version = version_str.try_into()?;
-        if (&dist, &version) != (&self.name.distribution, &self.name.version) {
-            bail!("wrong name/version in directory name {dist_info}");
+            dist_info = Wheel::find_special_wheel_dir(
+                &top_levels,
+                &self.name.distribution,
+                &self.name.version,
+                ".dist-info",
+            )?
+            .to_string();
+
+            data = Wheel::find_special_wheel_dir(
+                &top_levels,
+                &self.name.distribution,
+                &self.name.version,
+                ".data",
+            )?
+            .to_string();
         }
 
-        let datas = z
-            .file_names()
-            .filter_map(|n| DATA_NAME_RE.find(n).map(|m| m.as_str()))
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        if datas.len() > 1 {
-            bail!("found multiple .data/ directories in wheel");
-        }
-        if let Some(&found_data) = datas.first() {
-            if found_data != data.as_str() {
-                bail!("malformed .data name: expected {data}, found {found_data}");
-            }
-        }
-
-        let wheel_path = format!("{dist_info}WHEEL");
+        let wheel_path = format!("{dist_info}/WHEEL");
         let wheel_metadata = slurp_from_zip(&mut z, &wheel_path)?;
 
         let mut parsed =
@@ -246,21 +280,21 @@ impl Wheel {
             ),
         };
 
-        let metadata_path = format!("{dist_info}METADATA");
+        let metadata_path = format!("{dist_info}/METADATA");
         let metadata_blob = slurp_from_zip(&mut z, &metadata_path)?;
 
         let metadata: WheelCoreMetadata = metadata_blob.as_slice().try_into()?;
 
         if metadata.name != self.name.distribution {
             bail!(
-                "name mismatch between {dist_info}METADATA and filename ({} != {}",
+                "name mismatch between {dist_info}/METADATA and filename ({} != {}",
                 metadata.name.as_given(),
                 self.name.distribution.as_given()
             );
         }
         if metadata.version != self.name.version {
             bail!(
-                "version mismatch between {dist_info}METADATA and filename ({} != {})",
+                "version mismatch between {dist_info}/METADATA and filename ({} != {})",
                 metadata.version,
                 self.name.version
             );
@@ -298,11 +332,10 @@ impl BinaryArtifact for Wheel {
     type Builder<'a> = crate::package_db::WheelBuilder<'a>;
 
     fn locally_built_metadata<'a>(
-        db: &PackageDB,
         builder: &Self::Builder<'a>,
         ai: &ArtifactInfo,
     ) -> Option<Result<(Vec<u8>, Self::Metadata)>> {
-        if ai.name.inner_as::<SdistName>().is_some() {
+        if ai.is::<Sdist>() {
             Some(builder.locally_built_metadata(&ai))
         } else {
             None
@@ -310,12 +343,11 @@ impl BinaryArtifact for Wheel {
     }
 
     fn locally_built_binary<'a>(
-        db: &PackageDB,
         builder: &Self::Builder<'a>,
         ai: &ArtifactInfo,
         platform: &Self::Platform,
     ) -> Option<Result<Self>> {
-        if ai.name.inner_as::<SdistName>().is_some() {
+        if ai.is::<Sdist>() {
             Some(builder.locally_built_wheel(&ai, &platform))
         } else {
             None
@@ -357,7 +389,6 @@ impl BinaryArtifact for Pybi {
     }
 
     fn locally_built_metadata<'a>(
-        _db: &PackageDB,
         _ctx: &Self::Builder<'a>,
         _ai: &ArtifactInfo,
     ) -> Option<Result<(Vec<u8>, Self::Metadata)>> {
@@ -365,10 +396,9 @@ impl BinaryArtifact for Pybi {
     }
 
     fn locally_built_binary<'a>(
-        db: &PackageDB,
-        ctx: &Self::Builder<'a>,
-        ai: &ArtifactInfo,
-        platform: &Self::Platform,
+        _ctx: &Self::Builder<'a>,
+        _ai: &ArtifactInfo,
+        _platform: &Self::Platform,
     ) -> Option<Result<Self>> {
         None
     }

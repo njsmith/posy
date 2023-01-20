@@ -108,6 +108,10 @@ pub struct ArtifactInfo {
 }
 
 impl ArtifactInfo {
+    pub fn is<T: Artifact>(&self) -> bool {
+        self.name.inner_as::<T::Name>().is_some()
+    }
+
     pub fn require_hash(&self) -> Result<&ArtifactHash> {
         self.hash
             .as_ref()

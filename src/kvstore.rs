@@ -374,10 +374,6 @@ impl KVDirLock {
     pub fn tempdir(&self) -> Result<tempfile::TempDir> {
         Ok(tempfile::tempdir_in(&self.tmp)?)
     }
-
-    pub fn tempfile(&self) -> Result<tempfile::NamedTempFile> {
-        Ok(tempfile::NamedTempFile::new_in(&self.tmp)?)
-    }
 }
 
 impl Deref for KVDirLock {
