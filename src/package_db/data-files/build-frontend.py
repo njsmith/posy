@@ -7,6 +7,27 @@ from importlib import import_module
 from sys import exit
 from json import loads, dumps
 
+################################################################
+# Begin janky attempt to workaround
+#   https://github.com/pypa/setuptools/issues/3786
+################################################################
+import sysconfig
+import distutils.sysconfig
+
+
+def get_python_inc(plat_specific=0, prefix=None):
+    if plat_specific:
+        return sysconfig.get_path("platinclude")
+    else:
+        return sysconfig.get_path("include")
+
+
+distutils.sysconfig.get_python_inc = get_python_inc
+################################################################
+# End janky workaround
+################################################################
+
+
 (work_dir, goal, binary_wheel_tag) = sys.argv[1:]
 
 work_dir = Path(work_dir)
