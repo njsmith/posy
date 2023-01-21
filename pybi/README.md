@@ -132,6 +132,9 @@ In more detail:
   (So e.g., it should have `python_version`, but not `platform_version`, which
   on my system looks like `#60-Ubuntu SMP Thu May 6 07:46:32 UTC 2021`).
     
+  Note: universal2 wheels can be run in either arm64 or x86-64 mode, which means
+  that their `platform_machine` key is not static, and must be omitted.
+
   Rationale: In many cases, this should allow a resolver running on
   Linux to compute package pins for a Python environment on Windows,
   or vice-versa, so long as the resolver has access to the target
@@ -143,34 +146,11 @@ In more detail:
   want to know what version of the Python language that supports,
   then that's recorded in the `python_version` marker.
 
-  TODO: what to do about macOS universal2 pybis, where `platform_machine`
-  depends on which half of the fat binary you're using? Some options:
-
-  - Don't have fat pybis; just have a separate pybi for x86-64 and arm64.
-    Works okay for automated tooling I guess? What can you do what a fat
-    binary that you can't with individual binaries - maybe a sufficiently
-    clever packager could create an entire universal2 environment, that's
-    portable to both x86-64 and arm64 systems? Not sure how viable it would be
-    to get all the individual wheels to cooperate...
-
-  - Tell projects that are building tools to do pinning to special-case
-    universal2 pybis and fill in the `platform_machine` themselves.
-
   TODO: I think in posy I'm just going to refuse to support `platform_release`
   and `platform_version`. And maybe we should have the conversation about
   whether they should be deprecated officially, in general? They're the only
   two markers that can't be reasonably treated as static, and I can't figure
   out any way that anyone could actually use them for anything useful anyway.
-
-  (I guess deprecating `platform_machine` would also be a possibility to
-  consider? It's slightly problematic for `universal2` wheels, and it's not
-  clear how useful it is – does anyone actually make their requirements
-  conditional on the target architecture?) (edit: since writing the previous
-  paragraph I spent a bunch of time fixing requirements at work to use
-  `platform_machine`, because it turns out `psycopg2-binary` is broken on
-  linux/arm64, but not linux/x86-64. So... never mind, `platform_machine` is
-  useful :-). But an installer that can pick which pybi and wheels to install
-  can also figure out `platform_machine`.)
 
 * `Pybi-Paths`: The install paths needed to install wheels (same keys as
   `sysconfig.get_paths()`), as relative paths starting at the root of the zip
@@ -180,10 +160,11 @@ In more detail:
   separator, not backslashes. 
 
   It must be possible to invoke the Python interpreter by running
-  `{paths["scripts"]}/python`. If there are alternative interpreter
-  entry points (e.g. `pythonw` for Windows GUI apps), then they
-  should also be in that directory under their conventional names,
-  with no version number attached.
+  `{paths["scripts"]}/python`. If there are alternative interpreter entry points
+  (e.g. `pythonw` for Windows GUI apps), then they should also be in that
+  directory under their conventional names, with no version number attached.
+  (You can *also* have a `python3.11` symlink if you want; there's no rule
+  against that. It's just that `python` has to exist and work.)
 
   Rationale: `Pybi-Paths` and `Pybi-Wheel-Tag`s (see below) are together enough to
   let an installer choose wheels and install them into an unpacked pybi
@@ -214,15 +195,14 @@ In more detail:
   - A pybi tagged `macosx_11_0_universal2` (= x86-64 + arm64 support
     in the same binary) might be able to use wheels tagged as
     `macosx_11_0_arm64`, but only if it's installed on an "Apple
-    Silicon" machine.
+    Silicon" machine and running in arm64 mode.
 
-  In these two cases, an installation tool can still work out the
-  appropriate set of wheel tags by computing the local platform
-  tags, taking the wheel tag templates from `pybi.json`, and
-  swapping in the actual supported platforms in place of the magic
-  `PLATFORM` string. Since pybi installers already need to compute
-  platform tags to pick a pybi in the first place, this is pretty
-  simple.
+  In these two cases, an installation tool can still work out the appropriate
+  set of wheel tags by computing the local platform tags, taking the wheel tag
+  templates from `Pybi-Wheel-Tag`, and swapping in the actual supported
+  platforms in place of the magic `PLATFORM` string. Since pybi installers
+  already need to compute platform tags to pick a pybi in the first place, this
+  shouldn't be a huge burden.
 
   However, there are other cases that are even more complicated:
 
@@ -263,7 +243,7 @@ In more detail:
   platform compatibility issues in order to select a working pybi, and for the
   cross-platform pinning/environment building case, users can potentially
   provide whatever information is needed to disambiguate exactly what platform
-  they're targeting. So, it's pretty useful.
+  they're targeting. So, it's still useful enough to include.
 
 You can probably generate these values by running this script on the built
 interpreter:
@@ -452,15 +432,15 @@ But, here's what I'm doing for my prototype "general purpose" pybi's:
 
 - Make sure `site-packages` is *empty*.
 
-  Rationale: for traditional standalone python installers that are
-  targeted at end-users, you probably want to include at least `pip`,
-  to [avoid bootstrapping
-  issues](https://www.python.org/dev/peps/pep-0453/). But pybis are
-  different: they're designed to be installed by "smart" tooling, that
-  consume the pybi as part of some kind of larger automated deployment
-  process. It's easier for these installers to start from a blank
-  slate and then add whatever they need, than for them to start with
-  some preinstalled packages that they may or may not want.
+  Rationale: for traditional standalone python installers that are targeted at
+  end-users, you probably want to include at least `pip`, to [avoid
+  bootstrapping issues](https://www.python.org/dev/peps/pep-0453/). But pybis
+  are different: they're designed to be installed by "smart" tooling, that
+  consume the pybi as part of some kind of larger automated deployment process.
+  It's easier for these installers to start from a blank slate and then add
+  whatever they need, than for them to start with some preinstalled packages
+  that they may or may not want. (And besides, you can still run `python -m
+  ensurepip`.)
 
 - Include the full stdlib, *except* for `test`.
 
