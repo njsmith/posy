@@ -161,7 +161,10 @@ impl EnvForest {
                         let wheel_hash = wheel_ai.require_hash()?;
                         let wheel_root =
                             self.store.get_or_set(&wheel_hash, |path| {
-                                let wheel = db.get_artifact::<Wheel>(&wheel_ai)?;
+                                let wheel = {
+                                    context!("Fetching {}", wheel_ai.url);
+                                    db.get_artifact::<Wheel>(&wheel_ai)?
+                                };
                                 wheel.unpack(
                                     &paths,
                                     &trampoline_maker,
@@ -241,7 +244,8 @@ impl EnvForest {
             // OK, we have an installed wheel. Find its metadata so we can confirm it's
             // consistent with what the blueprint was expecting.
             let mut top_levels = Vec::new();
-            for entry in fs::read_dir(&wheel_root.join("lib"))? {
+            let lib = wheel_root.join("lib");
+            for entry in fs::read_dir(&lib)? {
                 let entry = entry?;
                 if let Ok(name) = entry.file_name().into_string() {
                     top_levels.push(name);
@@ -255,7 +259,7 @@ impl EnvForest {
             )?
             .ok_or(eyre!(".dist-info/ missing"))?;
             let found_metadata: WheelCoreMetadata =
-                fs::read(Path::new(&dist_info).join("METADATA"))?
+                fs::read(lib.join(&dist_info).join("METADATA"))?
                     .as_slice()
                     .try_into()?;
             let found_metadata = WheelResolveMetadata::from(&ai, &found_metadata);
