@@ -50,7 +50,8 @@ fn main() -> Result<()> {
     let platforms = PybiPlatform::native_platforms()?;
 
     let brief = Brief {
-        python: "cpython_unofficial >= 3".try_into().unwrap(),
+        // peewee is broken on 3.11
+        python: "cpython_unofficial >= 3, < 3.11".try_into().unwrap(),
         requirements: vec![
             "trio".try_into().unwrap(),
             "numpy".try_into().unwrap(),
