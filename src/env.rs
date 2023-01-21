@@ -252,7 +252,8 @@ impl EnvForest {
                 &pin.name,
                 &pin.version,
                 ".dist-info",
-            )?;
+            )?
+            .ok_or(eyre!(".dist-info/ missing"))?;
             let found_metadata: WheelCoreMetadata =
                 fs::read(Path::new(&dist_info).join("METADATA"))?
                     .as_slice()

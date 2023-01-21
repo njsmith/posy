@@ -184,7 +184,7 @@ impl Wheel {
         name: &PackageName,
         version: &Version,
         suffix: &str,
-    ) -> Result<S>
+    ) -> Result<Option<S>>
     where
         I: IntoIterator<Item = S>,
         S: 'a + AsRef<str>,
@@ -201,7 +201,7 @@ impl Wheel {
 
         let candidate = match candidates.pop() {
             Some(c) => c,
-            None => bail!("no {suffix}/ directory found in wheel"),
+            None => return Ok(None),
         };
         if !candidates.is_empty() {
             bail!("found multiple {suffix}/ directories in wheel");
@@ -224,7 +224,7 @@ impl Wheel {
                 if version != &got_version {
                     bail!("wrong version in {candidate_str}: expected {version}");
                 }
-                Ok(candidate)
+                Ok(Some(candidate))
             }
         }
     }
@@ -254,15 +254,23 @@ impl Wheel {
                 &self.name.version,
                 ".dist-info",
             )?
+            .ok_or(eyre!(".dist-info/ missing"))?
             .to_string();
 
-            data = Wheel::find_special_wheel_dir(
+            if let Some(d) = Wheel::find_special_wheel_dir(
                 &top_levels,
                 &self.name.distribution,
                 &self.name.version,
                 ".data",
-            )?
-            .to_string();
+            )? {
+                data = d.to_string();
+            } else {
+                // synthesize a fake .data directory, to reduce special cases later.
+                // (This way we just don't have any files in the directory; and
+                // synthetic files like command entrypoints have somewhere to be.)
+                data =
+                    format!("{}.data", dist_info.strip_suffix(".dist-info").unwrap());
+            }
         }
 
         let wheel_path = format!("{dist_info}/WHEEL");

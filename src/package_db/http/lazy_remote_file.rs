@@ -84,7 +84,6 @@ fn fetch_range(
         .uri(url.as_str())
         .header("Range", range_header)
         .body(())?;
-    println!("{:?}", request);
     let response = http.request(request, CacheMode::NoStore)?;
 
     fn str_capture<'a>(c: &'a regex::bytes::Captures, g: usize) -> Result<&'a str> {
