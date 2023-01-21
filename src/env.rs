@@ -35,13 +35,6 @@ pub struct EnvForest {
     store: KVDirStore,
 }
 
-#[derive(thiserror::Error, Debug)]
-#[error("no compatible binaries found for {name} {version}")]
-pub struct NoCompatibleBinaries {
-    name: String,
-    version: Version,
-}
-
 fn pick_pinned_binary<'a, 'b, T: BinaryArtifact>(
     db: &'a PackageDB,
     platforms: &[&'b T::Platform],
@@ -76,7 +69,7 @@ where
             }
         }
     }
-    Err(NoCompatibleBinaries {
+    Err(PosyError::NoCompatibleBinaries {
         name: pin.name.as_given().to_owned(),
         version: pin.version.to_owned(),
     })?
@@ -179,69 +172,68 @@ impl EnvForest {
                         (wheel_ai, wheel_root)
                     }
                     Err(err) => {
-                        if err.downcast_ref::<NoCompatibleBinaries>().is_none() {
-                            Err(err)?
-                        } else {
-                            // couldn't find a compatible wheel; see if we have an sdist
-                            if let Some(sdist_ai) = db
-                                .artifacts_for_version(&pin.name, &pin.version)?
-                                .iter()
-                                .find(|ai| ai.is::<Sdist>())
-                            {
-                                context!("using sdist from {}", sdist_ai.url);
-                                let sdist_hash = sdist_ai.require_hash()?;
-                                let handle = self.store.lock(&sdist_hash)?;
-                                fs::create_dir_all(&handle)?;
-                                // first check if we already have any unpacked wheels
-                                // that we can use
-                                let mut candidates = Vec::new();
-                                for entry in fs::read_dir(&handle)? {
-                                    let entry = entry?;
-                                    let name = match entry.file_name().into_string() {
-                                        Ok(name) => name,
-                                        Err(_) => continue,
-                                    };
-                                    if !name.ends_with(".whl") {
-                                        continue;
-                                    }
-                                    let wheel_name: WheelName =
-                                        name.as_str().try_into()?;
-                                    if let Some(score) = wheel_platform
-                                        .max_compatibility(wheel_name.all_tags())
-                                    {
-                                        candidates.push((score, name));
-                                    }
+                        match err.downcast_ref::<PosyError>() {
+                            Some(PosyError::NoCompatibleBinaries { .. }) => (),
+                            _ => return Err(err),
+                        };
+                        // couldn't find a compatible wheel; see if we have an sdist
+                        if let Some(sdist_ai) = db
+                            .artifacts_for_version(&pin.name, &pin.version)?
+                            .iter()
+                            .find(|ai| ai.is::<Sdist>())
+                        {
+                            context!("using sdist from {}", sdist_ai.url);
+                            let sdist_hash = sdist_ai.require_hash()?;
+                            let handle = self.store.lock(&sdist_hash)?;
+                            fs::create_dir_all(&handle)?;
+                            // first check if we already have any unpacked wheels
+                            // that we can use
+                            let mut candidates = Vec::new();
+                            for entry in fs::read_dir(&handle)? {
+                                let entry = entry?;
+                                let name = match entry.file_name().into_string() {
+                                    Ok(name) => name,
+                                    Err(_) => continue,
+                                };
+                                if !name.ends_with(".whl") {
+                                    continue;
                                 }
-                                if let Some((_, name)) =
-                                    candidates.iter().max_by_key(|(score, _)| score)
+                                let wheel_name: WheelName = name.as_str().try_into()?;
+                                if let Some(score) = wheel_platform
+                                    .max_compatibility(wheel_name.all_tags())
                                 {
-                                    (sdist_ai, handle.join(name))
-                                } else {
-                                    // couldn't find one already installed... try to
-                                    // build one and install it
-                                    // unwrap is ok b/c we know we're passing an sdist
-                                    // ai here
-                                    let local_wheel = db
-                                        .get_locally_built_binary::<Wheel>(
-                                            &sdist_ai,
-                                            &wheel_builder,
-                                            &wheel_platform,
-                                        )
-                                        .unwrap()?;
-                                    let tmp = handle.tempdir()?;
-                                    local_wheel.unpack(
-                                        &paths,
-                                        &trampoline_maker,
-                                        WriteTreeFS::new(&tmp),
-                                    )?;
-                                    let wheel_root =
-                                        handle.join(local_wheel.name().to_string());
-                                    fs::rename(tmp.into_path(), &wheel_root)?;
-                                    (sdist_ai, wheel_root)
+                                    candidates.push((score, name));
                                 }
-                            } else {
-                                bail!("no compatible wheel or sdist found");
                             }
+                            if let Some((_, name)) =
+                                candidates.iter().max_by_key(|(score, _)| score)
+                            {
+                                (sdist_ai, handle.join(name))
+                            } else {
+                                // couldn't find one already installed... try to
+                                // build one and install it
+                                // unwrap is ok b/c we know we're passing an sdist
+                                // ai here
+                                let local_wheel = db
+                                    .get_locally_built_binary::<Wheel>(
+                                        &sdist_ai,
+                                        &wheel_builder,
+                                        &wheel_platform,
+                                    )
+                                    .unwrap()?;
+                                let tmp = handle.tempdir()?;
+                                local_wheel.unpack(
+                                    &paths,
+                                    &trampoline_maker,
+                                    WriteTreeFS::new(&tmp),
+                                )?;
+                                let wheel_root =
+                                    handle.join(local_wheel.name().to_string());
+                                fs::rename(tmp.into_path(), &wheel_root)?;
+                                (sdist_ai, wheel_root)
+                            }
+                        } else {
+                            bail!("no compatible wheel or sdist found");
                         }
                     }
                 };

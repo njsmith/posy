@@ -17,12 +17,6 @@ pub struct LazyRemoteFile {
     seek_pos: u64,
 }
 
-fn slurp(mut data: Box<dyn Read>) -> Result<Vec<u8>> {
-    let mut buf = Vec::new();
-    data.read_to_end(&mut buf)?;
-    Ok(buf)
-}
-
 impl Seek for LazyRemoteFile {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let LazyRemoteFile {
@@ -71,9 +65,11 @@ enum RangeResponse {
 
 fn fetch_range(
     http: &HttpInner,
+    method: &str,
     url: &Url,
     range_header: &str,
 ) -> Result<RangeResponse> {
+    context!("Attempting range read on {url}");
     // The full syntax has a bunch of possibilities that this doesn't account for:
     //   https://datatracker.ietf.org/doc/html/rfc7233#section-4.2
     // but this is the only format that's actually *useful* to us.
@@ -84,9 +80,11 @@ fn fetch_range(
         Lazy::new(|| regex::bytes::Regex::new(r"^bytes [^/]*/([0-9]+)$").unwrap());
 
     let request = http::Request::builder()
+        .method(method)
         .uri(url.as_str())
         .header("Range", range_header)
         .body(())?;
+    println!("{:?}", request);
     let response = http.request(request, CacheMode::NoStore)?;
 
     fn str_capture<'a>(c: &'a regex::bytes::Captures, g: usize) -> Result<&'a str> {
@@ -141,14 +139,17 @@ impl LazyRemoteFile {
     fn load_range(&mut self, offset: u64, length: u64) -> Result<()> {
         match fetch_range(
             &self.http,
+            "GET",
             &self.url,
             &format!("bytes={}-{}", offset, offset.saturating_add(length) - 1),
         )? {
             RangeResponse::NotSatisfiable { .. } => {
                 bail!("Server didn't like my range request and I don't know why");
             }
-            RangeResponse::Partial { offset, data, .. } => {
-                self.loaded.insert(offset, slurp(data)?);
+            RangeResponse::Partial {
+                offset, mut data, ..
+            } => {
+                self.loaded.insert(offset, slurp(&mut data)?);
                 Ok(())
             }
             RangeResponse::Complete(_) => {
@@ -240,36 +241,29 @@ impl Read for LazyRemoteFile {
 
 impl LazyRemoteFile {
     pub fn new(http: Rc<HttpInner>, url: &Url) -> Result<LazyRemoteFile> {
-        let mut remote = LazyRemoteFile {
+        context!("Fetching metadata for {url}");
+        // Instead of doing a HEAD request to get the length, it would be more efficient
+        // to fetch the end of the file and the length in a single Range: request
+        // (because we know that the first thing we'll do with a LazyRemoteFile is read
+        // the zip index at the end of the file). This is supposed to be possible with
+        // 'Range: bytes=-1234' syntax, but unfortunately PyPI's Fastly configuration
+        // changed in Dec 2022 to break this functionality:
+        //
+        //    https://github.com/pypi/warehouse/issues/12823
+        //
+        // If this gets fixed we could switch to doing a GET request instead.
+        let length = match fetch_range(&http, "HEAD", &url, &"bytes=0-1")? {
+            RangeResponse::NotSatisfiable { total_len } => total_len,
+            RangeResponse::Partial { total_len, .. } => total_len,
+            RangeResponse::Complete(_) => Err(PosyError::LazyRemoteFileNotSupported)?,
+        };
+        Ok(LazyRemoteFile {
             http,
             url: url.clone(),
             loaded: BTreeMap::new(),
-            length: 0,
+            length,
             seek_pos: 0,
-        };
-        match fetch_range(&remote.http, &url, &format!("bytes=-{}", LAZY_FETCH_SIZE))? {
-            RangeResponse::NotSatisfiable { total_len } => {
-                remote.length = total_len;
-            }
-            RangeResponse::Partial {
-                offset,
-                total_len,
-                data,
-            } => {
-                remote.length = total_len;
-                remote.loaded.insert(offset, slurp(data)?);
-            }
-            RangeResponse::Complete(data) => {
-                // Maybe should handle this better, like by falling back on using the
-                // artifact cache?
-                warn!("Server doesn't support range requests; fetching whole file into memory: {}", url.as_str());
-                let buf = slurp(data)?;
-                // unwrap safe because: converting usize to u64
-                remote.length = buf.len().try_into().unwrap();
-                remote.loaded.insert(0, buf);
-            }
-        }
-        Ok(remote)
+        })
     }
 }
 
@@ -304,31 +298,31 @@ mod test {
         let url = server.url("blobby");
         let (_caches, http) = tmp_http();
 
-        let rr = fetch_range(&http, &url, "bytes=900-999").unwrap();
+        let rr = fetch_range(&http, "GET", &url, "bytes=900-999").unwrap();
         if let RangeResponse::Partial {
             offset,
             total_len,
-            data,
+            mut data,
         } = rr
         {
             assert_eq!(offset, 900);
             assert_eq!(total_len, 3000);
-            let buf = slurp(data).unwrap();
+            let buf = slurp(&mut data).unwrap();
             assert_eq!(buf.as_slice(), [0; 100]);
         } else {
             panic!();
         }
 
-        let rr = fetch_range(&http, &url, "bytes=1010-1020").unwrap();
+        let rr = fetch_range(&http, "GET", &url, "bytes=1010-1020").unwrap();
         if let RangeResponse::Partial {
             offset,
             total_len,
-            data,
+            mut data,
         } = rr
         {
             assert_eq!(offset, 1010);
             assert_eq!(total_len, 3000);
-            let buf = slurp(data).unwrap();
+            let buf = slurp(&mut data).unwrap();
             assert_eq!(buf.as_slice(), [1; 11]);
         } else {
             panic!();
@@ -336,16 +330,16 @@ mod test {
 
         // If the server doesn't understand our Range: header, falls back on sending the
         // whole file
-        let rr = fetch_range(&http, &url, "octets=1010-1020").unwrap();
-        if let RangeResponse::Complete(data) = rr {
-            let buf = slurp(data).unwrap();
+        let rr = fetch_range(&http, "GET", &url, "octets=1010-1020").unwrap();
+        if let RangeResponse::Complete(mut data) = rr {
+            let buf = slurp(&mut data).unwrap();
             assert_eq!(buf.len(), 3000);
         } else {
             panic!();
         }
 
         // Fetching an invalid range at least tells us what the valid range is
-        let rr = fetch_range(&http, &url, "bytes=10000-20000").unwrap();
+        let rr = fetch_range(&http, "GET", &url, "bytes=10000-20000").unwrap();
         if let RangeResponse::NotSatisfiable { total_len } = rr {
             assert_eq!(total_len, 3000);
         } else {
@@ -353,7 +347,7 @@ mod test {
         }
 
         // Error propagation happens
-        let res = fetch_range(&http, &server.url("missing"), "bytes=100-200");
+        let res = fetch_range(&http, "GET", &server.url("missing"), "bytes=100-200");
         assert!(res.is_err());
     }
 

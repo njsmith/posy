@@ -5,7 +5,7 @@ use crate::{
     kvstore::KVDirLock,
     package_db::PackageDB,
     prelude::*,
-    resolve::{AllowPre, Blueprint, Brief, NoPybiFound},
+    resolve::{AllowPre, Blueprint, Brief},
     tree::WriteTreeFS,
 };
 
@@ -295,13 +295,10 @@ impl<'a> WheelBuilder<'a> {
                     found_python = Some((brief.python, blueprint));
                     break;
                 }
-                Err(err) => {
-                    if err.downcast_ref::<NoPybiFound>().is_some() {
-                        continue;
-                    } else {
-                        return Err(err);
-                    }
-                }
+                Err(err) => match err.downcast_ref::<PosyError>() {
+                    Some(PosyError::NoPybiFound) => continue,
+                    _ => return Err(err),
+                },
             }
         }
 

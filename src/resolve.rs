@@ -234,10 +234,6 @@ fn pick_best_pybi<'a, 'b>(
     None
 }
 
-#[derive(thiserror::Error, Debug)]
-#[error("no compatible pybis found for requirement and platform")]
-pub struct NoPybiFound;
-
 fn resolve_pybi<'a, 'b>(
     db: &'a PackageDB,
     brief: &Brief,
@@ -254,7 +250,7 @@ fn resolve_pybi<'a, 'b>(
             }
         }
     }
-    Err(NoPybiFound)?
+    Err(PosyError::NoPybiFound)?
 }
 
 fn pinned(

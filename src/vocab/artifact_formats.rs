@@ -190,7 +190,7 @@ impl Wheel {
         S: 'a + AsRef<str>,
     {
         static SPECIAL_WHEEL_DIR_RE: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"^([^/\]*)-([^-/\]*)\..*").unwrap());
+            Lazy::new(|| Regex::new(r"^(.*)-(.*)\..*").unwrap());
 
         assert!(suffix.starts_with("."));
 

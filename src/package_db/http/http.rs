@@ -5,6 +5,7 @@ use http_cache_semantics::{AfterResponse, BeforeRequest, CachePolicy};
 use std::io::SeekFrom;
 use std::time::SystemTime;
 
+use super::super::ArtifactInfo;
 use super::ureq_glue::{do_request_ureq, new_ureq_agent};
 use super::LazyRemoteFile;
 use crate::kvstore::{KVFileLock, KVFileStore};
@@ -104,8 +105,20 @@ impl Http {
         self.0.get_hashed(url, maybe_hash, cache_mode)
     }
 
-    pub fn get_lazy(&self, url: &Url) -> Result<Box<dyn ReadPlusSeek>> {
-        Ok(Box::new(LazyRemoteFile::new(self.0.clone(), &url)?))
+    pub fn get_lazy(&self, ai: &ArtifactInfo) -> Result<Box<dyn ReadPlusSeek>> {
+        match LazyRemoteFile::new(self.0.clone(), &ai.url) {
+            Ok(lazy) => Ok(Box::new(lazy)),
+            Err(err) => {
+                match err.downcast_ref::<PosyError>() {
+                    // Doesn't support Range: requests, or similar issue. Fall back on
+                    // fetching the whole file via the normal path.
+                    Some(PosyError::LazyRemoteFileNotSupported) => Ok(
+                        self.get_hashed(&ai.url, ai.hash.as_ref(), CacheMode::Default)?
+                    ),
+                    _ => Err(err)?,
+                }
+            }
+        }
     }
 }
 

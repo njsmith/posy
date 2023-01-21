@@ -15,6 +15,7 @@ pub use serde_with::{DeserializeFromStr, SerializeDisplay};
 pub use tracing::{debug, info, trace, warn};
 pub use url::Url;
 
+pub use crate::error::PosyError;
 pub use crate::platform_tags::{Platform, PybiPlatform, WheelPlatform};
 
 pub use crate::tree::NicePathBuf;

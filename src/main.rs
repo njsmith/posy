@@ -6,6 +6,7 @@ mod util;
 mod vocab;
 
 mod env;
+pub mod error;
 mod output;
 mod platform_tags;
 mod seek_slice;
