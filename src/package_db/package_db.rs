@@ -136,7 +136,9 @@ impl<'db> PackageDB<'db> {
         };
 
         // have we cached any of these artifacts' metadata before?
-        for ai in matching() {
+        // don't use matching() here because that filters for binary artifacts, and we
+        // cache metadata for wheels as well.
+        for ai in artifacts.iter().map(|b| b.borrow()) {
             if let Some(cm) = self.metadata_from_cache(ai) {
                 return Ok((ai, T::parse_metadata(cm.as_slice())?));
             }
