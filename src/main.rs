@@ -34,7 +34,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     output::init(&cli.output_args);
 
-    let env_forest = EnvForest::new(Path::new("/tmp/posy-test-forest"))?;
+    let env_forest = EnvForest::new(Path::new("posy-test-forest"))?;
     let build_tmp = tempfile::TempDir::new()?;
     let build_store = KVDirStore::new(build_tmp.path())?;
 
@@ -91,15 +91,22 @@ fn main() -> Result<()> {
     // in our new environment.
     cmd.envs(env.env_vars()?);
 
-    if cfg!(unix) {
+    #[cfg(unix)]
+    {
         use std::os::unix::process::CommandExt;
         Err(cmd.exec())?;
         unreachable!();
-    } else {
+    }
+    #[cfg(windows)]
+    {
         // XX FIXME: factor out the windows trampoline code and reuse it here.
         //
         // unwrap() is safe b/c this branch only runs on windows, and Windows doesn't
         // have special exit statuses; that's a special thing for Unix signals.
         std::process::exit(cmd.status()?.code().unwrap());
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        not_supported
     }
 }

@@ -40,12 +40,13 @@ fn system_type() -> Result<u16> {
     let result = unsafe {
         IsWow64Process2(
             // the magic handle -1 means "the current process"
-            -1 as *const std::ffi::c_void,
+            // and rust insists we spell it usize::MAX
+            usize::MAX as *const std::ffi::c_void,
             &mut _process_type as *mut u16,
             &mut system_type as *mut u16,
         )
     };
-    if result != 0 {
+    if result == 0 {
         Err(std::io::Error::last_os_error())?
     } else {
         Ok(system_type)
@@ -59,23 +60,23 @@ const MACHINES: &[u16] = &[
 ];
 
 fn map(machine: u16) -> Result<&'static str> {
-    match machine {
+    Ok(match machine {
         IMAGE_FILE_MACHINE_I386 => "win32",
         IMAGE_FILE_MACHINE_AMD64 => "win_amd64",
         IMAGE_FILE_MACHINE_ARM64 => "win_arm64",
         _ => bail!("unknown machine constant {:#x}", machine),
-    }
+    })
 }
 
 pub fn core_platform_tags() -> Result<Vec<String>> {
     let mut tags: Vec<String> = vec![];
 
     let native = system_type()?;
-    tags.push(map(native)?);
+    tags.push(map(native)?.into());
 
-    for machine in MACHINES {
+    for &machine in MACHINES {
         if machine != native && is_wow64_guest_machine_supported(machine)? {
-            tags.push(map(machine)?);
+            tags.push(map(machine)?.into());
         }
     }
 
