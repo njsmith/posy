@@ -141,12 +141,17 @@ macro_rules! context {
 
 struct PosyEyreHandler {
     context: Vec<String>,
+    backtrace: backtrace::Backtrace,
 }
 
 impl PosyEyreHandler {
     fn new() -> PosyEyreHandler {
         PosyEyreHandler {
             context: current_context(),
+            // we may want to make this dependent on RUST_BACKTRACE or similar
+            // at some point, but while we're prototyping backtraces are so useful
+            // we'll just capture it unconditionall
+            backtrace: backtrace::Backtrace::new_unresolved(),
         }
     }
 }
@@ -157,7 +162,12 @@ impl eyre::EyreHandler for PosyEyreHandler {
         error: &(dyn std::error::Error + 'static),
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
-        write!(f, "In context: {:?}: {}", self.context, error)
+        write!(f, "In context: {:?}: {}", self.context, error)?;
+        // clone to make it mutable so we can resolve symbols
+        let mut backtrace = self.backtrace.clone();
+        backtrace.resolve();
+        write!(f, "Backtrace:\n{backtrace:?}")?;
+        Ok(())
     }
 }
 
