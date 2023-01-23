@@ -78,7 +78,7 @@ fn arches() -> &'static [&'static str] {
     }
 }
 
-fn version() -> Result<(u32, u32, u32)> {
+fn version() -> Result<(u32, u32)> {
     // let product_version_str = Command::new("/usr/bin/sw_vers")
     //     .arg("-productVersion")
     //     .output()?;
@@ -91,15 +91,15 @@ fn version() -> Result<(u32, u32, u32)> {
         .trim_end_matches('\0')
         .split(".")
         .collect::<Vec<&str>>();
-    assert!(pieces.len() == 3);
     debug!("{:?}", pieces);
-    Ok((pieces[0].parse()?, pieces[1].parse()?, pieces[2].parse()?))
+    assert!(pieces.len() >= 2);
+    Ok((pieces[0].parse()?, pieces[1].parse()?))
 }
 
 pub fn core_platform_tags() -> Result<Vec<String>> {
     let mut tags: Vec<String> = Vec::new();
     let arches = arches();
-    let (major, mut minor, _) = version()?;
+    let (major, mut minor) = version()?;
     if major >= 11 {
         minor = 0;
     }
