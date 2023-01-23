@@ -97,7 +97,6 @@ fn version() -> Result<(u32, u32, u32)> {
 }
 
 pub fn core_platform_tags() -> Result<Vec<String>> {
-    let mut tags: Vec<String> = Vec::new();
     let arches = arches();
     let (major, mut minor, _) = version()?;
     if major >= 11 {
