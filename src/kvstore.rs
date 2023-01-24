@@ -169,6 +169,7 @@ pub struct KVFileStore {
 
 impl KVFileStore {
     pub fn new(base: &Path) -> Result<KVFileStore> {
+        let base = std::env::current_dir()?.join(base);
         let tmp = base.join("tmp");
         fs::create_dir_all(&base)?;
         fs::create_dir_all(&tmp)?;
@@ -332,6 +333,7 @@ pub struct KVDirStore {
 
 impl KVDirStore {
     pub fn new(base: &Path) -> Result<KVDirStore> {
+        let base = std::env::current_dir()?.join(base);
         let tmp = base.join("tmp");
         fs::create_dir_all(&base)?;
         fs::create_dir_all(&tmp)?;
