@@ -277,6 +277,7 @@ impl HttpInner {
                                 ))
                             }
                             AfterResponse::Modified(new_policy, new_parts) => {
+                                drop(old_body);
                                 handle_new(
                                     new_policy,
                                     new_parts,
