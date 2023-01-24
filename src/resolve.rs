@@ -523,7 +523,11 @@ fn resolve_wheels(
                 eyre!("{}", source)
             }
             ErrorChoosingPackageVersion(boxed_err) => {
-                eyre!("{}", boxed_err.to_string())
+                // TODO: this suuuucks... the dyn Error here is really an
+                // eyre::Report. But pubgrub-rs erases the type, and eyre can't
+                // wrap a plain dyn Error (it needs + Send + Sync as well), so
+                // we have no choice except to stringify.
+                eyre!("Error while choosing next package version to examine:\n{boxed_err:?}")
             }
             ErrorInShouldCancel(boxed_err) => eyre!("{}", boxed_err.to_string()),
             Failure(s) => eyre!("{}", s),
