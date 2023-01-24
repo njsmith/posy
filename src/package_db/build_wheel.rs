@@ -114,6 +114,7 @@ impl<'a> WheelBuilder<'a> {
         sdist_ai: &ArtifactInfo,
         wheel_platform: &WheelPlatform,
     ) -> Result<Wheel> {
+        trace!("Building wheel from source for {} {}", sdist_ai.name.distribution().as_given(), sdist_ai.name.version());
         let new_build_stack = self.new_build_stack(sdist_ai.name.distribution())?;
 
         // check if we already have a usable wheel cached; and if so, find the best one
@@ -174,6 +175,7 @@ impl<'a> WheelBuilder<'a> {
         &self,
         sdist_ai: &ArtifactInfo,
     ) -> Result<(Vec<u8>, WheelCoreMetadata)> {
+        trace!("Getting metadata from source for {} {}", sdist_ai.name.distribution().as_given(), sdist_ai.name.version());
         let new_build_stack = self.new_build_stack(sdist_ai.name.distribution())?;
 
         match self.pep517(

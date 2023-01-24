@@ -787,7 +787,13 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
                 Ok((respkg, Some(ROOT_VERSION.clone())))
             }
             ResPkg::Package(name, _) => {
-                for &version in self.versions(&name)?.iter() {
+                trace!("Considering {}", name.as_given());
+                trace!("Available versions:");
+                for &version in self.versions(&name)? {
+                    trace!("    {version}");
+                }
+                for &version in self.versions(&name)? {
+                    trace!("Considering {} {}", name.as_given(), version);
                     if !range.borrow().contains(version) {
                         trace!("Version {} is out of range", version);
                         continue;
