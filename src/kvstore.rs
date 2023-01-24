@@ -391,3 +391,82 @@ impl AsRef<Path> for KVDirLock {
 }
 
 // XX TODO: seriously need some tests that validate the locking etc.
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_kvfilestore_basics() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let store = KVFileStore::new(tmp.path())?;
+
+        let hi = b"hi".as_slice();
+        let bye = b"bye".as_slice();
+
+        assert_eq!(
+            slurp(
+                &mut store
+                    .get_or_set(&hi, |w| {
+                        w.write(b"hello")?;
+                        Ok(())
+                    })
+                    .unwrap()
+            )
+            .unwrap(),
+            b"hello",
+        );
+
+        assert_eq!(
+            slurp(
+                &mut store
+                    .get_or_set(&hi, |w| {
+                        // this never executes because the key already exists
+                        w.write(b"ASDFASDFSADFSADF")?;
+                        Ok(())
+                    })
+                    .unwrap()
+            )
+            .unwrap(),
+            b"hello",
+        );
+
+        assert_eq!(slurp(&mut store.get(&hi).unwrap())?, b"hello");
+        assert!(store.get(&bye).is_none());
+
+        assert!(store.lock_if_exists(&bye).is_none());
+        let hi_handle = store.lock_if_exists(&hi).unwrap();
+        assert_eq!(slurp(&mut hi_handle.reader().unwrap())?, b"hello");
+        assert_eq!(
+            slurp(&mut hi_handle.reader().unwrap().detach_unlocked())?,
+            b"hello"
+        );
+
+        let bye_handle = store.lock(&bye)?;
+        assert!(bye_handle.reader().is_none());
+
+        let mut w = bye_handle.begin()?;
+        w.write(b"Good")?;
+        w.write(b"bye")?;
+        let mut r = w.commit()?;
+        assert_eq!(slurp(&mut r)?, b"Goodbye");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_kvdirstore_basics() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let store = KVDirStore::new(tmp.path())?;
+
+        let hi = b"hi".as_slice();
+
+        let path = store.get_or_set(&hi, |t| {
+            fs::write(t.join("file"), b"hello")?;
+            Ok(())
+        })?;
+
+        assert_eq!(fs::read(path.join("file"))?, b"hello");
+
+        Ok(())
+    }
+}
