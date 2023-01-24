@@ -138,7 +138,9 @@ fn lock(path: &Path, mode: LockMode) -> Result<File> {
     basename.push(".lock");
     lock_path.set_file_name(basename);
     let mut open_options = fs::OpenOptions::new();
-    open_options.append(true);
+    // On Windows, the lock file must be opened in write mode -- append mode isn't good
+    // enough.
+    open_options.write(true);
     match mode {
         LockMode::Lock => {
             let dir = lock_path.parent().unwrap();
