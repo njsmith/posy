@@ -456,6 +456,49 @@ mod test {
     }
 
     #[test]
+    #[cfg(not(windows))]
+    fn test_kvfilestore_overwrite() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let store = KVFileStore::new(tmp.path())?;
+
+        let key = b"my key".as_slice();
+
+        {
+            let handle = store.lock(&key)?;
+            let mut w = handle.begin()?;
+            w.write(b"gen 1")?;
+            w.commit()?;
+        }
+
+        {
+            let handle = store.lock(&key)?;
+            assert_eq!(slurp(&mut handle.reader().unwrap())?, b"gen 1");
+            let mut w = handle.begin()?;
+            w.write(b"gen 2")?;
+            w.commit()?;
+        }
+
+        assert_eq!(slurp(&mut store.get(&key).unwrap())?, b"gen 2");
+
+        // And rewrite with the old file still open
+        // TODO: this part is broken on Windows!
+        let mut old_file = {
+            let handle = store.lock(&key)?;
+            handle.reader().unwrap().detach_unlocked()
+        };
+        let new_handle = store.lock(&key)?;
+        let mut w = new_handle.begin()?;
+        w.write(b"gen 3")?;
+        let mut r = w.commit()?;
+
+        assert_eq!(slurp(&mut r)?, b"gen 3");
+        // old file still has old data
+        assert_eq!(slurp(&mut old_file)?, b"gen 2");
+
+        Ok(())
+    }
+
+    #[test]
     fn test_kvdirstore_basics() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         let store = KVDirStore::new(tmp.path())?;
