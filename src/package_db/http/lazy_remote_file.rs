@@ -200,7 +200,7 @@ impl Read for LazyRemoteFile {
 
         let bytes_wanted =
             cmp::min(buf.len() as u64, self.length.saturating_sub(self.seek_pos));
-        if bytes_wanted <= 0 {
+        if bytes_wanted == 0 {
             return Ok(0);
         }
         // maybe we already have it in cache?
