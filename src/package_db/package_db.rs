@@ -182,7 +182,7 @@ impl<'db> PackageDB<'db> {
         // }
 
         // try pulling the metadata out of a remote wheel, and cache it for later
-        for ai in matching() {
+        if let Some(ai) = matching().next() {
             let body = self.http.get_lazy(ai)?;
             let artifact = self.open_artifact::<T>(ai, body)?;
             let (blob, metadata) = artifact.metadata()?;

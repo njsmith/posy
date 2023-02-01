@@ -411,7 +411,7 @@ mod test {
             slurp(
                 &mut store
                     .get_or_set(&hi, |w| {
-                        w.write(b"hello")?;
+                        w.write_all(b"hello")?;
                         Ok(())
                     })
                     .unwrap()
@@ -425,7 +425,7 @@ mod test {
                 &mut store
                     .get_or_set(&hi, |w| {
                         // this never executes because the key already exists
-                        w.write(b"ASDFASDFSADFSADF")?;
+                        w.write_all(b"ASDFASDFSADFSADF")?;
                         Ok(())
                     })
                     .unwrap()
@@ -449,8 +449,8 @@ mod test {
         assert!(bye_handle.reader().is_none());
 
         let mut w = bye_handle.begin()?;
-        w.write(b"Good")?;
-        w.write(b"bye")?;
+        w.write_all(b"Good")?;
+        w.write_all(b"bye")?;
         let mut r = w.commit()?;
         assert_eq!(slurp(&mut r)?, b"Goodbye");
 
@@ -468,7 +468,7 @@ mod test {
         {
             let handle = store.lock(&key)?;
             let mut w = handle.begin()?;
-            w.write(b"gen 1")?;
+            w.write_all(b"gen 1")?;
             w.commit()?;
         }
 
@@ -476,7 +476,7 @@ mod test {
             let handle = store.lock(&key)?;
             assert_eq!(slurp(&mut handle.reader().unwrap())?, b"gen 1");
             let mut w = handle.begin()?;
-            w.write(b"gen 2")?;
+            w.write_all(b"gen 2")?;
             w.commit()?;
         }
 
@@ -490,7 +490,7 @@ mod test {
         };
         let new_handle = store.lock(&key)?;
         let mut w = new_handle.begin()?;
-        w.write(b"gen 3")?;
+        w.write_all(b"gen 3")?;
         let mut r = w.commit()?;
 
         assert_eq!(slurp(&mut r)?, b"gen 3");
