@@ -165,7 +165,7 @@ fn slurp_from_zip<'a, T: Read + Seek>(
     name: &str,
 ) -> Result<Vec<u8>> {
     context!("extracting {name}");
-    Ok(slurp(&mut z.by_name(name)?)?)
+    slurp(&mut z.by_name(name)?)
 }
 
 struct WheelVitals {

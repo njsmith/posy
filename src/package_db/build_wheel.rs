@@ -146,7 +146,7 @@ impl<'a> WheelBuilder<'a> {
 
         if let Some((_, os_name, name)) = best {
             let path = handle.join(os_name);
-            return Ok(Wheel::new(name, Box::new(fs::File::open(path)?))?);
+            return Wheel::new(name, Box::new(fs::File::open(path)?));
         }
 
         // nothing in cache -- we'll have to build it ourselves (which will implicitly

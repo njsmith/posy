@@ -46,7 +46,7 @@ impl TryFrom<&str> for ArtifactHash {
         let (mode, data) = value
             .split_once('=')
             .ok_or(eyre!("expected = in hash string {:?}", value))?;
-        Ok(ArtifactHash::from_hex(mode, data)?)
+        ArtifactHash::from_hex(mode, data)
     }
 }
 

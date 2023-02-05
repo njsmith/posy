@@ -116,7 +116,7 @@ impl<'db> PackageDB<'db> {
                 eyre!("{} is not a {}", ai.name, std::any::type_name::<T>())
             })?
             .clone();
-        Ok(T::new(artifact_name, body)?)
+        T::new(artifact_name, body)
     }
 
     pub fn get_metadata<'a, T, B>(
