@@ -20,7 +20,7 @@ impl TryFrom<&str> for SdistName {
         static SDIST_NAME_RE: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"^(.*)-([^-]*)\.(zip|tar\.gz)$").unwrap());
 
-        match SDIST_NAME_RE.captures(&value) {
+        match SDIST_NAME_RE.captures(value) {
             None => bail!("invalid sdist name"),
             Some(captures) => {
                 let distribution: PackageName =
@@ -119,8 +119,8 @@ impl BinaryName for PybiName {
     }
 }
 
-fn generic_parse<'a>(
-    value: &'a str,
+fn generic_parse(
+    value: &str,
     suffix: &str,
     tag_parts: u8,
 ) -> Result<(PackageName, Version, Option<u32>, String, Vec<Vec<String>>)> {
@@ -149,12 +149,12 @@ fn generic_parse<'a>(
     let build_name: String;
     if pieces.len() == 3 + tag_parts as usize {
         let build_tag = pieces.remove(2);
-        if build_tag == "" {
+        if build_tag.is_empty() {
             bail!("found empty build tag: {:?}", value);
         }
         // unwrap safe because: the regex cannot fail
         let captures = BUILD_TAG_SPLIT.captures(build_tag).unwrap();
-        build_number = captures.get(1).map(|m| m.as_str().parse().ok()).flatten();
+        build_number = captures.get(1).and_then(|m| m.as_str().parse().ok());
         // unwrap safe because: this group will always match something, even
         // if only the empty string
         build_name = captures.get(2).unwrap().as_str().into();
@@ -170,15 +170,15 @@ fn generic_parse<'a>(
     let distribution: PackageName = pieces[0].try_into()?;
     let version: Version = pieces[1].try_into()?;
     let tag_sets: Vec<Vec<String>> = pieces[2..]
-        .into_iter()
-        .map(|compressed_tag| compressed_tag.split(".").map(|tag| tag.into()).collect())
+        .iter()
+        .map(|compressed_tag| compressed_tag.split('.').map(|tag| tag.into()).collect())
         .collect();
 
     Ok((distribution, version, build_number, build_name, tag_sets))
 }
 
 fn format_build_tag(build_number: Option<u32>, build_name: &str) -> String {
-    match (build_number, &build_name[..]) {
+    match (build_number, build_name) {
         (None, "") => String::from(""),
         (None, name) => format!("-{}", name),
         (Some(num), name) => format!("-{}{}", num, name),

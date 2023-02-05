@@ -150,7 +150,7 @@ fn parse_format_metadata_and_check_version(
     version_field: &str,
 ) -> Result<RFC822ish> {
     let input: &str = std::str::from_utf8(input)?;
-    let mut parsed = RFC822ish::parse(&input)?;
+    let mut parsed = RFC822ish::parse(input)?;
 
     let version = parsed.take_the(version_field)?;
     if !version.starts_with("1.") {
@@ -165,7 +165,7 @@ fn slurp_from_zip<'a, T: Read + Seek>(
     name: &str,
 ) -> Result<Vec<u8>> {
     context!("extracting {name}");
-    Ok(slurp(&mut z.by_name(name)?)?)
+    slurp(&mut z.by_name(name)?)
 }
 
 struct WheelVitals {
@@ -192,7 +192,7 @@ impl Wheel {
         static SPECIAL_WHEEL_DIR_RE: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"^(.*)-(.*)\..*").unwrap());
 
-        assert!(suffix.starts_with("."));
+        assert!(suffix.starts_with('.'));
 
         let mut candidates = names
             .into_iter()
@@ -208,7 +208,7 @@ impl Wheel {
         }
         let candidate_str = candidate.as_ref();
         context!("parsing wheel directory {candidate_str}");
-        match SPECIAL_WHEEL_DIR_RE.captures(&candidate_str) {
+        match SPECIAL_WHEEL_DIR_RE.captures(candidate_str) {
             None => bail!("invalid {suffix} name: couldn't find name/version"),
             Some(captures) => {
                 let got_name: PackageName =
@@ -344,7 +344,7 @@ impl BinaryArtifact for Wheel {
         ai: &ArtifactInfo,
     ) -> Option<Result<(Vec<u8>, Self::Metadata)>> {
         if ai.is::<Sdist>() {
-            Some(builder.locally_built_metadata(&ai))
+            Some(builder.locally_built_metadata(ai))
         } else {
             None
         }
@@ -356,7 +356,7 @@ impl BinaryArtifact for Wheel {
         platform: &Self::Platform,
     ) -> Option<Result<Self>> {
         if ai.is::<Sdist>() {
-            Some(builder.locally_built_wheel(&ai, &platform))
+            Some(builder.locally_built_wheel(ai, platform))
         } else {
             None
         }
@@ -456,8 +456,8 @@ impl Wheel {
         context!("Unpacking {}", self.name);
         let vitals = self.get_vitals()?;
         let mut transformer = WheelTreeTransformer {
-            paths: &paths,
-            trampoline_maker: &trampoline_maker,
+            paths,
+            trampoline_maker,
             dest: &mut dest,
             vitals: &vitals,
         };
@@ -550,7 +550,7 @@ where
     W: WriteTree,
 {
     fn mkdir(&mut self, path: &NicePathBuf) -> Result<()> {
-        if let Some((fixed_path, _)) = self.analyze_path(&path)? {
+        if let Some((fixed_path, _)) = self.analyze_path(path)? {
             self.dest.mkdir(&fixed_path)
         } else {
             Ok(())
@@ -563,7 +563,7 @@ where
         mut data: &mut dyn Read,
         _executable: bool,
     ) -> Result<()> {
-        if let Some((fixed_path, is_script)) = self.analyze_path(&path)? {
+        if let Some((fixed_path, is_script)) = self.analyze_path(path)? {
             if is_script {
                 // use BufReader to "peek" into the start of the executable. Some wheels
                 // contain large compiled binaries as "scripts", so it's nicer not to

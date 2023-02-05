@@ -29,7 +29,7 @@ fn checked_add_signed(a: u64, b: i64) -> Option<u64> {
         a.checked_add(b as u64)
     } else {
         // still wrong on i64::MIN, oh well
-        a.checked_sub(b.abs() as u64)
+        a.checked_sub(b.unsigned_abs())
     }
 }
 

@@ -70,7 +70,7 @@ static NATIVE_PLATFORM_REFS: OnceCell<Vec<&'static PybiPlatform>> = OnceCell::ne
 impl PybiPlatform {
     pub fn new(core_tag: &str) -> PybiPlatform {
         PybiPlatform {
-            tags: expand_platform_tag(core_tag.as_ref()).into_iter().collect(),
+            tags: expand_platform_tag(core_tag).into_iter().collect(),
         }
     }
 
@@ -82,7 +82,7 @@ impl PybiPlatform {
         let platforms = NATIVE_PLATFORMS.get_or_try_init(|| -> Result<_> {
             let tags = super::core_platform_tags()?
                 .iter()
-                .map(|s| PybiPlatform::new(&s))
+                .map(|s| PybiPlatform::new(s))
                 .collect();
 
             Ok(tags)

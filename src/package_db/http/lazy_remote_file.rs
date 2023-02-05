@@ -251,7 +251,7 @@ impl LazyRemoteFile {
         //    https://github.com/pypi/warehouse/issues/12823
         //
         // If this gets fixed we could switch to doing a GET request instead.
-        let length = match fetch_range(&http, "HEAD", &url, &"bytes=0-1")? {
+        let length = match fetch_range(&http, "HEAD", url, "bytes=0-1")? {
             RangeResponse::NotSatisfiable { total_len } => total_len,
             RangeResponse::Partial { total_len, .. } => total_len,
             RangeResponse::Complete(_) => Err(PosyError::LazyRemoteFileNotSupported)?,
@@ -287,7 +287,7 @@ mod test {
     #[test]
     fn test_fetch_range() {
         let tempdir = tempfile::tempdir().unwrap();
-        let server = crate::test_util::StaticHTTPServer::new(&tempdir.path());
+        let server = crate::test_util::StaticHTTPServer::new(tempdir.path());
         {
             let mut f = File::create(tempdir.path().join("blobby")).unwrap();
             f.write_all(&[0; 1000]).unwrap();
@@ -353,7 +353,7 @@ mod test {
     #[test]
     fn test_lazy_remote_file_explicit() {
         let tempdir = tempfile::tempdir().unwrap();
-        let server = crate::test_util::StaticHTTPServer::new(&tempdir.path());
+        let server = crate::test_util::StaticHTTPServer::new(tempdir.path());
         {
             let mut f = File::create(tempdir.path().join("blobby")).unwrap();
             f.write_all(&[0; 13000]).unwrap();
@@ -392,7 +392,7 @@ mod test {
         const BLOBBY_SIZE: u64 = 1_000_000;
 
         let tempdir = tempfile::tempdir().unwrap();
-        let server = crate::test_util::StaticHTTPServer::new(&tempdir.path());
+        let server = crate::test_util::StaticHTTPServer::new(tempdir.path());
         {
             let mut f = File::create(tempdir.path().join("blobby")).unwrap();
             let rng = fastrand::Rng::with_seed(0);

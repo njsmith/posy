@@ -14,7 +14,7 @@ impl ArtifactHash {
         })
     }
 
-    pub fn checker<'a, T: Write>(&'a self, inner: T) -> Result<HashChecker<'a, T>> {
+    pub fn checker<T: Write>(&self, inner: T) -> Result<HashChecker<T>> {
         let algorithm = match self.mode.as_str() {
             "sha256" => &ring::digest::SHA256,
             _ => bail!("unknown hash algorithm {}", self.mode),
@@ -45,8 +45,8 @@ impl TryFrom<&str> for ArtifactHash {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let (mode, data) = value
             .split_once('=')
-            .ok_or(eyre!("expected = in hash string {:?}", value))?;
-        Ok(ArtifactHash::from_hex(mode, data)?)
+            .ok_or_else(|| eyre!("expected = in hash string {:?}", value))?;
+        ArtifactHash::from_hex(mode, data)
     }
 }
 
@@ -61,7 +61,7 @@ pub struct HashChecker<'a, T: Write> {
 impl<'a, T: Write> HashChecker<'a, T> {
     pub fn finish(self) -> Result<T> {
         let digest = self.state.finish();
-        if &self.expected.raw_data != digest.as_ref() {
+        if self.expected.raw_data != digest.as_ref() {
             bail!("hash mismatch: {:?} != {:?}", self.expected, digest);
         }
         Ok(self.inner)
@@ -70,7 +70,7 @@ impl<'a, T: Write> HashChecker<'a, T> {
 
 impl<'a, T: Write> Write for HashChecker<'a, T> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let written = self.inner.write(&buf)?;
+        let written = self.inner.write(buf)?;
         self.state.update(&buf[..written]);
         Ok(written)
     }

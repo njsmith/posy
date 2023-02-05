@@ -88,8 +88,8 @@ impl Sink {
         // We found a valid link
         let hash = url.fragment().and_then(parse_hash);
         let requires_python =
-            get_attr(REQUIRES_PYTHON_ATTR.borrow(), &attrs).map(String::from);
-        let metadata_attr = get_attr(DATA_DIST_INFO_METADATA.borrow(), &attrs);
+            get_attr(REQUIRES_PYTHON_ATTR.borrow(), attrs).map(String::from);
+        let metadata_attr = get_attr(DATA_DIST_INFO_METADATA.borrow(), attrs);
         let dist_info_metadata = match metadata_attr {
             None => DistInfoMetadata {
                 available: false,
@@ -104,7 +104,7 @@ impl Sink {
                 hash: parse_hash(value),
             },
         };
-        let yanked_reason = get_attr(YANKED_ATTR.borrow(), &attrs);
+        let yanked_reason = get_attr(YANKED_ATTR.borrow(), attrs);
         let yanked = match yanked_reason {
             None => Yanked {
                 yanked: false,
@@ -169,7 +169,7 @@ impl TreeSink for Sink {
 
         if name.expanded() == A_TAG {
             if let Some(url_str) = get_attr(&HREF_ATTR, &attrs) {
-                if let Some(artifact_infos) = self.try_parse_link(&url_str, &attrs) {
+                if let Some(artifact_infos) = self.try_parse_link(url_str, &attrs) {
                     self.project_info.artifacts.extend(artifact_infos);
                 }
             }

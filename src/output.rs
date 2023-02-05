@@ -40,11 +40,11 @@ struct PosyUILayer;
 
 struct WithMessage<'a, F>(&'a F)
 where
-    F: Fn(&dyn Debug) -> ();
+    F: Fn(&dyn Debug);
 
 impl<'a, F> Visit for WithMessage<'a, F>
 where
-    F: Fn(&dyn Debug) -> (),
+    F: Fn(&dyn Debug),
 {
     fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
@@ -98,7 +98,7 @@ pub fn current_context() -> Vec<String> {
             // we temporarily *own* that dispatcher and the current dispatcher gets set
             // to None instead.
             if let Some(leaf_id) = registry.current_span().id() {
-                return collect_context(registry.span(&leaf_id));
+                return collect_context(registry.span(leaf_id));
             }
         }
         vec![]
@@ -123,9 +123,9 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for PosyUILayer {
         // for span_render in collect_context(leaf) {
         //     eprintln!("span: {}", span_render);
         // }
-        event.record(&mut WithMessage(&|msg| match event.metadata().level() {
-            &Level::ERROR => eprintln!("{} {:?}", &*ERROR, msg),
-            &Level::WARN => eprintln!("{} {:?}", &*WARNING, msg),
+        event.record(&mut WithMessage(&|msg| match *event.metadata().level() {
+            Level::ERROR => eprintln!("{} {:?}", &*ERROR, msg),
+            Level::WARN => eprintln!("{} {:?}", &*WARNING, msg),
             _ => eprintln!("{:?}", msg),
         }));
     }

@@ -2,7 +2,7 @@ use crate::prelude::*;
 
 pub type Fields = HashMap<String, Vec<String>>;
 
-#[cfg_attr(test, derive(Debug, Deserialize, PartialEq))]
+#[cfg_attr(test, derive(Debug, Deserialize, PartialEq, Eq))]
 pub struct RFC822ish {
     pub fields: Fields,
     pub body: Option<String>,
@@ -76,7 +76,7 @@ peg::parser! {
                  {
                      let mut fields = Fields::new();
                      for (name, value) in f {
-                         fields.entry(name).or_insert(Vec::new()).push(value)
+                         fields.entry(name).or_default().push(value)
                      };
                      RFC822ish { fields, body, }
                  }

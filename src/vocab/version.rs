@@ -70,7 +70,7 @@ impl TryFrom<&str> for Version {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         pep440::Version::parse(value)
-            .map(|v| Version(v))
+            .map(Version)
             .ok_or_else(|| eyre!("Failed to parse PEP 440 version {}", value))
     }
 }

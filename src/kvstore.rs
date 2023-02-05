@@ -97,7 +97,7 @@ const DIR_NEST_DEPTH: usize = 3;
 
 fn bytes_to_path_suffix(bytes: &[u8]) -> PathBuf {
     let mut path = PathBuf::new();
-    let enc = data_encoding::BASE64URL_NOPAD.encode(&bytes);
+    let enc = data_encoding::BASE64URL_NOPAD.encode(bytes);
     for i in 0..DIR_NEST_DEPTH {
         path.push(&enc[i..i + 1]);
     }
@@ -174,7 +174,7 @@ impl KVFileStore {
         fs::create_dir_all(&base)?;
         fs::create_dir_all(&tmp)?;
         Ok(KVFileStore {
-            base: base.into(),
+            base,
             tmp,
         })
     }
@@ -204,7 +204,7 @@ impl KVFileStore {
                 return Some(Box::new(reader.detach_unlocked()));
             }
         }
-        return None;
+        None
     }
 
     pub fn lock<K: PathKey>(&self, key: &K) -> Result<KVFileLock> {
@@ -240,14 +240,14 @@ pub struct KVFileLock {
 }
 
 impl KVFileLock {
-    pub fn reader<'a>(&'a self) -> Option<LockedRead<'a>> {
+    pub fn reader<'a>(&self) -> Option<LockedRead<'a>> {
         Some(LockedRead {
             f: File::open(&self.path).ok()?,
             _lifetime: Default::default(),
         })
     }
 
-    pub fn begin<'a>(&'a self) -> Result<LockedWrite<'a>> {
+    pub fn begin(&self) -> Result<LockedWrite> {
         Ok(LockedWrite {
             path: &self.path,
             f: tempfile::NamedTempFile::new_in(&self.tmp)?,
@@ -315,7 +315,7 @@ impl<'a> Seek for LockedWrite<'a> {
 impl<'a> LockedWrite<'a> {
     pub fn commit(self) -> Result<LockedRead<'a>> {
         self.f.as_file().sync_data()?;
-        let mut f = self.f.persist(&self.path)?;
+        let mut f = self.f.persist(self.path)?;
         f.rewind()?;
         Ok(LockedRead {
             f,
@@ -338,7 +338,7 @@ impl KVDirStore {
         fs::create_dir_all(&base)?;
         fs::create_dir_all(&tmp)?;
         Ok(KVDirStore {
-            base: base.into(),
+            base,
             tmp,
         })
     }

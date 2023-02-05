@@ -116,7 +116,7 @@ peg::parser! {
                   use marker::EnvMarkerExpr::Operator;
                   use CompareOp::*;
                   use marker::Op::*;
-                  match &op[..] {
+                  match op {
                       "<=" => Operator { op: Compare(LessThanEqual), lhs, rhs },
                       "<" => Operator { op: Compare(StrictlyLessThan), lhs, rhs },
                       "!=" => Operator { op: Compare(NotEqual), lhs, rhs },
