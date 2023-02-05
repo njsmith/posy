@@ -119,8 +119,8 @@ impl BinaryName for PybiName {
     }
 }
 
-fn generic_parse<'a>(
-    value: &'a str,
+fn generic_parse(
+    value: &str,
     suffix: &str,
     tag_parts: u8,
 ) -> Result<(PackageName, Version, Option<u32>, String, Vec<Vec<String>>)> {

@@ -240,14 +240,14 @@ pub struct KVFileLock {
 }
 
 impl KVFileLock {
-    pub fn reader<'a>(&'a self) -> Option<LockedRead<'a>> {
+    pub fn reader<'a>(&self) -> Option<LockedRead<'a>> {
         Some(LockedRead {
             f: File::open(&self.path).ok()?,
             _lifetime: Default::default(),
         })
     }
 
-    pub fn begin<'a>(&'a self) -> Result<LockedWrite<'a>> {
+    pub fn begin(&self) -> Result<LockedWrite> {
         Ok(LockedWrite {
             path: &self.path,
             f: tempfile::NamedTempFile::new_in(&self.tmp)?,
