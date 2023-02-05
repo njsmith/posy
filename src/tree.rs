@@ -27,7 +27,7 @@ fn check_path_piece(piece: &[u8]) -> Result<&str> {
     if piece.is_empty() {
         bail!("path components must be non-empty");
     }
-    if piece.contains(&*NAUGHTY_CHARS) {
+    if piece.contains(NAUGHTY_CHARS) {
         bail!("invalid or non-portable characters in path component {piece:?}");
     }
     if piece.contains(|c: char| c.is_ascii_control()) {
