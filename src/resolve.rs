@@ -503,12 +503,11 @@ fn resolve_wheels(
         Ok(solution) => {
             let mut pins = Vec::new();
             for (pkg, v) in solution {
-                match pkg {
-                    ResPkg::Package(name, None) => pins.push((
+                if let ResPkg::Package(name, None) = pkg {
+                    pins.push((
                         pinned(db, name.clone(), v.clone())?,
                         state.expected_metadata.get(&(name, v)).unwrap().clone(),
-                    )),
-                    _ => (),
+                    ))
                 }
             }
             Ok((pins, state.marker_exprs.into_inner()))
