@@ -170,7 +170,7 @@ fn generic_parse(
     let distribution: PackageName = pieces[0].try_into()?;
     let version: Version = pieces[1].try_into()?;
     let tag_sets: Vec<Vec<String>> = pieces[2..]
-        .into_iter()
+        .iter()
         .map(|compressed_tag| compressed_tag.split('.').map(|tag| tag.into()).collect())
         .collect();
 

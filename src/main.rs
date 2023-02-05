@@ -1,4 +1,4 @@
-#![allow(clippy::declare_interior_mutable_const, clippy::borrow_interior_mutable_const, clippy::or_fun_call, clippy::unnecessary_unwrap, clippy::module_inception, clippy::result_large_err, clippy::type_complexity, clippy::upper_case_acronyms, clippy::into_iter_on_ref, clippy::redundant_slicing, clippy::nonminimal_bool, clippy::derive_partial_eq_without_eq, clippy::wrong_self_convention, clippy::collapsible_if, clippy::redundant_closure)]
+#![allow(clippy::declare_interior_mutable_const, clippy::borrow_interior_mutable_const, clippy::or_fun_call, clippy::unnecessary_unwrap, clippy::module_inception, clippy::result_large_err, clippy::type_complexity, clippy::upper_case_acronyms, clippy::redundant_slicing, clippy::nonminimal_bool, clippy::derive_partial_eq_without_eq, clippy::wrong_self_convention, clippy::collapsible_if, clippy::redundant_closure)]
 mod kvstore;
 mod package_db;
 mod prelude;
