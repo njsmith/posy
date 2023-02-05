@@ -123,9 +123,9 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for PosyUILayer {
         // for span_render in collect_context(leaf) {
         //     eprintln!("span: {}", span_render);
         // }
-        event.record(&mut WithMessage(&|msg| match event.metadata().level() {
-            &Level::ERROR => eprintln!("{} {:?}", &*ERROR, msg),
-            &Level::WARN => eprintln!("{} {:?}", &*WARNING, msg),
+        event.record(&mut WithMessage(&|msg| match *event.metadata().level() {
+            Level::ERROR => eprintln!("{} {:?}", &*ERROR, msg),
+            Level::WARN => eprintln!("{} {:?}", &*WARNING, msg),
             _ => eprintln!("{:?}", msg),
         }));
     }
