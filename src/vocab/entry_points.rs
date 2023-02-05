@@ -58,7 +58,7 @@ pub fn parse_entry_points(contents: &str) -> Result<HashMap<String, Vec<Entrypoi
             current_section_name = Some(section_name.into());
             current_entries = Vec::new();
         } else if let Some(captures) = ENTRY_LINE.captures(line.as_ref()) {
-            if !current_section_name.is_some() {
+            if current_section_name.is_none() {
                 bail!("missing section name in entry_points.txt");
             }
             let name = captures.name("name").unwrap().as_str().to_string();
