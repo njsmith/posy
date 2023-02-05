@@ -149,7 +149,7 @@ fn generic_parse(
     let build_name: String;
     if pieces.len() == 3 + tag_parts as usize {
         let build_tag = pieces.remove(2);
-        if build_tag == "" {
+        if build_tag.is_empty() {
             bail!("found empty build tag: {:?}", value);
         }
         // unwrap safe because: the regex cannot fail
