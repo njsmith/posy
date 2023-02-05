@@ -192,7 +192,7 @@ impl Wheel {
         static SPECIAL_WHEEL_DIR_RE: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"^(.*)-(.*)\..*").unwrap());
 
-        assert!(suffix.starts_with("."));
+        assert!(suffix.starts_with('.'));
 
         let mut candidates = names
             .into_iter()

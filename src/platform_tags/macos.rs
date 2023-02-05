@@ -89,7 +89,7 @@ fn version() -> Result<(u32, u32)> {
     debug!("product_version_str = {}", product_version_str);
     let pieces = product_version_str
         .trim_end_matches('\0')
-        .split(".")
+        .split('.')
         .collect::<Vec<&str>>();
     debug!("{:?}", pieces);
     assert!(pieces.len() >= 2);

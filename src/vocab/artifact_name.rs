@@ -171,7 +171,7 @@ fn generic_parse(
     let version: Version = pieces[1].try_into()?;
     let tag_sets: Vec<Vec<String>> = pieces[2..]
         .into_iter()
-        .map(|compressed_tag| compressed_tag.split(".").map(|tag| tag.into()).collect())
+        .map(|compressed_tag| compressed_tag.split('.').map(|tag| tag.into()).collect())
         .collect();
 
     Ok((distribution, version, build_number, build_name, tag_sets))
