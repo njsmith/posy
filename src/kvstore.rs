@@ -174,7 +174,7 @@ impl KVFileStore {
         fs::create_dir_all(&base)?;
         fs::create_dir_all(&tmp)?;
         Ok(KVFileStore {
-            base: base.into(),
+            base,
             tmp,
         })
     }
@@ -338,7 +338,7 @@ impl KVDirStore {
         fs::create_dir_all(&base)?;
         fs::create_dir_all(&tmp)?;
         Ok(KVDirStore {
-            base: base.into(),
+            base,
             tmp,
         })
     }
