@@ -2,7 +2,7 @@ use crate::prelude::*;
 
 pub type Fields = HashMap<String, Vec<String>>;
 
-#[cfg_attr(test, derive(Debug, Deserialize, PartialEq))]
+#[cfg_attr(test, derive(Debug, Deserialize, PartialEq, Eq))]
 pub struct RFC822ish {
     pub fields: Fields,
     pub body: Option<String>,
