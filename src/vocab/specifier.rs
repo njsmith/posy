@@ -169,10 +169,8 @@ impl CompareOp {
             }
         } else {
             // no wildcards here
-            if self != &Equal && self != &NotEqual {
-                if !version.0.local.is_empty() {
-                    bail!("Operator {:?} cannot be used on a version with a +local suffix", self);
-                }
+            if self != &Equal && self != &NotEqual && !version.0.local.is_empty() {
+                bail!("Operator {:?} cannot be used on a version with a +local suffix", self);
             }
             match self {
                 // These two are simple
