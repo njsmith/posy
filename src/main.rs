@@ -1,4 +1,4 @@
-#![allow(clippy::useless_vec, clippy::unused_unit, clippy::declare_interior_mutable_const, clippy::match_ref_pats, clippy::borrow_interior_mutable_const, clippy::needless_question_mark, clippy::or_fun_call, clippy::unnecessary_unwrap, clippy::module_inception, clippy::result_large_err, clippy::single_char_pattern, clippy::useless_asref, clippy::redundant_clone, clippy::type_complexity, clippy::single_match, clippy::cast_abs_to_unsigned, clippy::upper_case_acronyms, clippy::borrow_deref_ref, clippy::wildcard_in_or_patterns, clippy::op_ref, clippy::comparison_to_empty, clippy::map_flatten, clippy::into_iter_on_ref, clippy::redundant_slicing, clippy::nonminimal_bool, clippy::derive_partial_eq_without_eq, clippy::wrong_self_convention, clippy::collapsible_if, clippy::redundant_closure)]
+#![allow(clippy::unused_unit, clippy::declare_interior_mutable_const, clippy::match_ref_pats, clippy::borrow_interior_mutable_const, clippy::needless_question_mark, clippy::or_fun_call, clippy::unnecessary_unwrap, clippy::module_inception, clippy::result_large_err, clippy::single_char_pattern, clippy::useless_asref, clippy::redundant_clone, clippy::type_complexity, clippy::single_match, clippy::cast_abs_to_unsigned, clippy::upper_case_acronyms, clippy::borrow_deref_ref, clippy::wildcard_in_or_patterns, clippy::op_ref, clippy::comparison_to_empty, clippy::map_flatten, clippy::into_iter_on_ref, clippy::redundant_slicing, clippy::nonminimal_bool, clippy::derive_partial_eq_without_eq, clippy::wrong_self_convention, clippy::collapsible_if, clippy::redundant_closure)]
 mod kvstore;
 mod package_db;
 mod prelude;
@@ -40,10 +40,8 @@ fn main() -> Result<()> {
     let build_store = KVDirStore::new(build_tmp.path())?;
 
     let db = package_db::PackageDB::new(
-        &vec![
-            Url::parse("https://pybi.vorpus.org")?,
-            Url::parse("https://pypi.org/simple/")?,
-        ],
+        &[Url::parse("https://pybi.vorpus.org")?,
+            Url::parse("https://pypi.org/simple/")?],
         PROJECT_DIRS.cache_dir(),
         // PackageDB needs a place to install packages, in case it has to build some
         // sdists. Using a shared env_forest is efficient, because it means different
