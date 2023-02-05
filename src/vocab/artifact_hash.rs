@@ -61,7 +61,7 @@ pub struct HashChecker<'a, T: Write> {
 impl<'a, T: Write> HashChecker<'a, T> {
     pub fn finish(self) -> Result<T> {
         let digest = self.state.finish();
-        if &self.expected.raw_data != digest.as_ref() {
+        if self.expected.raw_data != digest.as_ref() {
             bail!("hash mismatch: {:?} != {:?}", self.expected, digest);
         }
         Ok(self.inner)
