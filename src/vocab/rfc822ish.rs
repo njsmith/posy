@@ -76,7 +76,7 @@ peg::parser! {
                  {
                      let mut fields = Fields::new();
                      for (name, value) in f {
-                         fields.entry(name).or_insert(Vec::new()).push(value)
+                         fields.entry(name).or_default().push(value)
                      };
                      RFC822ish { fields, body, }
                  }

@@ -304,7 +304,7 @@ impl<'a> WheelBuilder<'a> {
             }
         }
 
-        let (pyreq, pybi_like) = found_python.ok_or(eyre!(
+        let (pyreq, pybi_like) = found_python.ok_or_else(||eyre!(
             "couldn't find any pybis similar to {} {} to build wheels with",
             self.target_python.as_given(),
             self.target_python_version,

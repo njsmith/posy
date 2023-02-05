@@ -45,7 +45,7 @@ impl TryFrom<&str> for ArtifactHash {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let (mode, data) = value
             .split_once('=')
-            .ok_or(eyre!("expected = in hash string {:?}", value))?;
+            .ok_or_else(|| eyre!("expected = in hash string {:?}", value))?;
         ArtifactHash::from_hex(mode, data)
     }
 }

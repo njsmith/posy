@@ -345,7 +345,7 @@ impl HttpInner {
         if maybe_hash.is_some() && cache_mode != CacheMode::NoStore {
             let hash = maybe_hash.unwrap();
             if cache_mode == CacheMode::OnlyIfCached {
-                self.hash_cache.get(&hash).ok_or(NotCached {}.into())
+                self.hash_cache.get(&hash).ok_or_else(||NotCached {}.into())
             } else {
                 assert!(cache_mode == CacheMode::Default);
                 Ok(self.hash_cache.get_or_set(&hash, |mut w| {
