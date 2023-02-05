@@ -101,7 +101,7 @@ impl TryFrom<&str> for CompareOp {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         use CompareOp::*;
-        Ok(match &value[..] {
+        Ok(match value {
             "==" => Equal,
             "!=" => NotEqual,
             "<=" => LessThanEqual,

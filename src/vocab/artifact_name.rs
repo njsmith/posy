@@ -178,7 +178,7 @@ fn generic_parse(
 }
 
 fn format_build_tag(build_number: Option<u32>, build_name: &str) -> String {
-    match (build_number, &build_name[..]) {
+    match (build_number, build_name) {
         (None, "") => String::from(""),
         (None, name) => format!("-{}", name),
         (Some(num), name) => format!("-{}{}", num, name),
