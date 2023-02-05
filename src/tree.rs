@@ -335,7 +335,7 @@ pub fn unpack_tar_gz_carefully<T: Read + Seek, W: WriteTree>(
             }
             Directory => dest.mkdir(&path)?,
             GNULongName | GNULongLink | GNUSparse | XGlobalHeader | XHeader => (),
-            Regular | Continuous | _ => {
+            _ => {
                 dest.write_file(&path, &mut entry, is_executable)?;
             }
         }
