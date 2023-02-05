@@ -81,7 +81,7 @@ pub mod marker {
         pub fn eval<'a>(&'a self, env: &'a dyn Env) -> Result<&'a str> {
             match self {
                 Value::Variable(varname) => env
-                    .get_marker_var(&varname)
+                    .get_marker_var(varname)
                     .map(|s| s.as_ref())
                     .ok_or_else(|| {
                         eyre!("no environment marker variable named '{}'", varname)

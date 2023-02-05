@@ -65,7 +65,7 @@ where
             } else if !pin.hashes.contains(ai.hash.as_ref().unwrap()) {
                 warn!("best scoring artifact {} does not appear in lock file (maybe need to update pins?)", ai.name);
             } else {
-                return Ok((&ai, platform));
+                return Ok((ai, platform));
             }
         }
     }
@@ -78,7 +78,7 @@ where
 impl EnvForest {
     pub fn new(base: &Path) -> Result<EnvForest> {
         Ok(EnvForest {
-            store: KVDirStore::new(&base)?,
+            store: KVDirStore::new(base)?,
         })
     }
 
@@ -116,14 +116,14 @@ impl EnvForest {
         build_stack: &[&PackageName],
     ) -> Result<Env> {
         let (pybi_ai, pybi_platform) =
-            pick_pinned_binary::<Pybi>(&db, &pybi_platforms, &blueprint.pybi)?;
+            pick_pinned_binary::<Pybi>(db, pybi_platforms, &blueprint.pybi)?;
         let pybi_hash = pybi_ai.require_hash()?;
         let pybi_root = self.store.get_or_set(&pybi_hash, |path| {
             let pybi = db.get_artifact::<Pybi>(pybi_ai)?;
             context!("Unpacking {}", pybi_ai.name);
-            pybi.unpack(&mut WriteTreeFS::new(&path))?;
+            pybi.unpack(&mut WriteTreeFS::new(path))?;
             let (_, pybi_metadata) = pybi.metadata()?;
-            EnvForest::munge_unpacked_pybi(&path, &pybi_metadata)?;
+            EnvForest::munge_unpacked_pybi(path, &pybi_metadata)?;
             Ok(())
         })?;
         let pybi_metadata: PybiCoreMetadata =
@@ -133,11 +133,11 @@ impl EnvForest {
         let wheel_platform = pybi_platform.wheel_platform(&pybi_metadata)?;
         let pybi_platform_slice = [pybi_platform];
         let wheel_builder = WheelBuilder::new(
-            &db,
+            db,
             &pybi_metadata.name,
             &pybi_metadata.version,
             &pybi_platform_slice,
-            &build_stack,
+            build_stack,
         )?;
         let trampoline_maker =
             TrampolineMaker::new(FindPython::FromEnv, ScriptPlatform::Both);
@@ -154,7 +154,7 @@ impl EnvForest {
         for (pin, expected_metadata) in &blueprint.wheels {
             context!("installing {} {}", pin.name.as_given(), pin.version);
             let (ai, wheel_root) =
-                match pick_pinned_binary::<Wheel>(&db, &[&wheel_platform], &pin) {
+                match pick_pinned_binary::<Wheel>(db, &[&wheel_platform], pin) {
                     Ok((wheel_ai, _)) => {
                         // we're using a binary wheel
                         context!("using binary wheel from {}", wheel_ai.url);
@@ -163,12 +163,12 @@ impl EnvForest {
                             self.store.get_or_set(&wheel_hash, |path| {
                                 let wheel = {
                                     context!("Fetching {}", wheel_ai.url);
-                                    db.get_artifact::<Wheel>(&wheel_ai)?
+                                    db.get_artifact::<Wheel>(wheel_ai)?
                                 };
                                 wheel.unpack(
                                     &paths,
                                     &trampoline_maker,
-                                    WriteTreeFS::new(&path),
+                                    WriteTreeFS::new(path),
                                 )?;
                                 Ok(())
                             })?;
@@ -219,7 +219,7 @@ impl EnvForest {
                                 // ai here
                                 let local_wheel = db
                                     .get_locally_built_binary::<Wheel>(
-                                        &sdist_ai,
+                                        sdist_ai,
                                         &wheel_builder,
                                         &wheel_platform,
                                     )
@@ -262,7 +262,7 @@ impl EnvForest {
                 fs::read(lib.join(&dist_info).join("METADATA"))?
                     .as_slice()
                     .try_into()?;
-            let found_metadata = WheelResolveMetadata::from(&ai, &found_metadata);
+            let found_metadata = WheelResolveMetadata::from(ai, &found_metadata);
 
             if found_metadata.inner != expected_metadata.inner {
                 bail!(

@@ -208,14 +208,14 @@ impl HttpInner {
         cache_mode: CacheMode,
     ) -> Result<http::Response<ReadPlusMaybeSeek>> {
         if cache_mode == CacheMode::NoStore {
-            let (parts, body) = do_request_ureq(&self.agent, &request)?.into_parts();
+            let (parts, body) = do_request_ureq(&self.agent, request)?.into_parts();
             Ok(make_response(
                 parts,
                 ReadPlusMaybeSeek::CannotSeek(Box::new(body)),
                 CacheStatus::Uncacheable,
             ))
         } else {
-            let key = key_for_request(&request);
+            let key = key_for_request(request);
             let lock = self.http_cache.lock(&key.as_slice())?;
 
             // common code from the two paths where we need to store a new response
@@ -294,7 +294,7 @@ impl HttpInner {
                 if cache_mode == CacheMode::OnlyIfCached {
                     return Err(NotCached {}.into());
                 }
-                let response = do_request_ureq(&self.agent, &request)?;
+                let response = do_request_ureq(&self.agent, request)?;
                 let new_policy = CachePolicy::new(request, &response);
                 let (parts, body) = response.into_parts();
                 handle_new(new_policy, parts, body, CacheStatus::Miss, lock)

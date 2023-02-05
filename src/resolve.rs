@@ -20,7 +20,7 @@ pub enum AllowPre {
 impl AllowPre {
     pub fn allow_pre_for(&self, package: &PackageName) -> bool {
         match &self {
-            AllowPre::Some(pkgs) => pkgs.contains(&package),
+            AllowPre::Some(pkgs) => pkgs.contains(package),
             AllowPre::All => true,
         }
     }
@@ -125,7 +125,7 @@ impl<'a> VersionHints<'a> {
         let mut hints = VersionHints::new();
         hints.add_pinned(&blueprint.pybi);
         for (wheel, _) in &blueprint.wheels {
-            hints.add_pinned(&wheel);
+            hints.add_pinned(wheel);
         }
         hints
     }
@@ -241,11 +241,11 @@ fn resolve_pybi<'a, 'b>(
     hints: &VersionHints,
 ) -> Result<(&'a ArtifactInfo, &'b PybiPlatform)> {
     let name = &brief.python.name;
-    let versions = fetch_and_sort_versions(&db, &brief, &name, None, hints)?;
+    let versions = fetch_and_sort_versions(db, brief, name, None, hints)?;
     for version in versions.iter() {
-        if brief.python.specifiers.satisfied_by(&version)? {
-            let artifact_infos = db.artifacts_for_version(&name, version)?;
-            if let Some((ai, platform)) = pick_best_pybi(&artifact_infos, platforms) {
+        if brief.python.specifiers.satisfied_by(version)? {
+            let artifact_infos = db.artifacts_for_version(name, version)?;
+            if let Some((ai, platform)) = pick_best_pybi(artifact_infos, platforms) {
                 return Ok((ai, platform));
             }
         }
@@ -281,11 +281,11 @@ impl Brief {
         let version_hints = like
             .map(VersionHints::from)
             .unwrap_or_else(VersionHints::new);
-        let (pybi_ai, platform) = resolve_pybi(&db, &self, &platforms, &version_hints)?;
+        let (pybi_ai, platform) = resolve_pybi(db, self, platforms, &version_hints)?;
         let wheel_builder = WheelBuilder::new(
             db,
-            &pybi_ai.name.distribution(),
-            &pybi_ai.name.version(),
+            pybi_ai.name.distribution(),
+            pybi_ai.name.version(),
             PybiPlatform::native_platforms()?,
             build_stack,
         )?;
@@ -311,7 +311,7 @@ impl Brief {
 
         let (wheels, marker_exprs) = resolve_wheels(
             db,
-            &self,
+            self,
             &env_marker_vars,
             &version_hints,
             &wheel_builder,
@@ -319,7 +319,7 @@ impl Brief {
 
         Ok(Blueprint {
             pybi: pinned(
-                &db,
+                db,
                 pybi_name.distribution.to_owned(),
                 pybi_name.version.to_owned(),
             )?,
@@ -370,10 +370,10 @@ fn fetch_and_sort_versions<'a>(
     python_version: Option<&Version>,
     hints: &VersionHints,
 ) -> Result<Vec<&'a Version>> {
-    let artifacts = db.available_artifacts(&package)?;
+    let artifacts = db.available_artifacts(package)?;
     let mut versions = Vec::new();
     let all_pre = artifacts.iter().all(|(version, _)| version.is_prerelease());
-    let allow_prerelease = all_pre || brief.allow_pre.allow_pre_for(&package);
+    let allow_prerelease = all_pre || brief.allow_pre.allow_pre_for(package);
     let (version_hint, hash_hints) = match hints.0.get(&package) {
         Some((version, hash)) => (Some(version), Some(hash)),
         None => (None, None),
@@ -397,7 +397,7 @@ fn fetch_and_sort_versions<'a>(
                 (python_version, &ai.requires_python)
             {
                 let requires_python: Specifiers = requires_python.parse()?;
-                if !requires_python.satisfied_by(&python_version)? {
+                if !requires_python.satisfied_by(python_version)? {
                     continue;
                 }
             }
@@ -429,7 +429,7 @@ fn fetch_and_sort_versions<'a>(
     versions.sort_unstable_by_key(|v| {
         (
             // false sorts before true, so version_hint = v sorts first
-            version_hint != Some(&v),
+            version_hint != Some(v),
             // and otherwise, high versions come before low versions
             std::cmp::Reverse(*v),
         )
@@ -447,20 +447,20 @@ impl<'a> PubgrubState<'a> {
             let ais = self.db.artifacts_for_version(&release.0, &release.1)?;
             let (ai, wheel_metadata) = self
                 .db
-                .get_metadata::<Wheel, _>(ais, Some(&self.wheel_builder))?;
-            Ok(Box::new(WheelResolveMetadata::from(&ai, &wheel_metadata)))
+                .get_metadata::<Wheel, _>(ais, Some(self.wheel_builder))?;
+            Ok(Box::new(WheelResolveMetadata::from(ai, &wheel_metadata)))
         })?
         .inner)
     }
 
     fn versions(&self, package: &PackageName) -> Result<&[&Version]> {
-        get_or_fill(&self.versions, &package, || {
+        get_or_fill(&self.versions, package, || {
             fetch_and_sort_versions(
-                &self.db,
-                &self.brief,
-                &package,
+                self.db,
+                self.brief,
+                package,
                 Some(&self.python_full_version),
-                &self.version_hints,
+                self.version_hints,
             )
         })
     }
@@ -505,7 +505,7 @@ fn resolve_wheels(
             for (pkg, v) in solution {
                 match pkg {
                     ResPkg::Package(name, None) => pins.push((
-                        pinned(&db, name.clone(), v.clone())?,
+                        pinned(db, name.clone(), v.clone())?,
                         state.expected_metadata.get(&(name, v)).unwrap().clone(),
                     )),
                     _ => (),
@@ -619,8 +619,8 @@ fn simplify_out_extra(
 ) -> Result<Simplified> {
     Ok(match expr {
         marker::EnvMarkerExpr::And(lhs, rhs) => {
-            let lhs = simplify_out_extra(&lhs, extra)?;
-            let rhs = simplify_out_extra(&rhs, extra)?;
+            let lhs = simplify_out_extra(lhs, extra)?;
+            let rhs = simplify_out_extra(rhs, extra)?;
             match (lhs, rhs) {
                 (Simplified::True, Simplified::True) => Simplified::True,
                 (_, Simplified::False) => Simplified::False,
@@ -633,8 +633,8 @@ fn simplify_out_extra(
             }
         }
         marker::EnvMarkerExpr::Or(lhs, rhs) => {
-            let lhs = simplify_out_extra(&lhs, extra)?;
-            let rhs = simplify_out_extra(&rhs, extra)?;
+            let lhs = simplify_out_extra(lhs, extra)?;
+            let rhs = simplify_out_extra(rhs, extra)?;
             match (lhs, rhs) {
                 (Simplified::False, Simplified::False) => Simplified::False,
                 (_, Simplified::True) => Simplified::True,
@@ -789,10 +789,10 @@ impl<'a> pubgrub::solver::DependencyProvider<ResPkg, Version> for PubgrubState<'
             ResPkg::Package(name, _) => {
                 trace!("Considering {}", name.as_given());
                 trace!("Available versions:");
-                for &version in self.versions(&name)? {
+                for &version in self.versions(name)? {
                     trace!("    {version}");
                 }
-                for &version in self.versions(&name)? {
+                for &version in self.versions(name)? {
                     trace!("Considering {} {}", name.as_given(), version);
                     if !range.borrow().contains(version) {
                         trace!("Version {} is out of range", version);

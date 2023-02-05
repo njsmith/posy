@@ -152,7 +152,7 @@ impl<'a> WheelBuilder<'a> {
         // nothing in cache -- we'll have to build it ourselves (which will implicitly
         // add to the cache)
         match self.pep517(
-            &sdist_ai,
+            sdist_ai,
             Pep517Goal::Wheel,
             Some(handle),
             &new_build_stack,
@@ -179,7 +179,7 @@ impl<'a> WheelBuilder<'a> {
         let new_build_stack = self.new_build_stack(sdist_ai.name.distribution())?;
 
         match self.pep517(
-            &sdist_ai,
+            sdist_ai,
             Pep517Goal::WheelMetadata,
             None,
             &new_build_stack,
@@ -217,13 +217,13 @@ impl<'a> WheelBuilder<'a> {
                 allow_pre: Default::default(),
             }
             .resolve(
-                &self.db,
+                self.db,
                 &self.build_platforms,
                 like,
                 new_build_stack,
             )?;
             let env = self.db.build_forest.get_env(
-                &self.db,
+                self.db,
                 &blueprint,
                 &self.build_platforms,
                 new_build_stack,
@@ -291,7 +291,7 @@ impl<'a> WheelBuilder<'a> {
                 allow_pre,
             };
             let result =
-                brief.resolve(&self.db, &self.build_platforms, None, new_build_stack);
+                brief.resolve(self.db, &self.build_platforms, None, new_build_stack);
             match result {
                 Ok(blueprint) => {
                     found_python = Some((brief.python, blueprint));
@@ -316,13 +316,13 @@ impl<'a> WheelBuilder<'a> {
             allow_pre: Default::default(),
         };
         let blueprint = brief.resolve(
-            &self.db,
+            self.db,
             &self.build_platforms,
             Some(&pybi_like),
             new_build_stack,
         )?;
         let env = self.db.build_forest.get_env(
-            &self.db,
+            self.db,
             &blueprint,
             &self.build_platforms,
             new_build_stack,
@@ -342,7 +342,7 @@ impl<'a> WheelBuilder<'a> {
 
         if !handle.exists() {
             let tempdir = handle.tempdir()?;
-            let sdist = self.db.get_artifact::<Sdist>(&sdist_ai)?;
+            let sdist = self.db.get_artifact::<Sdist>(sdist_ai)?;
             let unpack_path = tempdir.path().join("sdist");
             sdist.unpack(&mut WriteTreeFS::new(&unpack_path))?;
             const BUILD_FRONTEND_PY: &[u8] =

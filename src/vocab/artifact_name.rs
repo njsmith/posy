@@ -20,7 +20,7 @@ impl TryFrom<&str> for SdistName {
         static SDIST_NAME_RE: Lazy<Regex> =
             Lazy::new(|| Regex::new(r"^(.*)-([^-]*)\.(zip|tar\.gz)$").unwrap());
 
-        match SDIST_NAME_RE.captures(&value) {
+        match SDIST_NAME_RE.captures(value) {
             None => bail!("invalid sdist name"),
             Some(captures) => {
                 let distribution: PackageName =

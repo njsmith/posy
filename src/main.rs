@@ -1,4 +1,4 @@
-#![allow(clippy::needless_borrow, clippy::useless_conversion, clippy::needless_return, clippy::needless_lifetimes, clippy::useless_vec, clippy::unused_unit, clippy::declare_interior_mutable_const, clippy::match_ref_pats, clippy::borrow_interior_mutable_const, clippy::needless_question_mark, clippy::or_fun_call, clippy::unnecessary_unwrap, clippy::module_inception, clippy::result_large_err, clippy::single_char_pattern, clippy::useless_asref, clippy::redundant_clone, clippy::type_complexity, clippy::single_match, clippy::cast_abs_to_unsigned, clippy::upper_case_acronyms, clippy::borrow_deref_ref, clippy::wildcard_in_or_patterns, clippy::op_ref, clippy::comparison_to_empty, clippy::map_flatten, clippy::into_iter_on_ref, clippy::redundant_slicing, clippy::nonminimal_bool, clippy::derive_partial_eq_without_eq, clippy::wrong_self_convention, clippy::collapsible_if, clippy::redundant_closure)]
+#![allow(clippy::useless_conversion, clippy::needless_return, clippy::needless_lifetimes, clippy::useless_vec, clippy::unused_unit, clippy::declare_interior_mutable_const, clippy::match_ref_pats, clippy::borrow_interior_mutable_const, clippy::needless_question_mark, clippy::or_fun_call, clippy::unnecessary_unwrap, clippy::module_inception, clippy::result_large_err, clippy::single_char_pattern, clippy::useless_asref, clippy::redundant_clone, clippy::type_complexity, clippy::single_match, clippy::cast_abs_to_unsigned, clippy::upper_case_acronyms, clippy::borrow_deref_ref, clippy::wildcard_in_or_patterns, clippy::op_ref, clippy::comparison_to_empty, clippy::map_flatten, clippy::into_iter_on_ref, clippy::redundant_slicing, clippy::nonminimal_bool, clippy::derive_partial_eq_without_eq, clippy::wrong_self_convention, clippy::collapsible_if, clippy::redundant_closure)]
 mod kvstore;
 mod package_db;
 mod prelude;
@@ -82,10 +82,10 @@ fn main() -> Result<()> {
     };
     // A "blueprint" is a set of fully-resolved package pins describing an environment,
     // like a lock-file.
-    let blueprint = brief.resolve(&db, &platforms, None, &[])?;
+    let blueprint = brief.resolve(&db, platforms, None, &[])?;
 
     // And an "env" of course is an installed environment.
-    let env = env_forest.get_env(&db, &blueprint, &platforms, &[])?;
+    let env = env_forest.get_env(&db, &blueprint, platforms, &[])?;
 
     let mut cmd = std::process::Command::new("python");
     // env.env_vars() gives us the magic environment variables needed to run a command

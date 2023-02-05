@@ -49,7 +49,7 @@ impl StaticHTTPServer {
     pub fn url(&self, path: &str) -> Url {
         let mut url =
             Url::parse(&format!("http://127.0.0.1:{}", self.address.port())).unwrap();
-        url.set_path(&path);
+        url.set_path(path);
         url
     }
 }

@@ -31,7 +31,7 @@ pub struct Specifiers(pub Vec<Specifier>);
 impl Specifiers {
     pub fn satisfied_by(&self, version: &Version) -> Result<bool> {
         for specifier in &self.0 {
-            if !specifier.satisfied_by(&version)? {
+            if !specifier.satisfied_by(version)? {
                 return Ok(false);
             }
         }

@@ -22,11 +22,11 @@ pub struct Extra(PackageName);
 
 impl Extra {
     pub fn as_given(&self) -> &str {
-        &self.0.as_given()
+        self.0.as_given()
     }
 
     pub fn normalized(&self) -> &str {
-        &self.0.normalized()
+        self.0.normalized()
     }
 }
 

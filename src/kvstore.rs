@@ -97,7 +97,7 @@ const DIR_NEST_DEPTH: usize = 3;
 
 fn bytes_to_path_suffix(bytes: &[u8]) -> PathBuf {
     let mut path = PathBuf::new();
-    let enc = data_encoding::BASE64URL_NOPAD.encode(&bytes);
+    let enc = data_encoding::BASE64URL_NOPAD.encode(bytes);
     for i in 0..DIR_NEST_DEPTH {
         path.push(&enc[i..i + 1]);
     }
@@ -315,7 +315,7 @@ impl<'a> Seek for LockedWrite<'a> {
 impl<'a> LockedWrite<'a> {
     pub fn commit(self) -> Result<LockedRead<'a>> {
         self.f.as_file().sync_data()?;
-        let mut f = self.f.persist(&self.path)?;
+        let mut f = self.f.persist(self.path)?;
         f.rewind()?;
         Ok(LockedRead {
             f,

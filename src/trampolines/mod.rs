@@ -40,13 +40,13 @@ impl TrampolineMaker {
         if self.platform == ScriptPlatform::Unix
             || self.platform == ScriptPlatform::Both
         {
-            let out = self.unix_trampoline(&script, script_type);
-            tree.write_file(&path, &mut out.as_slice(), true)?;
+            let out = self.unix_trampoline(script, script_type);
+            tree.write_file(path, &mut out.as_slice(), true)?;
         }
         if self.platform == ScriptPlatform::Windows
             || self.platform == ScriptPlatform::Both
         {
-            let out = self.windows_trampoline(&script, script_type);
+            let out = self.windows_trampoline(script, script_type);
             let mut path_str = path.to_string();
             path_str.push_str(".exe");
             let path_exe: NicePathBuf = path_str.try_into().unwrap();
@@ -78,7 +78,7 @@ impl TrampolineMaker {
             // unwrap() because we shouldn't be able to hit errors when writing to
             // memory
             z.start_file("__main__.py", options).unwrap();
-            z.write_all(&script).unwrap();
+            z.write_all(script).unwrap();
             z.finish().unwrap();
         }
         let mut out: Vec<u8> = prefix.into();

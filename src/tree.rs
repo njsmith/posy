@@ -221,7 +221,7 @@ impl WriteTreeFS {
     fn full_path(&self, path: &NicePathBuf) -> Result<PathBuf> {
         let full_path = self.root.join(path.to_native());
         if let Some(parent) = full_path.parent() {
-            fs::create_dir_all(&parent)?;
+            fs::create_dir_all(parent)?;
         }
         Ok(full_path)
     }
@@ -230,7 +230,7 @@ impl WriteTreeFS {
 impl WriteTree for WriteTreeFS {
     fn mkdir(&mut self, path: &NicePathBuf) -> Result<()> {
         context!("Creating {path}/");
-        Ok(fs::create_dir(self.full_path(&path)?)?)
+        Ok(fs::create_dir(self.full_path(path)?)?)
     }
 
     fn write_file(
@@ -248,7 +248,7 @@ impl WriteTree for WriteTreeFS {
         } else {
             options.mode(0o666);
         }
-        let mut file = options.open(&self.full_path(&path)?)?;
+        let mut file = options.open(&self.full_path(path)?)?;
         io::copy(data, &mut file)?;
         Ok(())
     }

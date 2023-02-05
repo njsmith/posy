@@ -98,7 +98,7 @@ pub fn current_context() -> Vec<String> {
             // we temporarily *own* that dispatcher and the current dispatcher gets set
             // to None instead.
             if let Some(leaf_id) = registry.current_span().id() {
-                return collect_context(registry.span(&leaf_id));
+                return collect_context(registry.span(leaf_id));
             }
         }
         vec![]

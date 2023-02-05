@@ -82,7 +82,7 @@ impl PybiPlatform {
         let platforms = NATIVE_PLATFORMS.get_or_try_init(|| -> Result<_> {
             let tags = super::core_platform_tags()?
                 .iter()
-                .map(|s| PybiPlatform::new(&s))
+                .map(|s| PybiPlatform::new(s))
                 .collect();
 
             Ok(tags)

@@ -50,7 +50,7 @@ impl<'db> PackageDB<'db> {
         v: &Version,
     ) -> Result<&[ArtifactInfo]> {
         if let Some(artifacts) = self.available_artifacts(p)?.get(v) {
-            Ok(&artifacts)
+            Ok(artifacts)
         } else {
             Ok(&NO_ARTIFACTS)
         }
@@ -62,7 +62,7 @@ impl<'db> PackageDB<'db> {
         p: &PackageName,
     ) -> Result<&IndexMap<Version, Vec<ArtifactInfo>>> {
         context!("Looking up available files for {}", p.as_given());
-        if let Some(cached) = self.artifacts.get(&p) {
+        if let Some(cached) = self.artifacts.get(p) {
             Ok(cached)
         } else {
             let mut packed: IndexMap<Version, Vec<ArtifactInfo>> = Default::default();
@@ -96,7 +96,7 @@ impl<'db> PackageDB<'db> {
     fn put_metadata_in_cache(&self, ai: &ArtifactInfo, blob: &[u8]) -> Result<()> {
         if let Some(hash) = &ai.hash {
             self.metadata_cache
-                .get_or_set(&hash, |w| Ok(w.write_all(&blob)?))?;
+                .get_or_set(&hash, |w| Ok(w.write_all(blob)?))?;
         }
         Ok(())
     }
@@ -194,7 +194,7 @@ impl<'db> PackageDB<'db> {
         if let Some(builder) = builder {
             // don't use matching() here because that filters for binary artifacts
             for ai in artifacts.iter().map(|b| b.borrow()) {
-                if let Some(result) = T::locally_built_metadata(&builder, &ai) {
+                if let Some(result) = T::locally_built_metadata(builder, ai) {
                     let (blob, metadata) = result?;
                     self.put_metadata_in_cache(ai, &blob)?;
                     return Ok((ai, metadata));
@@ -232,6 +232,6 @@ impl<'db> PackageDB<'db> {
         builder: &T::Builder<'_>,
         platform: &T::Platform,
     ) -> Option<Result<T>> {
-        T::locally_built_binary(&builder, &ai, &platform)
+        T::locally_built_binary(builder, ai, platform)
     }
 }
