@@ -204,7 +204,7 @@ impl KVFileStore {
                 return Some(Box::new(reader.detach_unlocked()));
             }
         }
-        return None;
+        None
     }
 
     pub fn lock<K: PathKey>(&self, key: &K) -> Result<KVFileLock> {
