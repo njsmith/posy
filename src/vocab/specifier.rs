@@ -144,7 +144,7 @@ impl CompareOp {
             // [X.dev0, (X+1).dev0)
             let mut low = version.clone();
             low.0.dev = Some(0);
-            let mut high = version.clone();
+            let mut high = version;
             // .* can actually appear after .postX or .aX, so we need to find the last
             // numeric entry in the version, and increment that.
             if let Some(post) = high.0.post {
@@ -177,7 +177,7 @@ impl CompareOp {
             match self {
                 // These two are simple
                 LessThanEqual => vec![VERSION_ZERO.clone()..version.next()],
-                GreaterThanEqual => vec![version.clone()..VERSION_INFINITY.clone()],
+                GreaterThanEqual => vec![version..VERSION_INFINITY.clone()],
                 // These are also pretty simple, because we took care of the wildcard
                 // cases up above.
                 Equal => vec![version.clone()..version.next()],
@@ -209,7 +209,7 @@ impl CompareOp {
                 // pre-release."
                 StrictlyLessThan => {
                     if (&version.0.pre, &version.0.dev) == (&None, &None) {
-                        let mut new_max = version.clone();
+                        let mut new_max = version;
                         new_max.0.dev = Some(0);
                         new_max.0.post = None;
                         new_max.0.local = vec![];

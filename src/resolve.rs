@@ -294,7 +294,7 @@ impl Brief {
             .wrap_err_with(|| format!("fetching metadata for {}", pybi_ai.url))?;
         let pybi_name = pybi_ai.name.inner_as::<PybiName>().unwrap();
 
-        let mut env_marker_vars = pybi_metadata.environment_marker_variables.clone();
+        let mut env_marker_vars = pybi_metadata.environment_marker_variables;
         if !env_marker_vars.contains_key("platform_machine") {
             let is_arm64 = platform.compatibility("macosx_10_0_arm64").is_some();
             let is_x86_64 = platform.compatibility("macosx_10_0_x86_64").is_some();
