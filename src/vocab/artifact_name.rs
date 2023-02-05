@@ -154,7 +154,7 @@ fn generic_parse(
         }
         // unwrap safe because: the regex cannot fail
         let captures = BUILD_TAG_SPLIT.captures(build_tag).unwrap();
-        build_number = captures.get(1).map(|m| m.as_str().parse().ok()).flatten();
+        build_number = captures.get(1).and_then(|m| m.as_str().parse().ok());
         // unwrap safe because: this group will always match something, even
         // if only the empty string
         build_name = captures.get(2).unwrap().as_str().into();
