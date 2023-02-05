@@ -40,11 +40,11 @@ struct PosyUILayer;
 
 struct WithMessage<'a, F>(&'a F)
 where
-    F: Fn(&dyn Debug) -> ();
+    F: Fn(&dyn Debug);
 
 impl<'a, F> Visit for WithMessage<'a, F>
 where
-    F: Fn(&dyn Debug) -> (),
+    F: Fn(&dyn Debug),
 {
     fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
