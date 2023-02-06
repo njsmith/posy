@@ -343,6 +343,13 @@ impl HttpInner {
     ) -> Result<Box<dyn ReadPlusSeek>> {
         let request = http::Request::builder().uri(url.as_str()).body(())?;
         if maybe_hash.is_some() && cache_mode != CacheMode::NoStore {
+            // Since `maybe_hash` is checked for non-None value in the previous
+            // conditional, clippy complains that you shouldn't need to unwrap.
+            // The resulting code to make clippy happy is less clear than this
+            // code, and using `if let Some(maybe_hash)` with `&&` is currently
+            // unstable. Prefer clarity of code over linting, but if this
+            // logic changes, please try to address this exception.
+            #[allow(clippy::unnecessary_unwrap)]
             let hash = maybe_hash.unwrap();
             if cache_mode == CacheMode::OnlyIfCached {
                 self.hash_cache.get(&hash).ok_or_else(||NotCached {}.into())
