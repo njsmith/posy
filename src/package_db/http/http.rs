@@ -356,7 +356,7 @@ impl HttpInner {
             (Some(hash), CacheMode::OnlyIfCached) => {
                 self.hash_cache.get(&hash).ok_or_else(|| NotCached.into())
             }
-            _ => Ok(self
+            (_, CacheMode::NoStore) | (None, _) => Ok(self
                 .request(request, cache_mode)?
                 .into_body()
                 .force_seek()?),
