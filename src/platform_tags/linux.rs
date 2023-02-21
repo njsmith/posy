@@ -109,7 +109,7 @@ static MUSL_VERSION_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"Version ([0-9]+)\.([0-9]+)").unwrap());
 
 fn musl_version(loader: &PathBuf) -> Result<(u32, u32)> {
-    match Command::new(&loader).output() {
+    match Command::new(loader).output() {
         Err(e) => bail!("failed to execute: {}", e),
         Ok(output) => {
             // don't check output.status, because it's expected to return

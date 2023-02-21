@@ -248,7 +248,7 @@ impl WriteTree for WriteTreeFS {
         } else {
             options.mode(0o666);
         }
-        let mut file = options.open(&self.full_path(path)?)?;
+        let mut file = options.open(self.full_path(path)?)?;
         io::copy(data, &mut file)?;
         Ok(())
     }
@@ -259,7 +259,7 @@ impl WriteTree for WriteTreeFS {
         {
             std::os::unix::fs::symlink(
                 &symlink.target,
-                &self.full_path(&symlink.source)?,
+                self.full_path(&symlink.source)?,
             )?;
         }
         #[cfg(not(unix))]

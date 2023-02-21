@@ -411,7 +411,7 @@ impl<'a> WheelBuilder<'a> {
         goal: Pep517Goal,
         new_build_stack: &[&PackageName],
     ) -> Result<()> {
-        let mut sdist_entries = fs::read_dir(&handle.join("sdist"))?
+        let mut sdist_entries = fs::read_dir(handle.join("sdist"))?
             .collect::<Result<Vec<_>, io::Error>>()?;
         if sdist_entries.len() != 1 {
             bail!("expected sdist to contain exactly one top-level directory");
@@ -428,7 +428,7 @@ impl<'a> WheelBuilder<'a> {
             Err(e) => Err(e)?,
         };
         let build_system_path = handle.join("build-system.json");
-        serde_json::to_writer(fs::File::create(&build_system_path)?, &build_system)?;
+        serde_json::to_writer(fs::File::create(build_system_path)?, &build_system)?;
 
         let get_requires_for_build_wheel = handle.join("get_requires_for_build_wheel");
         let dynamic_requires: Vec<String> =

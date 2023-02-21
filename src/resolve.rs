@@ -346,9 +346,9 @@ struct PubgrubState<'a> {
     versions: FrozenMap<PackageName, Vec<&'a Version>>,
 }
 
-fn get_or_fill<'a, 'b, K, V, F>(
+fn get_or_fill<'a, K, V, F>(
     map: &'a FrozenMap<K, V>,
-    key: &'b K,
+    key: &K,
     f: F,
 ) -> Result<&'a V::Target>
 where
