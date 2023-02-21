@@ -84,14 +84,14 @@ mod test {
         let mut cursor = Cursor::new(&buf);
         let mut slice = SeekSlice::new(&mut cursor, 2, 8).unwrap();
         // starts at offset zero
-        assert_eq!(slice.seek(SeekFrom::Current(0)).unwrap(), 0);
+        assert_eq!(slice.stream_position().unwrap(), 0);
         // reading advances position as expected
         fn next_byte<T: Read>(value: T) -> u8 {
             value.bytes().next().unwrap().unwrap()
         }
         assert_eq!(next_byte(&mut slice), 2u8);
         assert_eq!(next_byte(&mut slice), 3u8);
-        assert_eq!(slice.seek(SeekFrom::Current(0)).unwrap(), 2);
+        assert_eq!(slice.stream_position().unwrap(), 2);
         assert_eq!(next_byte(&mut slice), 4u8);
 
         // out of range seeks caught and have no effect

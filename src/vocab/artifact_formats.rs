@@ -133,13 +133,13 @@ pub trait BinaryArtifact: Artifact {
     //
     // (Also, if we ever get an sdist format for pybis, then we're prepared!)
 
-    fn locally_built_metadata<'a>(
-        ctx: &Self::Builder<'a>,
+    fn locally_built_metadata(
+        ctx: &Self::Builder<'_>,
         ai: &ArtifactInfo,
     ) -> Option<Result<(Vec<u8>, Self::Metadata)>>;
 
-    fn locally_built_binary<'a>(
-        ctx: &Self::Builder<'a>,
+    fn locally_built_binary(
+        ctx: &Self::Builder<'_>,
         ai: &ArtifactInfo,
         platform: &Self::Platform,
     ) -> Option<Result<Self>>;
@@ -160,8 +160,8 @@ fn parse_format_metadata_and_check_version(
     Ok(parsed)
 }
 
-fn slurp_from_zip<'a, T: Read + Seek>(
-    z: &'a mut ZipArchive<T>,
+fn slurp_from_zip<T: Read + Seek>(
+    z: &mut ZipArchive<T>,
     name: &str,
 ) -> Result<Vec<u8>> {
     context!("extracting {name}");
@@ -339,8 +339,8 @@ impl BinaryArtifact for Wheel {
 
     type Builder<'a> = crate::package_db::WheelBuilder<'a>;
 
-    fn locally_built_metadata<'a>(
-        builder: &Self::Builder<'a>,
+    fn locally_built_metadata(
+        builder: &Self::Builder<'_>,
         ai: &ArtifactInfo,
     ) -> Option<Result<(Vec<u8>, Self::Metadata)>> {
         if ai.is::<Sdist>() {
@@ -350,8 +350,8 @@ impl BinaryArtifact for Wheel {
         }
     }
 
-    fn locally_built_binary<'a>(
-        builder: &Self::Builder<'a>,
+    fn locally_built_binary(
+        builder: &Self::Builder<'_>,
         ai: &ArtifactInfo,
         platform: &Self::Platform,
     ) -> Option<Result<Self>> {
@@ -396,15 +396,15 @@ impl BinaryArtifact for Pybi {
         Ok((metadata_blob, metadata))
     }
 
-    fn locally_built_metadata<'a>(
-        _ctx: &Self::Builder<'a>,
+    fn locally_built_metadata(
+        _ctx: &Self::Builder<'_>,
         _ai: &ArtifactInfo,
     ) -> Option<Result<(Vec<u8>, Self::Metadata)>> {
         None
     }
 
-    fn locally_built_binary<'a>(
-        _ctx: &Self::Builder<'a>,
+    fn locally_built_binary(
+        _ctx: &Self::Builder<'_>,
         _ai: &ArtifactInfo,
         _platform: &Self::Platform,
     ) -> Option<Result<Self>> {

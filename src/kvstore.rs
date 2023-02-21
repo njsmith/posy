@@ -362,7 +362,7 @@ impl KVDirStore {
         if !lock.exists() {
             let tmp = lock.tempdir()?;
             f(tmp.as_ref())?;
-            fs::rename(&tmp.into_path(), &*lock)?;
+            fs::rename(tmp.into_path(), &*lock)?;
         }
         Ok(lock.path)
     }
