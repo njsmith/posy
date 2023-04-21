@@ -8,7 +8,7 @@ You have a few choices:
 - An incomplete but functional implementation of Python's packaging
   standards in Rust, including a full resolver based on [the PubGrub
   algorithm](https://nex3.medium.com/pubgrub-2fb6470504f) (as provided
-  by [`pubgrub`](https://docs.rs/pubgrub/).
+  by [`pubgrub`](https://docs.rs/pubgrub/)).
 
 - A [draft
   spec](https://github.com/njsmith/posy/blob/main/pybi/README.md) for
