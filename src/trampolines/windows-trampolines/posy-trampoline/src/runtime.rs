@@ -36,7 +36,7 @@ unsafe impl GlobalAlloc for SystemAlloc {
 }
 
 #[panic_handler]
-pub extern "C" fn panic(info: &core::panic::PanicInfo) -> ! {
+fn panic(info: &core::panic::PanicInfo) -> ! {
     if let Some(location) = info.location() {
         let mut msg = "(couldn't format message)";
         if let Some(msg_args) = info.message() {
