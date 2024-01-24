@@ -14,7 +14,6 @@ use windows_sys::Win32::{
         Environment::{GetCommandLineA, GetEnvironmentVariableA, SetCurrentDirectoryA},
         JobObjects::*,
         Threading::*,
-        WindowsProgramming::INFINITE,
     },
     UI::WindowsAndMessaging::*,
 };
