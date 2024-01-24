@@ -32,7 +32,7 @@ fn getenv(name: &CStr) -> Option<CString> {
             value.capacity() as u32,
         );
         value.set_len(count as usize);
-        return Some(CString::from_vec_with_nul_unchecked(value));
+        Some(CString::from_vec_with_nul_unchecked(value))
     }
 }
 
@@ -45,7 +45,7 @@ fn make_child_cmdline(is_gui: bool) -> Vec<u8> {
         } else {
             c!("POSY_PYTHON")
         };
-        let python_exe = getenv(&envvar);
+        let python_exe = getenv(envvar);
         if python_exe.is_none() {
             eprintln!(
                 "need {} to be set",
@@ -56,9 +56,9 @@ fn make_child_cmdline(is_gui: bool) -> Vec<u8> {
         let python_exe = python_exe.unwrap_unchecked();
 
         let mut child_cmdline = Vec::<u8>::new();
-        child_cmdline.push('"' as u8);
+        child_cmdline.push(b'"');
         for byte in python_exe.as_bytes() {
-            if *byte == '"' as u8 {
+            if *byte == b'"' {
                 // 3 double quotes: one to end the quoted span, one to become a literal double-quote,
                 // and one to start a new quoted span.
                 child_cmdline.extend(br#"""""#);
@@ -139,12 +139,12 @@ fn close_handles(si: &STARTUPINFOA) {
             SetStdHandle(handle, INVALID_HANDLE_VALUE);
         }
 
-        if si.cbReserved2 == 0 || si.lpReserved2 == null_mut() {
+        if si.cbReserved2 == 0 || si.lpReserved2.is_null() {
             return;
         }
         let crt_magic = si.lpReserved2 as *const u32;
         let handle_count = crt_magic.read_unaligned() as isize;
-        let handle_start = crt_magic.offset(1 + handle_count as isize);
+        let handle_start = crt_magic.offset(1 + handle_count);
         for i in 0..handle_count {
             CloseHandle(handle_start.offset(i).read_unaligned() as HANDLE);
         }
