@@ -43,7 +43,7 @@ macro_rules! check {
             );
             let msg = core::slice::from_raw_parts(msg_ptr, size as usize);
             let msg = core::str::from_utf8_unchecked(msg);
-            crate::eprintln!("Error: {} (from {})", msg, stringify!($e));
+            $crate::eprintln!("Error: {} (from {})", msg, stringify!($e));
             ExitProcess(1);
         }
     }

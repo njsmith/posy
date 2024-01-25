@@ -1,4 +1,3 @@
-#![feature(default_alloc_error_handler)]
 #![no_std]
 #![no_main]
 #![windows_subsystem = "windows"]

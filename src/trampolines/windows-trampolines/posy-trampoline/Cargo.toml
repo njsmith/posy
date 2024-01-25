@@ -24,7 +24,7 @@ debug = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-windows-sys = { version = "0.42.0", features = [
+windows-sys = { version = "0.52.0", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Storage_FileSystem",
@@ -49,8 +49,8 @@ windows-sys = { version = "0.42.0", features = [
 # - Use -Zbuild-std=... -Zbuild-std-features=compiler-builtins-mem, which enables
 #   the mem feature on the built-in builtins.
 #compiler_builtins = { version = "*", features = ["mem"]}
-ufmt-write = "*"
-ufmt = "*"
+ufmt-write = "0.1.0"
+ufmt = "0.2.0"
 
 [build-dependencies]
-embed-manifest = "*"
+embed-manifest = "1.4.0"

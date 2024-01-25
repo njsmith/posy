@@ -60,7 +60,7 @@ impl uWrite for DiagnosticBuffer {
 #[macro_export]
 macro_rules! eprintln {
     ($($tt:tt)*) => {{
-        let mut d = crate::diagnostics::DiagnosticBuffer::new();
+        let mut d = $crate::diagnostics::DiagnosticBuffer::new();
         _ = ufmt::uwriteln!(&mut d, $($tt)*);
         d.display();
     }}
