@@ -6,7 +6,7 @@ use core::{
 extern crate alloc;
 use crate::helpers::SizeOf;
 use crate::{c, check, eprintln};
-use alloc::{ffi::CString, vec::Vec};
+use alloc::{ffi::CString, vec, vec::Vec};
 use windows_sys::Win32::{
     Foundation::*,
     System::{
@@ -67,7 +67,7 @@ fn find_python_exe(is_gui: bool) -> CString {
         // MAX_PATH is a lie, Windows paths can be longer.
         // https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#maximum-path-length-limitation
         // But it's a good first guess, usually paths are short and we should only need a single attempt.
-        buffer.resize(MAX_PATH as usize, 0);
+        let mut buffer: Vec<u8> = vec![0; MAX_PATH as usize];
         loop {
             // Call the Windows API function to get the module file name
             let len = GetModuleFileNameA(0, buffer.as_mut_ptr(), buffer.len() as u32);
