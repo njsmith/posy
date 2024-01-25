@@ -1,6 +1,5 @@
 use core::{
     convert::Infallible,
-    ffi::c_void,
     ptr::{addr_of_mut, null, null_mut},
 };
 
@@ -32,13 +31,14 @@ impl DiagnosticBuffer {
             while !remaining.is_empty() {
                 let ok = WriteFile(
                     handle,
-                    remaining.as_ptr() as *const c_void,
+                    remaining.as_ptr(),
                     remaining.len() as u32,
                     addr_of_mut!(written),
                     null_mut(),
                 );
                 if ok == 0 {
-                    let nul_terminated = CString::new(self.buffer.as_bytes()).unwrap_unchecked();
+                    let nul_terminated =
+                        CString::new(self.buffer.as_bytes()).unwrap_unchecked();
                     MessageBoxA(0, nul_terminated.as_ptr() as *const _, null(), 0);
                     return;
                 }
