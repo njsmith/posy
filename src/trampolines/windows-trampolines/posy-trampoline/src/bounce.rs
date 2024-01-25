@@ -6,13 +6,14 @@ use core::{
 extern crate alloc;
 use crate::helpers::SizeOf;
 use crate::{c, check, eprintln};
-use alloc::{ffi::CString, vec::Vec};
+use alloc::{ffi::CString, vec, vec::Vec};
 use windows_sys::Win32::{
     Foundation::*,
     System::{
         Console::*,
         Environment::{GetCommandLineA, GetEnvironmentVariableA, SetCurrentDirectoryA},
         JobObjects::*,
+        LibraryLoader::GetModuleFileNameA,
         Threading::*,
     },
     UI::WindowsAndMessaging::*,
@@ -37,23 +38,9 @@ fn getenv(name: &CStr) -> Option<CString> {
 
 fn make_child_cmdline(is_gui: bool) -> Vec<u8> {
     unsafe {
+        let python_exe = find_python_exe(is_gui);
+
         let my_cmdline = CStr::from_ptr(GetCommandLineA() as _);
-
-        let envvar = if is_gui {
-            c!("POSY_PYTHONW")
-        } else {
-            c!("POSY_PYTHON")
-        };
-        let python_exe = getenv(envvar);
-        if python_exe.is_none() {
-            eprintln!(
-                "need {} to be set",
-                core::str::from_utf8_unchecked(envvar.to_bytes())
-            );
-            ExitProcess(1);
-        }
-        let python_exe = python_exe.unwrap_unchecked();
-
         let mut child_cmdline = Vec::<u8>::new();
         child_cmdline.push(b'"');
         for byte in python_exe.as_bytes() {
@@ -72,10 +59,62 @@ fn make_child_cmdline(is_gui: bool) -> Vec<u8> {
     }
 }
 
+/// The scripts are in the same directory as the Python interpreter, so we can find Python by getting the locations of
+/// the current .exe and replacing the filename with `python[w].exe`.
+fn find_python_exe(is_gui: bool) -> CString {
+    unsafe {
+        let mut buffer: Vec<u8> = Vec::new();
+        // MAX_PATH is a lie, Windows paths can be longer.
+        // https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#maximum-path-length-limitation
+        // But it's a good first guess, usually paths are short and we should only need a single attempt.
+        let mut buffer: Vec<u8> = vec![0; MAX_PATH as usize];
+        loop {
+            // Call the Windows API function to get the module file name
+            let len = GetModuleFileNameA(0, buffer.as_mut_ptr(), buffer.len() as u32);
+
+            if len as usize == buffer.len() {
+                let last_error = GetLastError();
+                match last_error {
+                    ERROR_INSUFFICIENT_BUFFER => {
+                        SetLastError(ERROR_SUCCESS);
+                        // Try again with twice the size
+                        buffer.resize(buffer.len() * 2, 0);
+                    }
+                    err => {
+                        eprintln!("File to get executable name: {}", err);
+                        ExitProcess(1);
+                    }
+                }
+            } else {
+                // The returned buffer length excludes the trailing null byte
+                buffer.truncate(len as usize + b"\0".len());
+                break;
+            }
+        }
+        // Replace the filename, the last segment of the path, with "python.exe"
+        // Assumption: We are not in an encoding where a backslash byte can be part of a larger character.
+        let Some(last_backslash) = buffer.iter().rposition(|byte| *byte == b'\\') else {
+            eprintln!(
+                "Invalid current exe path (missing backslash): `{}`",
+                CString::from_vec_with_nul_unchecked(buffer).to_string_lossy().as_ref()
+            );
+            ExitProcess(1);
+        };
+        buffer.truncate(last_backslash + 1);
+        buffer.extend_from_slice(if is_gui {
+            b"pythonw.exe\0"
+        } else {
+            b"python.exe\0"
+        });
+        CString::from_vec_with_nul_unchecked(buffer)
+    }
+}
+
 fn make_job_object() -> HANDLE {
     unsafe {
         let job = CreateJobObjectW(null(), null());
-        let mut job_info = MaybeUninit::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>::uninit();
+        let mut job_info =
+            MaybeUninit::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>::uninit();
         let mut retlen = 0u32;
         check!(QueryInformationJobObject(
             job,
@@ -86,7 +125,8 @@ fn make_job_object() -> HANDLE {
         ));
         let mut job_info = job_info.assume_init();
         job_info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        job_info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
+        job_info.BasicLimitInformation.LimitFlags |=
+            JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
         check!(SetInformationJobObject(
             job,
             JobObjectExtendedLimitInformation,
@@ -102,9 +142,21 @@ fn spawn_child(si: &STARTUPINFOA, child_cmdline: &mut [u8]) -> HANDLE {
         if si.dwFlags & STARTF_USESTDHANDLES != 0 {
             // ignore errors from these -- if the handle's not inheritable/not valid, then nothing
             // we can do
-            SetHandleInformation(si.hStdInput, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
-            SetHandleInformation(si.hStdOutput, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
-            SetHandleInformation(si.hStdError, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+            SetHandleInformation(
+                si.hStdInput,
+                HANDLE_FLAG_INHERIT,
+                HANDLE_FLAG_INHERIT,
+            );
+            SetHandleInformation(
+                si.hStdOutput,
+                HANDLE_FLAG_INHERIT,
+                HANDLE_FLAG_INHERIT,
+            );
+            SetHandleInformation(
+                si.hStdError,
+                HANDLE_FLAG_INHERIT,
+                HANDLE_FLAG_INHERIT,
+            );
         }
         let mut child_process_info = MaybeUninit::<PROCESS_INFORMATION>::uninit();
         check!(CreateProcessA(
@@ -150,11 +202,11 @@ fn close_handles(si: &STARTUPINFOA) {
     }
 }
 
-/* 
-    I don't really understand what this function does. It's a straight port from 
+/*
+    I don't really understand what this function does. It's a straight port from
     https://github.com/pypa/distlib/blob/master/PC/launcher.c, which has the following
     comment:
- 
+
         End the launcher's "app starting" cursor state.
         When Explorer launches a Windows (GUI) application, it displays
         the "app starting" (the "pointer + hourglass") cursor for a number
@@ -163,8 +215,8 @@ fn close_handles(si: &STARTUPINFOA) {
         directly, that cursor remains even after the child process does these
         things.  We avoid that by doing the stuff in here.
         See http://bugs.python.org/issue17290 and
-        https://github.com/pypa/pip/issues/10444#issuecomment-973408601  
-       
+        https://github.com/pypa/pip/issues/10444#issuecomment-973408601
+
     Why do we call `PostMessage`/`GetMessage` at the start, before waiting for the
     child? (Looking at the bpo issue above, this was originally the *whole* fix.)
     Is creating a window and calling PeekMessage the best way to do this? idk.
