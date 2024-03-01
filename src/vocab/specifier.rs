@@ -132,7 +132,7 @@ fn parse_version_wildcard(input: &str) -> Result<(Version, bool)> {
 /// Has to take a string, not a Version, because == and != can take "wildcards", which
 /// are not valid versions.
 impl CompareOp {
-    pub fn to_ranges(&self, rhs: &str) -> Result<Vec<Range<Version>>> {
+    pub fn to_ranges(self, rhs: &str) -> Result<Vec<Range<Version>>> {
         use CompareOp::*;
         let (version, wildcard) = parse_version_wildcard(rhs)?;
         Ok(if wildcard {
@@ -169,8 +169,11 @@ impl CompareOp {
             }
         } else {
             // no wildcards here
-            if self != &Equal && self != &NotEqual && !version.0.local.is_empty() {
-                bail!("Operator {:?} cannot be used on a version with a +local suffix", self);
+            if self != Equal && self != NotEqual && !version.0.local.is_empty() {
+                bail!(
+                    "Operator {:?} cannot be used on a version with a +local suffix",
+                    self
+                );
             }
             match self {
                 // These two are simple

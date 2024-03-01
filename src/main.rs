@@ -1,4 +1,4 @@
-#![allow(clippy::declare_interior_mutable_const, clippy::borrow_interior_mutable_const, clippy::module_inception, clippy::result_large_err, clippy::type_complexity, clippy::upper_case_acronyms, clippy::wrong_self_convention)]
+#![allow(clippy::declare_interior_mutable_const, clippy::borrow_interior_mutable_const, clippy::module_inception, clippy::result_large_err, clippy::type_complexity, clippy::upper_case_acronyms)]
 mod kvstore;
 mod package_db;
 mod prelude;
