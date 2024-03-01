@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-use super::http::{CacheMode, HttpInner};
+use super::_http::{CacheMode, HttpInner};
 use std::cmp;
 use std::collections::BTreeMap;
 use std::io::{self, Read, Seek, SeekFrom};

@@ -1,8 +1,4 @@
-#![allow(
-    clippy::module_inception,
-    clippy::result_large_err,
-    clippy::type_complexity
-)]
+#![allow(clippy::result_large_err, clippy::type_complexity)]
 mod kvstore;
 mod package_db;
 mod prelude;
