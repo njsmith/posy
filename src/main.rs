@@ -1,4 +1,4 @@
-#![allow(clippy::declare_interior_mutable_const, clippy::borrow_interior_mutable_const, clippy::module_inception, clippy::result_large_err, clippy::type_complexity, clippy::upper_case_acronyms, clippy::wrong_self_convention)]
+#![allow(clippy::result_large_err, clippy::type_complexity)]
 mod kvstore;
 mod package_db;
 mod prelude;
@@ -40,8 +40,10 @@ fn main() -> Result<()> {
     let build_store = KVDirStore::new(build_tmp.path())?;
 
     let db = package_db::PackageDB::new(
-        &[Url::parse("https://pybi.vorpus.org")?,
-            Url::parse("https://pypi.org/simple/")?],
+        &[
+            Url::parse("https://pybi.vorpus.org")?,
+            Url::parse("https://pypi.org/simple/")?,
+        ],
         PROJECT_DIRS.cache_dir(),
         // PackageDB needs a place to install packages, in case it has to build some
         // sdists. Using a shared env_forest is efficient, because it means different

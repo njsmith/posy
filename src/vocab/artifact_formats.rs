@@ -421,7 +421,7 @@ impl Pybi {
 }
 
 fn script_for_entrypoint(entry: &Entrypoint, script_type: ScriptType) -> Vec<u8> {
-    let w = if script_type == ScriptType::GUI {
+    let w = if script_type == ScriptType::Gui {
         "w"
     } else {
         ""
@@ -496,7 +496,7 @@ impl Wheel {
             };
 
             write_scripts("console_scripts", ScriptType::Console)?;
-            write_scripts("gui_scripts", ScriptType::GUI)?;
+            write_scripts("gui_scripts", ScriptType::Gui)?;
         }
         Ok(())
     }
@@ -574,7 +574,7 @@ where
                 if script_start.starts_with(b"#!python") {
                     // it's some kind of script, but which kind?
                     let script_type = if script_start.starts_with(b"#!pythonw") {
-                        ScriptType::GUI
+                        ScriptType::Gui
                     } else {
                         ScriptType::Console
                     };
