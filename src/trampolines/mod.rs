@@ -2,7 +2,7 @@ use crate::{prelude::*, tree::WriteTree};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ScriptType {
-    GUI,
+    Gui,
     Console,
 }
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -58,7 +58,7 @@ impl TrampolineMaker {
     fn unix_trampoline(&self, script: &[u8], script_type: ScriptType) -> Vec<u8> {
         let prefix = match script_type {
             ScriptType::Console => UNIX_TEMPLATE.into(),
-            ScriptType::GUI => UNIX_TEMPLATE.replace("POSY_PYTHON", "POSY_PYTHONW"),
+            ScriptType::Gui => UNIX_TEMPLATE.replace("POSY_PYTHON", "POSY_PYTHONW"),
         };
         let mut out = prefix.into_bytes();
         out.extend_from_slice(script);
@@ -68,7 +68,7 @@ impl TrampolineMaker {
     fn windows_trampoline(&self, script: &[u8], script_type: ScriptType) -> Vec<u8> {
         let prefix = match script_type {
             ScriptType::Console => WINDOWS_CONSOLE,
-            ScriptType::GUI => WINDOWS_GUI,
+            ScriptType::Gui => WINDOWS_GUI,
         };
         let mut suffix = std::io::Cursor::new(Vec::<u8>::new());
         {
