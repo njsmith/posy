@@ -1,5 +1,4 @@
 #![allow(
-    clippy::declare_interior_mutable_const,
     clippy::borrow_interior_mutable_const,
     clippy::module_inception,
     clippy::result_large_err,

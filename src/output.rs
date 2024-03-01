@@ -55,7 +55,7 @@ where
 
 struct MessageAsString(String);
 
-const WARNING: Lazy<StyledObject<Emoji<'static, 'static>>> = Lazy::new(|| {
+static WARNING: Lazy<StyledObject<Emoji<'static, 'static>>> = Lazy::new(|| {
     Style::new()
         .yellow()
         .bold()
@@ -63,7 +63,7 @@ const WARNING: Lazy<StyledObject<Emoji<'static, 'static>>> = Lazy::new(|| {
         .apply_to(Emoji("⚠️  Warning:", "Warning:"))
 });
 
-const ERROR: Lazy<StyledObject<Emoji<'static, 'static>>> = Lazy::new(|| {
+static ERROR: Lazy<StyledObject<Emoji<'static, 'static>>> = Lazy::new(|| {
     Style::new()
         .red()
         .bold()
